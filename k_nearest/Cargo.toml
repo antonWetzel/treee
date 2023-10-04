@@ -1,0 +1,16 @@
+[package]
+name = "k_nearest"
+version = "0.2.0"
+edition = "2021"
+license-file = "license"
+description = "K-nearest neighbors search for points with maximal search radius"
+homepage = "https://github.com/antonWetzel/k_nearest"
+repository = "https://github.com/antonWetzel/k_nearest"
+readme = "readme.md"
+keywords = ["pointcloud", "knearest"]
+categories = ["algorithms"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+math = { path = "../math" }

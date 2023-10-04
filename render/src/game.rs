@@ -1,0 +1,45 @@
+use math::Vector;
+
+use super::*;
+
+// todo: pass window_target to allow the cration of the windows
+#[allow(unused_variables)]
+pub trait Game {
+	fn close_window(&mut self, window_id: WindowId) -> ControlFlow {
+		ControlFlow::Poll
+	}
+	fn resize_window(&mut self, window_id: WindowId, size: Vector<2, u32>) -> ControlFlow {
+		ControlFlow::Poll
+	}
+	fn key_changed(&mut self, window_id: WindowId, key: input::KeyCode, key_state: input::State) -> ControlFlow {
+		ControlFlow::Poll
+	}
+	fn mouse_pressed(
+		&mut self,
+		window_id: WindowId,
+		button: input::MouseButton,
+		button_state: input::State,
+	) -> ControlFlow {
+		ControlFlow::Poll
+	}
+	fn mouse_wheel(&mut self, delta: f32) -> ControlFlow {
+		ControlFlow::Poll
+	}
+	fn mouse_moved(&mut self, window_id: WindowId, position: Vector<2, f64>) -> ControlFlow {
+		ControlFlow::Poll
+	}
+
+	fn time(&mut self) -> ControlFlow {
+		ControlFlow::Poll
+	}
+
+	fn render(&mut self, window_id: WindowId) {}
+
+	fn modifiers_changed(&mut self, modifiers: input::Modifiers) {}
+}
+
+pub type ControlFlow = winit::event_loop::ControlFlow;
+
+pub type RenderPass<'a> = wgpu::RenderPass<'a>;
+
+// todo: typesafe renderpass

@@ -1,0 +1,20 @@
+[package]
+name = "importer"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+render = { path = "../render" }
+math = { path = "../math" }
+k_nearest = { path = "../k_nearest" }
+common = { path = "../common" }
+memmap2 = "0.6.2"
+rand = "0.8.5"
+ron = "0.8.0"
+serde = "1.0.164"
+termsize = "0.1.6"
+num_cpus = "1.15.0"
+crossbeam = "0.8.2"
+las = { version = "0.8.1", features = ["laz"] }

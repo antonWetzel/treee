@@ -1,0 +1,128 @@
+{
+	// Use IntelliSense to learn about possible attributes.
+	// Hover to view descriptions of existing attributes.
+	// For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+	"version": "0.2.0",
+	"configurations": [
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug import",
+			"cargo": {
+				"args": [
+					"build",
+					"--bin=importer",
+					"--package=importer"
+				],
+				"filter": {
+					"name": "importer",
+					"kind": "bin"
+				}
+			},
+			"sourceLanguages": [
+				"rust"
+			],
+			"cwd": "${workspaceFolder}/cwd",
+			"args": [
+				"${input:file}",
+				"./${input:output}",
+			],
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug viewer",
+			"cargo": {
+				"args": [
+					"build",
+					"--bin=viewer",
+					"--package=viewer"
+				],
+				"filter": {
+					"name": "viewer",
+					"kind": "bin"
+				}
+			},
+			"sourceLanguages": [
+				"rust"
+			],
+			"cwd": "${workspaceFolder}/cwd",
+			"args": [
+				"./${input:output}",
+			],
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Release import",
+			"cargo": {
+				"args": [
+					"build",
+					"--release",
+					"--bin=importer",
+					"--package=importer"
+				],
+				"filter": {
+					"name": "importer",
+					"kind": "bin"
+				}
+			},
+			"sourceLanguages": [
+				"rust"
+			],
+			"cwd": "${workspaceFolder}/cwd",
+			"args": [
+				"${input:file}",
+				"./${input:output}",
+			],
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Release viewer",
+			"cargo": {
+				"args": [
+					"build",
+					"--release",
+					"--bin=viewer",
+					"--package=viewer"
+				],
+				"filter": {
+					"name": "viewer",
+					"kind": "bin"
+				}
+			},
+			"sourceLanguages": [
+				"rust"
+			],
+			"cwd": "${workspaceFolder}/cwd",
+			"args": [
+				"./${input:output}",
+			],
+		},
+	],
+	"inputs": [
+		{
+			"id": "file",
+			"type": "pickString",
+			"default": "test.laz",
+			"description": "input file",
+			"options": [
+				"test.laz",
+				"test2.laz",
+				"test3.laz",
+				"test4.laz",
+				"test5.laz",
+			]
+		},
+		{
+			"id": "output",
+			"type": "pickString",
+			"default": "test",
+			"description": "input file",
+			"options": [
+				"test",
+			]
+		}
+	]
+}
