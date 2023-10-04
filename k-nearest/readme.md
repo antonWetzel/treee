@@ -1,4 +1,4 @@
-# k_nearest
+# k-nearest
 
 - find the k-nearest neighbors for a list of points with arbitrary dimensions
 - please write an issue for any bugs or feature requests

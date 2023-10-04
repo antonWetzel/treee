@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 render = { path = "../render" }
 math = { path = "../math" }
-k_nearest = { path = "../k_nearest" }
+k-nearest = { path = "../k-nearest" }
 common = { path = "../common" }
 memmap2 = "0.6.2"
 rand = "0.8.5"

@@ -6,7 +6,7 @@ members = [
 	"math",
 	"viewer",
 	"importer",
-	"k_nearest",
+	"k-nearest",
 	"common",
 	"input",
 ]
