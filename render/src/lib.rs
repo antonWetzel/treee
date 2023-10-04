@@ -1,5 +1,6 @@
 mod camera;
 mod depth_texture;
+mod eye_dome;
 mod game;
 mod point;
 mod state;

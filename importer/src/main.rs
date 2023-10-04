@@ -75,11 +75,12 @@ fn main() {
 			]
 			.into()
 		} else {
-			let b = (point.z - min[Z]) / (max[Z] - min[Z]);
-			let b = b * (GRADIENT.len() - 1) as f64;
-			let idx = (b as usize).clamp(0, GRADIENT.len() - 2);
-			let frac = (b - idx as f64).clamp(0.0, 1.0) as f32;
-			GRADIENT[idx] * (1.0 - frac) + GRADIENT[idx + 1] * frac
+			[1.0, 1.0, 1.0].into()
+			// 	let b = (point.z - min[Z]) / (max[Z] - min[Z]);
+			// 	let b = b * (GRADIENT.len() - 1) as f64;
+			// 	let idx = (b as usize).clamp(0, GRADIENT.len() - 2);
+			// 	let frac = (b - idx as f64).clamp(0.0, 1.0) as f32;
+			// 	GRADIENT[idx] * (1.0 - frac) + GRADIENT[idx + 1] * frac
 		};
 		tree.insert(res, &mut writer);
 		progress.increase();

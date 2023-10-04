@@ -37,7 +37,7 @@ impl LoadedManager {
 				}
 				let mut removed = None;
 				if work.len() > 0 {
-					println!("todo: {}", work.len());
+					println!("Chunks queued: {}", work.len());
 				}
 				for &index in work.iter() {
 					let path: String = format!("{}/data/{}.data", path, index);

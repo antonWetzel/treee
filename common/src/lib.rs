@@ -119,16 +119,9 @@ fn deflatten(nodes: Vec<FlatNode>) -> IndexNode {
 	for (i, node) in nodes.into_iter().enumerate() {
 		let data = match node.data {
 			FlatData::Leaf => IndexData::Leaf(),
-			FlatData::Branch(children) => {
-				let mut res = [None, None, None, None, None, None, None, None];
-				for (i, child) in children.into_iter().enumerate() {
-					res[i] = match child {
-						Some(idx) => Some(results.remove(&idx).unwrap()),
-						None => None,
-					}
-				}
-				IndexData::Branch(Box::new(res))
-			},
+			FlatData::Branch(children) => IndexData::Branch(Box::new(
+				children.map(|child| child.map(|idx| results.remove(&idx).unwrap())),
+			)),
 		};
 		let node = IndexNode {
 			data,

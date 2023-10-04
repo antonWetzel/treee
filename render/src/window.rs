@@ -1,5 +1,7 @@
 use math::Vector;
 
+use crate::eye_dome::EyeDome;
+
 use super::*;
 
 pub type WindowId = winit::window::WindowId;
@@ -9,6 +11,8 @@ pub struct Window {
 	pub(crate) config: wgpu::SurfaceConfiguration,
 	pub(crate) surface: wgpu::Surface,
 	pub(crate) depth_texture: DepthTexture,
+	middle_texture: wgpu::Texture,
+	eye_dome: EyeDome,
 }
 
 impl Window {
@@ -41,8 +45,33 @@ impl Window {
 			view_formats: vec![],
 		};
 		surface.configure(&state.device, &config);
-		let depth_texture = DepthTexture::create_depth_texture(&state.device, &config, "depth_texture");
-		return Self { window, surface, depth_texture, config };
+
+		let middle_texture = state.device.create_texture(&wgpu::TextureDescriptor {
+			label: Some("test"),
+			size: wgpu::Extent3d {
+				width: config.width,
+				height: config.height,
+				depth_or_array_layers: 1,
+			},
+			mip_level_count: 1,
+			sample_count: 1,
+			dimension: wgpu::TextureDimension::D2,
+			format: config.format,
+			usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::RENDER_ATTACHMENT,
+			view_formats: &[],
+		});
+
+		let depth_texture = DepthTexture::new(&state.device, &config, "depth");
+		let eye_dome = EyeDome::new(state, &config, &depth_texture, &middle_texture);
+
+		return Self {
+			window,
+			surface,
+			depth_texture,
+			config,
+			eye_dome,
+			middle_texture,
+		};
 	}
 
 	pub fn get_aspect(&self) -> f32 {
@@ -72,7 +101,23 @@ impl Window {
 		self.config.width = size.width;
 		self.config.height = size.height;
 		self.surface.configure(&state.device, &self.config);
-		self.depth_texture = DepthTexture::create_depth_texture(&state.device, &self.config, "depth_texture");
+		self.depth_texture = DepthTexture::new(&state.device, &self.config, "depth");
+		self.middle_texture = state.device.create_texture(&wgpu::TextureDescriptor {
+			label: Some("test"),
+			size: wgpu::Extent3d {
+				width: self.config.width,
+				height: self.config.height,
+				depth_or_array_layers: 1,
+			},
+			mip_level_count: 1,
+			sample_count: 1,
+			dimension: wgpu::TextureDimension::D2,
+			format: self.config.format,
+			usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::RENDER_ATTACHMENT,
+			view_formats: &[],
+		});
+		self.eye_dome
+			.update(state, &self.depth_texture, &self.middle_texture);
 	}
 
 	pub fn render<T>(&self, state: &State, pipeline: &Pipeline3D, cam: &gpu::Camera3D, renderable: &T)
@@ -80,9 +125,10 @@ impl Window {
 		T: Renderable,
 	{
 		let output = self.surface.get_current_texture().unwrap();
-		let view = output
-			.texture
+		let view = self
+			.middle_texture
 			.create_view(&wgpu::TextureViewDescriptor::default());
+
 		let mut encoder = state
 			.device
 			.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("Render Encoder") });
@@ -109,6 +155,11 @@ impl Window {
 			let mut render_pass = encoder.begin_render_pass(&desc);
 			pipeline.render(&mut render_pass, cam, renderable, state);
 		}
+
+		let view = output
+			.texture
+			.create_view(&wgpu::TextureViewDescriptor::default());
+		self.eye_dome.render(&view, &mut encoder);
 		state.queue.submit(Some(encoder.finish()));
 		output.present();
 	}
