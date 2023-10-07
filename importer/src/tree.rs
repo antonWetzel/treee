@@ -52,16 +52,6 @@ impl Leaf {
 	}
 }
 
-// impl Drop for Leaf {
-// 	fn drop(&mut self) {
-// 		self.mmap[0..8].copy_from_slice(&self.size.to_le_bytes());
-// 		self.mmap = memmap2::MmapOptions::new().map_anon().unwrap();
-// 		self.file
-// 			.set_len(8 + (Self::POINT_SIZE * self.size) as u64)
-// 			.unwrap();
-// 	}
-// }
-
 #[derive(Debug)]
 pub enum Data {
 	Leaf(Leaf),
@@ -198,7 +188,7 @@ impl Node {
 				data,
 				position: self.corner,
 				size: self.size,
-				index: self.index,
+				index: self.index as u32,
 			},
 			level,
 			node_count,
@@ -256,27 +246,6 @@ impl Tree {
 	}
 
 	pub fn insert(&mut self, point: DataPoint, writer: &mut Writer) {
-		// while !self.root.inside(point.position) {
-		// 	let mut index = 0;
-		// 	let mut corner = self.root.corner;
-		// 	for dim in X.to(Z) {
-		// 		if point.position[dim] < self.root.corner[dim] + self.root.size / 2.0 {
-		// 			index += 1 << dim.0;
-		// 			corner[dim] -= self.root.size;
-		// 		}
-		// 	}
-		// 	let mut node = Node::new(corner, self.root.size * 2.0, writer);
-		// 	std::mem::swap(&mut node, &mut self.root);
-		// 	let mut children: [Option<Node>; 8] = Default::default();
-		// 	if node.total_points > 0 {
-		// 		children[index] = Some(node);
-		// 	} else {
-		// 		let index = node.index;
-		// 		drop(node);
-		// 		writer.remove_file(index);
-		// 	}
-		// 	self.root.data = Data::Branch { children: Box::new(children) };
-		// }
 		self.root.insert(point, writer);
 	}
 
@@ -320,9 +289,9 @@ impl FlatTree {
 				max_neighbor_distance: density * MAX_NEIGHBOR_DISTANCE_SCALE,
 				center: self.get_center(),
 			},
-			level,
+			level: level as u32,
 			root,
-			node_count,
+			node_count: node_count as u32,
 		}
 	}
 	pub fn calculate_properties(self, writer: &mut Writer, project: Project) {
@@ -367,7 +336,7 @@ impl FlatTree {
 	}
 
 	pub fn calculate(self, writer: &Writer, project: &Project) {
-		let progress = Progress::new("Calculate".into(), project.node_count);
+		let progress = Progress::new("Calculate".into(), project.node_count as usize);
 		let progress = std::sync::Mutex::new(progress);
 
 		let data = std::sync::Mutex::new(HashMap::new());

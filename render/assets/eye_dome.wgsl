@@ -39,8 +39,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     m = max(m, get_depth(coord + vec2<i32>(1, -1)));
     m = max(m, get_depth(coord + vec2<i32>(-1, -1)));
     m = max(m, get_depth(coord + vec2<i32>(-1, 1)));
-    m = min(m, depth + 0.1);
-    return vec4<f32>(color * exp((depth - m) / 0.1), 1.0);
+    m = min(m, depth + 0.03);
+    return vec4<f32>(color * exp((depth - m) / 0.03), 1.0);
 }
 
 

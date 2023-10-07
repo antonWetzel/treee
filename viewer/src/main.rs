@@ -51,7 +51,7 @@ impl Time {
 	}
 }
 
-struct Game<'a, 'scope> {
+struct Game {
 	window: render::Window,
 	tree: Tree,
 	pipeline: render::Pipeline3D,
@@ -60,14 +60,12 @@ struct Game<'a, 'scope> {
 	path: String,
 	project_time: std::time::SystemTime,
 
-	state: &'a render::State,
+	state: &'static render::State,
 	mouse: input::Mouse,
 	keyboard: input::Keyboard,
 	time: Time,
-	scope: &'scope std::thread::Scope<'scope, 'a>,
 }
-
-impl render::Game for Game<'_, '_> {
+impl render::Game for Game {
 	fn render(&mut self, _window_id: render::WindowId) {
 		let mut checker = lod::Checker::new(&self.tree.camera.lod);
 		self.tree.root.update(
@@ -150,7 +148,7 @@ impl render::Game for Game<'_, '_> {
 				self.window.request_redraw();
 			},
 			(input::KeyCode::L, input::State::Pressed) => {
-				self.tree.camera.change_lod(self.project.level);
+				self.tree.camera.change_lod(self.project.level as usize);
 				self.window.request_redraw();
 			},
 			(input::KeyCode::C, input::State::Pressed) => {
@@ -196,24 +194,19 @@ impl render::Game for Game<'_, '_> {
 	}
 }
 
-impl<'a, 'scope> Game<'a, 'scope> {
+impl Game {
 	fn camera_changed(&mut self) {
 		self.window.request_redraw();
 	}
 
-	fn new(
-		state: &'a render::State,
-		path: String,
-		runner: &render::Runner,
-		scope: &'scope std::thread::Scope<'scope, 'a>,
-	) -> Self {
+	fn new(state: &'static render::State, path: String, runner: &render::Runner) -> Self {
 		let project_path = format!("{}/project.epc", path);
 		let project = Project::from_file(&project_path);
 
 		let tree = Tree {
 			camera: camera::Camera::new(project.statistics.center, &state),
 			root: Node::new(&project.root, &state, &path),
-			loaded_manager: LoadedManager::new(&state, path.clone(), scope),
+			loaded_manager: LoadedManager::new(&state, path.clone()),
 		};
 
 		Self {
@@ -229,7 +222,6 @@ impl<'a, 'scope> Game<'a, 'scope> {
 			mouse: input::Mouse::new(),
 			keyboard: input::Keyboard::new(),
 			time: Time::new(),
-			scope,
 		}
 	}
 
@@ -253,7 +245,7 @@ impl<'a, 'scope> Game<'a, 'scope> {
 		self.project = Project::from_file(project_path);
 		self.tree.root = Node::new(&self.project.root, &self.state, &self.path);
 
-		self.tree.loaded_manager = LoadedManager::new(&self.state, self.path.clone(), self.scope);
+		self.tree.loaded_manager = LoadedManager::new(&self.state, self.path.clone());
 	}
 }
 
@@ -263,11 +255,9 @@ fn main() {
 	let path = args.pop().unwrap();
 
 	let (state, runner) = render::State::new().block_on();
-	let state = &state;
+	let state = Box::leak(Box::new(state));
 
-	let code = std::thread::scope(move |scope| {
-		let mut game = Game::new(state, path, &runner, scope);
-		runner.run(&mut game)
-	});
+	let mut game = Game::new(state, path, &runner);
+	let code = runner.run(&mut game);
 	std::process::exit(code);
 }

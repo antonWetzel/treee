@@ -17,11 +17,11 @@ enum Action {
 }
 
 impl LoadedManager {
-	pub fn new<'a>(state: &'a render::State, path: String, scope: &'a std::thread::Scope<'a, '_>) -> Self {
+	pub fn new(state: &'static render::State, path: String) -> Self {
 		let (index_tx, index_rx) = std::sync::mpsc::channel();
 		let (pc_tx, pc_rx) = std::sync::mpsc::channel();
 
-		scope.spawn(move || {
+		std::thread::spawn(move || {
 			let mut work = HashSet::new();
 			loop {
 				loop {

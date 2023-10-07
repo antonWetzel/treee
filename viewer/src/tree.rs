@@ -42,7 +42,7 @@ impl Node {
 		Node {
 			corner: node.position.into(),
 			size: node.size,
-			index: node.index,
+			index: node.index as usize,
 			data,
 		}
 	}
@@ -113,6 +113,11 @@ impl Node {
 			Data::Branch { children } => {
 				if view_checker.should_render(self.corner, self.size, camera) {
 					loaded_manager.request(self.index);
+					for child in children.iter_mut() {
+						if let Some(child) = child {
+							child.clear(loaded_manager);
+						}
+					}
 				} else {
 					if !loaded_manager.exist(self.index) {
 						loaded_manager.request(self.index);

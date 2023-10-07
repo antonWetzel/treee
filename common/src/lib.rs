@@ -21,22 +21,22 @@ pub struct IndexNode {
 	pub data: IndexData,
 	pub position: Vector<3, f32>,
 	pub size: f32,
-	pub index: usize,
+	pub index: u32,
 }
 
 pub struct Project {
 	pub statistics: Statistics,
-	pub level: usize,
+	pub level: u32,
 	pub root: IndexNode,
-	pub node_count: usize,
+	pub node_count: u32,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 struct FlatProject {
 	pub statistics: Statistics,
-	pub level: usize,
+	pub level: u32,
 	pub nodes: Vec<FlatNode>,
-	pub node_count: usize,
+	pub node_count: u32,
 }
 
 impl Project {
@@ -105,7 +105,7 @@ fn flatten(node: &IndexNode) -> Vec<FlatNode> {
 			data: data,
 			position: node.position,
 			size: node.size,
-			index: node.index,
+			index: node.index as usize,
 		});
 		index
 	}
@@ -127,7 +127,7 @@ fn deflatten(nodes: Vec<FlatNode>) -> IndexNode {
 			data,
 			position: node.position,
 			size: node.size,
-			index: node.index,
+			index: node.index as u32,
 		};
 		results.insert(i, node);
 	}
