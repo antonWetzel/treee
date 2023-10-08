@@ -12,4 +12,3 @@ math = { path = "../math" }
 common = { path = "../common" }
 
 pollster = "0.3.0"
-glyphon = "0.3.0"

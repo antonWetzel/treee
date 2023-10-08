@@ -69,7 +69,6 @@ struct Game {
 	time: Time,
 
 	ui: render::UI,
-	test: render::UIElement,
 }
 
 impl render::Game for Game {
@@ -80,8 +79,7 @@ impl render::Game for Game {
 			&mut self.tree.loaded_manager,
 		);
 
-		self.test
-			.prepare(&mut self.ui, self.state, self.window.config());
+		self.ui.queue(self.state, &self.tree);
 
 		self.window
 			.render(self.state, &self.pipeline, &self.tree.camera.gpu, self);
@@ -96,6 +94,7 @@ impl render::Game for Game {
 			&self.tree.camera.transform,
 		);
 		self.camera_changed();
+		self.ui.resize(self.state, self.window.config());
 		render::ControlFlow::Poll
 	}
 
@@ -207,9 +206,8 @@ impl render::Renderable<State> for Game {
 		self.tree.render(render_pass, state)
 	}
 
-	fn ui<'a>(&'a self, mut render_pass: render::RenderPass<'a>, _state: &'a State) -> render::RenderPass<'a> {
-		self.ui.render(&mut render_pass);
-		render_pass
+	fn ui<'a>(&'a self, render_pass: render::RenderPass<'a>, _state: &'a State) -> render::RenderPass<'a> {
+		self.ui.render(render_pass)
 	}
 }
 
@@ -226,13 +224,16 @@ impl Game {
 			camera: camera::Camera::new(project.statistics.center, state),
 			root: Node::new(&project.root),
 			loaded_manager: LoadedManager::new(state, path.clone()),
-		};
 
-		let mut ui = render::UI::new(state);
-		let test = render::UIElement::new(&mut ui, "hi");
+			test_0: render::UIElement::new("hi", [100.0, 100.0].into()),
+			test_1: render::UIElement::new("bye", [300.0, 300.0].into()),
+		};
+		let window = render::Window::new(state, &runner.event_loop, "test");
+
+		let ui = render::UI::new(state, window.config());
 
 		Self {
-			window: render::Window::new(state, &runner.event_loop, "test"),
+			window,
 			tree,
 			pipeline: render::Pipeline3D::new(state),
 			project,
@@ -246,7 +247,6 @@ impl Game {
 			time: Time::new(),
 
 			ui,
-			test,
 		}
 	}
 

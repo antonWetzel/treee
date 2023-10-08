@@ -1,84 +1,81 @@
-use std::sync::Arc;
-
-use glyphon::{
-	fontdb::Source, Attrs, Buffer, Color, Family, FontSystem, Metrics, Resolution, Shaping, SwashCache, TextArea,
-	TextAtlas, TextBounds, TextRenderer,
-};
+use math::{Vector, X, Y};
 use wgpu::SurfaceConfiguration;
+use wgpu_text::{
+	glyph_brush::{ab_glyph::FontRef, Section, Text},
+	BrushBuilder, TextBrush,
+};
 
 use crate::{Has, RenderPass, State};
 
 pub struct UI {
-	font_system: FontSystem,
-	renderer: TextRenderer,
-	cashe: SwashCache,
-	atlas: TextAtlas,
+	brush: TextBrush<FontRef<'static>>,
 }
 
 impl UI {
-	pub fn new(state: &impl Has<State>) -> Self {
+	pub fn new(state: &impl Has<State>, config: &SurfaceConfiguration) -> Self {
 		let state = state.get();
-		let font_system = FontSystem::new_with_fonts(
-			[Source::Binary(Arc::new(include_bytes!(
-				"../assets/Inter-Bold.ttf"
-			)))]
-			.into_iter(),
-		);
-		let cashe = SwashCache::new();
-		let mut atlas = TextAtlas::new(&state.device, &state.queue, state.surface_format);
-		let renderer = TextRenderer::new(
-			&mut atlas,
-			&state.device,
-			wgpu::MultisampleState::default(),
-			None,
-		);
-		Self { font_system, renderer, cashe, atlas }
+		let font = include_bytes!("../assets/Inter-Bold.ttf");
+		let font = FontRef::try_from_slice(font).unwrap();
+
+		let brush = BrushBuilder::using_font(font).build(&state.device, config.width, config.height, config.format);
+		Self { brush }
 	}
 
-	pub fn render<'a>(&'a self, pass: &mut RenderPass<'a>) {
-		self.renderer.render(&self.atlas, pass).unwrap();
+	pub fn resize(&mut self, state: &impl Has<State>, config: &SurfaceConfiguration) {
+		self.brush.resize_view(
+			config.width as f32,
+			config.height as f32,
+			&state.get().queue,
+		)
+	}
+
+	pub fn queue(&mut self, state: &impl Has<State>, target: &impl UICollect) {
+		let state = state.get();
+		let mut collector = UICollector { data: Vec::new() };
+		target.collect(&mut collector);
+		self.brush
+			.queue(&state.device, &state.queue, collector.data)
+			.unwrap();
+	}
+
+	pub fn render<'a>(&'a self, mut render_pass: RenderPass<'a>) -> RenderPass<'a> {
+		self.brush.draw(&mut render_pass);
+		render_pass
+	}
+}
+
+pub trait UICollect {
+	fn collect<'a>(&'a self, collector: &mut UICollector<'a>);
+}
+
+pub struct UICollector<'a> {
+	data: Vec<&'a Section<'a>>,
+}
+
+impl<'a> UICollector<'a> {
+	pub fn add_element(&mut self, element: &'a UIElement) {
+		self.data.push(&element.section);
 	}
 }
 
 pub struct UIElement {
-	buffer: Buffer,
+	section: Section<'static>,
 }
 
 impl UIElement {
-	pub fn new<'a>(ui: &mut UI, text: &str) -> Self {
-		let mut buffer = Buffer::new(&mut ui.font_system, Metrics::new(30.0, 42.0));
-		buffer.set_size(&mut ui.font_system, 300.0, 300.0);
-		buffer.set_text(
-			&mut ui.font_system,
-			text,
-			Attrs::new().family(Family::Name("Inter-Bold")),
-			Shaping::Advanced,
-		);
-		Self { buffer }
+	pub fn new<'a>(text: &'static str, position: Vector<2, f32>) -> Self {
+		Self {
+			section: Section {
+				screen_position: (position[X], position[Y]),
+				text: vec![Text::new(text)
+					.with_scale(25.0)
+					.with_color([0.0, 0.0, 0.0, 1.0])],
+				..Default::default()
+			},
+		}
 	}
 
-	pub fn prepare(&self, ui: &mut UI, state: &impl Has<State>, config: &SurfaceConfiguration) {
-		let state = state.get();
-		ui.renderer
-			.prepare(
-				&state.device,
-				&state.queue,
-				&mut ui.font_system,
-				&mut ui.atlas,
-				Resolution {
-					width: config.width,
-					height: config.height,
-				},
-				[TextArea {
-					buffer: &self.buffer,
-					left: 500.0,
-					top: 100.0,
-					scale: 1.0,
-					bounds: TextBounds::default(),
-					default_color: Color::rgb(0, 0, 0),
-				}],
-				&mut ui.cashe,
-			)
-			.unwrap();
+	pub fn set_position(&mut self, position: Vector<2, f32>) {
+		self.section.screen_position = (position[X], position[Y]);
 	}
 }

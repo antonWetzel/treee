@@ -5,12 +5,14 @@ use crate::{camera, lod};
 use common::IndexData;
 use common::IndexNode;
 use math::Vector;
-use render::Has;
 
 pub struct Tree {
 	pub root: Node,
 	pub camera: camera::Camera,
 	pub loaded_manager: LoadedManager,
+
+	pub test_0: render::UIElement,
+	pub test_1: render::UIElement,
 }
 
 pub struct Node {
@@ -147,5 +149,12 @@ impl render::Renderable<State> for Tree {
 			&self.loaded_manager,
 		);
 		point_cloud_pass.stop()
+	}
+}
+
+impl render::UICollect for Tree {
+	fn collect<'a>(&'a self, collector: &mut render::UICollector<'a>) {
+		collector.add_element(&self.test_0);
+		collector.add_element(&self.test_1);
 	}
 }
