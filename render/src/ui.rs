@@ -49,33 +49,29 @@ pub trait UICollect {
 }
 
 pub struct UICollector<'a> {
-	data: Vec<&'a Section<'a>>,
+	data: Vec<Section<'a>>,
 }
 
 impl<'a> UICollector<'a> {
 	pub fn add_element(&mut self, element: &'a UIElement) {
-		self.data.push(&element.section);
+		self.data.push(Section {
+			screen_position: (element.position[X], element.position[Y]),
+			text: vec![Text::new(element.text.as_str())
+				.with_scale(element.font_size)
+				.with_color([0.0, 0.0, 0.0, 1.0])],
+			..Default::default()
+		});
 	}
 }
 
 pub struct UIElement {
-	section: Section<'static>,
+	pub position: Vector<2, f32>,
+	pub text: String,
+	pub font_size: f32,
 }
 
 impl UIElement {
-	pub fn new<'a>(text: &'static str, position: Vector<2, f32>) -> Self {
-		Self {
-			section: Section {
-				screen_position: (position[X], position[Y]),
-				text: vec![Text::new(text)
-					.with_scale(25.0)
-					.with_color([0.0, 0.0, 0.0, 1.0])],
-				..Default::default()
-			},
-		}
-	}
-
-	pub fn set_position(&mut self, position: Vector<2, f32>) {
-		self.section.screen_position = (position[X], position[Y]);
+	pub fn new<'a>(text: impl Into<String>, position: Vector<2, f32>, font_size: f32) -> Self {
+		Self { text: text.into(), position, font_size }
 	}
 }

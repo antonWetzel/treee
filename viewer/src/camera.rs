@@ -18,10 +18,10 @@ pub struct Camera {
 }
 
 impl Camera {
-	pub fn new(mut position: Vector<3, f32>, state: &State) -> Self {
+	pub fn new(state: &State) -> Self {
 		let camera = render::Camera3D::new(1.0, 45.0, 0.1, 10_000.0);
-		let controller = Controller::Orbital { offset: 10.0 };
-		position[Z] += 10.0;
+		let controller = Controller::Orbital { offset: 100.0 };
+		let position = [0.0, 0.0, 100.0].into();
 		let transform = Transform::translation(position);
 
 		Self {

@@ -199,6 +199,10 @@ impl<const N: usize, T> Vector<N, T> {
 		let scale = T::IDENTITY / self.length();
 		*self * scale
 	}
+
+	pub fn map<U: Zero>(self, f: impl Fn(T) -> U) -> Vector<N, U> {
+		Vector(self.0.map(f))
+	}
 }
 
 impl<const N: usize, T> From<[T; N]> for Vector<N, T> {

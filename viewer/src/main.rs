@@ -1,4 +1,5 @@
 mod camera;
+mod interface;
 mod loaded_manager;
 mod lod;
 mod state;
@@ -6,6 +7,7 @@ mod tree;
 
 use common::Project;
 
+use interface::Interface;
 use loaded_manager::LoadedManager;
 use math::Vector;
 use math::X;
@@ -69,6 +71,7 @@ struct Game {
 	time: Time,
 
 	ui: render::UI,
+	interface: Interface,
 }
 
 impl render::Game for Game {
@@ -79,7 +82,7 @@ impl render::Game for Game {
 			&mut self.tree.loaded_manager,
 		);
 
-		self.ui.queue(self.state, &self.tree);
+		self.ui.queue(self.state, &self.interface);
 
 		self.window
 			.render(self.state, &self.pipeline, &self.tree.camera.gpu, self);
@@ -125,7 +128,7 @@ impl render::Game for Game {
 		}
 		if let Some(fps) = self.fps_counter.update(delta.as_secs_f64()) {
 			let workload = self.tree.loaded_manager.workload();
-			println!("FPS: {} | Chunks queued: {}", fps, workload);
+			self.interface.update_statisitics(fps, workload);
 		}
 
 		self.check_reload();
@@ -221,12 +224,9 @@ impl Game {
 		let project = Project::from_file(&project_path);
 
 		let tree = Tree {
-			camera: camera::Camera::new(project.statistics.center, state),
+			camera: camera::Camera::new(state),
 			root: Node::new(&project.root),
 			loaded_manager: LoadedManager::new(state, path.clone()),
-
-			test_0: render::UIElement::new("hi", [100.0, 100.0].into()),
-			test_1: render::UIElement::new("bye", [300.0, 300.0].into()),
 		};
 		let window = render::Window::new(state, &runner.event_loop, "test");
 
@@ -247,6 +247,7 @@ impl Game {
 			time: Time::new(),
 
 			ui,
+			interface: Interface::new(),
 		}
 	}
 

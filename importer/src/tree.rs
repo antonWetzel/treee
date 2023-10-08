@@ -11,7 +11,7 @@ use crate::data_point::DataPoint;
 use crate::progress::Progress;
 use crate::Writer;
 
-pub const MAX_LEAF_SIZE: usize = 1 << 13;
+pub const MAX_LEAF_SIZE: usize = 1 << 15;
 pub const MAX_NEIGHBORS: usize = 32 - 1;
 pub const MAX_NEIGHBOR_DISTANCE_SCALE: f32 = 32.0;
 
@@ -283,7 +283,6 @@ impl FlatTree {
 			statistics: Statistics {
 				density,
 				max_neighbor_distance: density * MAX_NEIGHBOR_DISTANCE_SCALE,
-				center: self.get_center(),
 			},
 			level: level as u32,
 			root,
@@ -311,24 +310,6 @@ impl FlatTree {
 			}
 		}
 		density
-	}
-
-	fn get_center(&self) -> Vector<3, f32> {
-		let mut total_size = 0;
-		let mut center = Vector::default();
-		for node in &self.nodes {
-			match &node.data {
-				FlatData::Branch { .. } => {},
-				&FlatData::Leaf { size } => {
-					let new_size = total_size + size;
-					let weight = size as f32 / new_size as f32;
-					center = center * (1.0 - weight)
-						+ (node.corner + Vector::new([node.size, node.size, node.size]) * 0.5) * weight;
-					total_size = new_size;
-				},
-			}
-		}
-		center
 	}
 
 	pub fn calculate(self, writer: &Writer, project: &Project) {

@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 pub struct Statistics {
 	pub density: f32,
 	pub max_neighbor_distance: f32,
-	pub center: Vector<3, f32>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

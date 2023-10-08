@@ -54,6 +54,7 @@ impl<'a> std::ops::DerefMut for PointCloudPass<'a> {
 	}
 }
 
+#[derive(Debug)]
 pub struct PointCloud {
 	pub buffer: wgpu::Buffer,
 	pub instances: u32,
