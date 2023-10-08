@@ -30,7 +30,13 @@ impl Keyboard {
 	}
 
 	pub fn pressed(&self, key: KeyCode) -> bool {
-		return self.pressed.contains(&key);
+		self.pressed.contains(&key)
+	}
+}
+
+impl Default for Keyboard {
+	fn default() -> Self {
+		Self::new()
 	}
 }
 

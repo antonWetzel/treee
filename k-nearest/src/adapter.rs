@@ -7,9 +7,10 @@ where
 	fn get(point: &Point, dimension: Dimension) -> Value;
 	fn get_all(point: &Point) -> [Value; N] {
 		let mut values = [Value::default(); N];
-		for d in 0..N {
-			values[d] = Self::get(point, Dimension(d));
-		}
+		values
+			.iter_mut()
+			.enumerate()
+			.for_each(|(d, value)| *value = Self::get(point, Dimension(d)));
 		values
 	}
 }

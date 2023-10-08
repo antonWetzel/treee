@@ -1,5 +1,8 @@
 use common::Project;
-use std::io::{Read, Seek, Write};
+use std::{
+	io::{Read, Seek, Write},
+	mem::MaybeUninit,
+};
 
 pub struct Writer {
 	path: String,
@@ -14,9 +17,9 @@ impl Writer {
 		let path_string = path.into();
 		let path = std::path::Path::new(&path_string);
 		if path.is_dir() {
-			std::fs::remove_dir_all(&path).unwrap();
+			std::fs::remove_dir_all(path).unwrap();
 		}
-		std::fs::create_dir_all(&path).unwrap();
+		std::fs::create_dir_all(path).unwrap();
 		std::fs::create_dir_all(format!("{}/data", path_string)).unwrap();
 
 		Self { path: path_string, index: 1 }
@@ -35,7 +38,7 @@ impl Writer {
 		let view = unsafe {
 			std::slice::from_raw_parts(
 				points as *const _ as *const u8,
-				std::mem::size_of::<render::Point>() * points.len(),
+				std::mem::size_of_val(points),
 			)
 		};
 		let path = format!("{}/data/{}.data", self.path, index);
@@ -65,15 +68,16 @@ impl Writer {
 		let path = format!("{}/data/{}.data", self.path, index);
 		let mut file = std::fs::File::open(path).unwrap();
 		file.seek(std::io::SeekFrom::Start(8)).unwrap();
-		let mut data = Vec::with_capacity(size);
 		unsafe {
+			let mut data = Vec::<MaybeUninit<render::Point>>::new();
+			data.reserve_exact(size);
 			data.set_len(size);
 			let view = std::slice::from_raw_parts_mut(
 				data.as_mut_ptr() as *mut u8,
 				std::mem::size_of::<render::Point>() * size,
 			);
 			file.read_exact(view).unwrap();
-		};
-		data
+			std::mem::transmute(data)
+		}
 	}
 }

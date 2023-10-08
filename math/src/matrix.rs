@@ -13,11 +13,11 @@ where
 	T: Zero,
 {
 	fn default() -> Self {
-		let mut data: [Vector<B, T>; A] = unsafe { MaybeUninit::uninit().assume_init() };
+		let mut data: [MaybeUninit<Vector<B, T>>; A] = unsafe { MaybeUninit::uninit().assume_init() };
 		for value in data.iter_mut() {
-			*value = <Vector<B, T>>::default();
+			value.write(<Vector<B, T>>::default());
 		}
-		Self(data)
+		unsafe { (*(&data as *const _ as *const MaybeUninit<_>)).assume_init_read() }
 	}
 }
 

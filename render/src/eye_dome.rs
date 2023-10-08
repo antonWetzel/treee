@@ -10,28 +10,19 @@ struct Vertex {
 }
 
 impl Vertex {
+	const ATTRIBUTES: &[wgpu::VertexAttribute] = &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2];
+
 	fn desc() -> wgpu::VertexBufferLayout<'static> {
 		use std::mem;
 		wgpu::VertexBufferLayout {
 			array_stride: mem::size_of::<Vertex>() as wgpu::BufferAddress,
 			step_mode: wgpu::VertexStepMode::Vertex,
-			attributes: &[
-				wgpu::VertexAttribute {
-					offset: 0,
-					shader_location: 0,
-					format: wgpu::VertexFormat::Float32x2,
-				},
-				wgpu::VertexAttribute {
-					offset: mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
-					shader_location: 1,
-					format: wgpu::VertexFormat::Float32x2,
-				},
-			],
+			attributes: Self::ATTRIBUTES,
 		}
 	}
 }
 
-const DEPTH_VERTICES: &[Vertex] = &[
+const FULL_SCREEN_VERTICES: &[Vertex] = &[
 	Vertex {
 		position: [-1.0, -1.0],
 		tex_coords: [0.0, 1.0],
@@ -109,7 +100,7 @@ impl EyeDome {
 			.device
 			.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 				label: Some("eye dome vertex buffer"),
-				contents: bytemuck::cast_slice(DEPTH_VERTICES),
+				contents: bytemuck::cast_slice(FULL_SCREEN_VERTICES),
 				usage: wgpu::BufferUsages::VERTEX,
 			});
 
@@ -199,7 +190,7 @@ impl EyeDome {
 		let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
 			label: Some("eye dome"),
 			color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-				view: &view,
+				view,
 				resolve_target: None,
 				ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: true },
 			})],
@@ -208,6 +199,6 @@ impl EyeDome {
 		render_pass.set_pipeline(&self.render_pipeline);
 		render_pass.set_bind_group(0, &self.bind_group, &[]);
 		render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-		render_pass.draw(0..3, 0..1);
+		render_pass.draw(0..(FULL_SCREEN_VERTICES.len() as u32), 0..1);
 	}
 }

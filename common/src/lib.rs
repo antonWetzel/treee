@@ -90,10 +90,7 @@ fn flatten(node: &IndexNode) -> Vec<FlatNode> {
 			IndexData::Branch(children) => {
 				let mut indices = [None; 8];
 				for (i, child) in children.iter().enumerate() {
-					indices[i] = match child {
-						Some(node) => Some(subflatten(node, res)),
-						None => None,
-					}
+					indices[i] = child.as_ref().map(|node| subflatten(node, res))
 				}
 				FlatData::Branch(indices)
 			},
@@ -102,7 +99,7 @@ fn flatten(node: &IndexNode) -> Vec<FlatNode> {
 
 		let index = res.len();
 		res.push(FlatNode {
-			data: data,
+			data,
 			position: node.position,
 			size: node.size,
 			index: node.index as usize,

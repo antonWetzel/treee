@@ -13,7 +13,7 @@ use tree::Tree;
 
 use crate::progress::Progress;
 
-const GRADIENT: [Vector<3, f32>; 3] = [
+const _GRADIENT: [Vector<3, f32>; 3] = [
 	Vector::new([0.2, 1.0, 1.0]),
 	Vector::new([1.0, 1.0, 0.2]),
 	Vector::new([1.0, 0.2, 0.2]),

@@ -7,20 +7,21 @@ use super::*;
 pub type WindowId = winit::window::WindowId;
 
 pub struct Window {
-	pub(crate) window: winit::window::Window,
-	pub(crate) config: wgpu::SurfaceConfiguration,
-	pub(crate) surface: wgpu::Surface,
-	pub(crate) depth_texture: DepthTexture,
+	window: winit::window::Window,
+	config: wgpu::SurfaceConfiguration,
+	surface: wgpu::Surface,
+	depth_texture: DepthTexture,
 	middle_texture: wgpu::Texture,
 	eye_dome: EyeDome,
 }
 
 impl Window {
 	pub fn new<T: Into<String>>(
-		state: &State,
+		state: &impl Has<State>,
 		window_target: &winit::event_loop::EventLoopWindowTarget<()>,
 		title: T,
 	) -> Self {
+		let state = state.get();
 		let window = winit::window::WindowBuilder::new()
 			.with_title(title)
 			.with_min_inner_size(winit::dpi::LogicalSize { width: 10, height: 10 })
@@ -29,12 +30,11 @@ impl Window {
 		let size = window.inner_size();
 		let surface = unsafe { state.instance.create_surface(&window) }.unwrap();
 		let surface_caps = surface.get_capabilities(&state.adapter);
-		let surface_format = surface_caps
+		let surface_format = *surface_caps
 			.formats
 			.iter()
-			.copied()
 			.find(|f| f.describe().srgb)
-			.unwrap_or(surface_caps.formats[0]);
+			.unwrap_or(&surface_caps.formats[0]);
 		let config = wgpu::SurfaceConfiguration {
 			usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
 			format: surface_format,
@@ -64,14 +64,14 @@ impl Window {
 		let depth_texture = DepthTexture::new(&state.device, &config, "depth");
 		let eye_dome = EyeDome::new(state, &config, &depth_texture, &middle_texture);
 
-		return Self {
+		Self {
 			window,
 			surface,
 			depth_texture,
 			config,
 			eye_dome,
 			middle_texture,
-		};
+		}
 	}
 
 	pub fn get_aspect(&self) -> f32 {
@@ -90,13 +90,14 @@ impl Window {
 	}
 
 	pub fn id(&self) -> WindowId {
-		return self.window.id();
+		self.window.id()
 	}
 	pub fn request_redraw(&self) {
 		self.window.request_redraw();
 	}
 
-	pub fn resized(&mut self, state: &State) {
+	pub fn resized(&mut self, state: &impl Has<State>) {
+		let state = state.get();
 		let size = self.size();
 		self.config.width = size.width;
 		self.config.height = size.height;
@@ -120,16 +121,19 @@ impl Window {
 			.update(state, &self.depth_texture, &self.middle_texture);
 	}
 
-	pub fn render<T>(&self, state: &State, pipeline: &Pipeline3D, cam: &gpu::Camera3D, renderable: &T)
-	where
-		T: Renderable,
-	{
-		let output = self.surface.get_current_texture().unwrap();
+	pub fn render<S: Has<State>>(
+		&self,
+		state: &'static S,
+		pipeline: &Pipeline3D,
+		cam: &Camera3DGPU,
+		renderable: &impl Renderable<S>,
+	) {
 		let view = self
 			.middle_texture
 			.create_view(&wgpu::TextureViewDescriptor::default());
 
 		let mut encoder = state
+			.get()
 			.device
 			.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("Render Encoder") });
 		{
@@ -156,11 +160,12 @@ impl Window {
 			pipeline.render(&mut render_pass, cam, renderable, state);
 		}
 
+		let output = self.surface.get_current_texture().unwrap();
 		let view = output
 			.texture
 			.create_view(&wgpu::TextureViewDescriptor::default());
 		self.eye_dome.render(&view, &mut encoder);
-		state.queue.submit(Some(encoder.finish()));
+		state.get().queue.submit(Some(encoder.finish()));
 		output.present();
 	}
 }

@@ -2,15 +2,15 @@ use math::Angle;
 use math::Transform;
 use math::Vector;
 use math::{X, Y, Z};
-use render::gpu;
 
 use crate::lod;
+use crate::State;
 
 const BASE_MOVE_SPEED: f32 = 0.1;
 const BASE_ROTATE_SPEED: f32 = 0.002;
 
 pub struct Camera {
-	pub gpu: gpu::Camera3D,
+	pub gpu: render::Camera3DGPU,
 	pub cam: render::Camera3D,
 	pub transform: Transform<3, f32>,
 	controller: Controller,
@@ -18,34 +18,34 @@ pub struct Camera {
 }
 
 impl Camera {
-	pub fn new(mut position: Vector<3, f32>, state: &render::State) -> Self {
+	pub fn new(mut position: Vector<3, f32>, state: &State) -> Self {
 		let camera = render::Camera3D::new(1.0, 45.0, 0.1, 10_000.0);
 		let controller = Controller::Orbital { offset: 10.0 };
 		position[Z] += 10.0;
 		let transform = Transform::translation(position);
 
 		Self {
-			gpu: gpu::Camera3D::new(state, &camera, &transform),
-			transform: transform,
+			gpu: render::Camera3DGPU::new(state, &camera, &transform),
+			transform,
 			cam: camera,
 			controller,
 			lod: lod::Mode::Normal { threshold: 1.0 },
 		}
 	}
 
-	pub fn movement(&mut self, direction: Vector<2, f32>, state: &render::State) {
+	pub fn movement(&mut self, direction: Vector<2, f32>, state: &State) {
 		self.controller.movement(direction, &mut self.transform);
-		self.gpu = gpu::Camera3D::new(state, &self.cam, &self.transform);
+		self.gpu = render::Camera3DGPU::new(state, &self.cam, &self.transform);
 	}
 
-	pub fn rotate(&mut self, delta: Vector<2, f64>, state: &render::State) {
+	pub fn rotate(&mut self, delta: Vector<2, f64>, state: &State) {
 		self.controller.rotate(delta, &mut self.transform);
-		self.gpu = gpu::Camera3D::new(state, &self.cam, &self.transform);
+		self.gpu = render::Camera3DGPU::new(state, &self.cam, &self.transform);
 	}
 
-	pub fn scroll(&mut self, value: f32, state: &render::State) {
+	pub fn scroll(&mut self, value: f32, state: &State) {
 		self.controller.scroll(value, &mut self.transform);
-		self.gpu = gpu::Camera3D::new(state, &self.cam, &self.transform);
+		self.gpu = render::Camera3DGPU::new(state, &self.cam, &self.transform);
 	}
 
 	pub fn position(&self) -> Vector<3, f32> {
@@ -123,8 +123,8 @@ enum Controller {
 
 impl Controller {
 	pub fn movement(&mut self, direction: Vector<2, f32>, transform: &mut Transform<3, f32>) {
-		match self {
-			&mut Controller::FirstPerson { sensitivity } => {
+		match *self {
+			Controller::FirstPerson { sensitivity } => {
 				let direction = [
 					direction[X] * sensitivity * BASE_MOVE_SPEED,
 					0.0,
@@ -133,7 +133,7 @@ impl Controller {
 				.into();
 				*transform *= Transform::translation(direction);
 			},
-			&mut Controller::Orbital { offset } => {
+			Controller::Orbital { offset } => {
 				transform.position += (transform.basis[X] * direction[X]
 					+ transform.basis[X].cross([0.0, 1.0, 0.0].into()) * direction[Y])
 					* offset * BASE_MOVE_SPEED;
@@ -142,8 +142,8 @@ impl Controller {
 	}
 
 	pub fn rotate(&mut self, delta: Vector<2, f64>, transform: &mut Transform<3, f32>) {
-		match self {
-			&mut Controller::FirstPerson { .. } => {
+		match *self {
+			Controller::FirstPerson { .. } => {
 				transform.rotate_local_before(
 					[0.0, 1.0, 0.0].into(),
 					Angle::radians(delta[X] as f32) * -BASE_ROTATE_SPEED,
@@ -153,7 +153,7 @@ impl Controller {
 					Angle::radians(delta[Y] as f32) * -BASE_ROTATE_SPEED,
 				);
 			},
-			&mut Controller::Orbital { offset } => {
+			Controller::Orbital { offset } => {
 				transform.position += transform.basis[Z] * -offset;
 				transform.rotate_local_before(
 					[0.0, 1.0, 0.0].into(),

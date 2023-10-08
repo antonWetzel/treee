@@ -16,7 +16,7 @@ pub type MouseButtonState = winit::event::ElementState;
 
 impl From<winit::event::MouseButton> for MouseButton {
 	fn from(value: winit::event::MouseButton) -> Self {
-		return match value {
+		match value {
 			winit::event::MouseButton::Left => MouseButton::Left,
 			winit::event::MouseButton::Right => MouseButton::Right,
 			winit::event::MouseButton::Middle => MouseButton::Middle,
@@ -28,7 +28,7 @@ impl From<winit::event::MouseButton> for MouseButton {
 					MouseButton::Unknown
 				},
 			},
-		};
+		}
 	}
 }
 
@@ -59,9 +59,15 @@ impl Mouse {
 	}
 
 	pub fn pressed(&self, button: MouseButton) -> bool {
-		return self.pressed.contains(&button);
+		self.pressed.contains(&button)
 	}
 	pub fn position(&self) -> Vector<2, f64> {
-		return self.position;
+		self.position
+	}
+}
+
+impl Default for Mouse {
+	fn default() -> Self {
+		Self::new()
 	}
 }

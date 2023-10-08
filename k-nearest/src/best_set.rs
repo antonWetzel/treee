@@ -60,6 +60,6 @@ where
 			self.values.swap(0, end);
 			self.fix_down(0, end);
 		}
-		return size;
+		size
 	}
 }

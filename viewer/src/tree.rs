@@ -1,10 +1,11 @@
 use crate::loaded_manager::LoadedManager;
+use crate::state::State;
 use crate::{camera, lod};
 
 use common::IndexData;
 use common::IndexNode;
 use math::Vector;
-pub use render::gpu;
+use render::Has;
 
 pub struct Tree {
 	pub root: Node,
@@ -25,13 +26,13 @@ pub enum Data {
 }
 
 impl Node {
-	pub fn new(node: &IndexNode, state: &render::State, path: &String) -> Self {
+	pub fn new(node: &IndexNode) -> Self {
 		let data = match &node.data {
 			IndexData::Branch(index_children) => {
 				let mut children: [_; 8] = Default::default();
 				for (i, child) in index_children.iter().enumerate() {
 					if let Some(child) = child {
-						children[i] = Some(Node::new(child, state, path));
+						children[i] = Some(Node::new(child));
 					}
 				}
 				Data::Branch { children: Box::new(children) }
@@ -40,20 +41,19 @@ impl Node {
 		};
 
 		Node {
-			corner: node.position.into(),
+			corner: node.position,
 			size: node.size,
 			index: node.index as usize,
 			data,
 		}
 	}
 
-	pub fn render<'a, 'b: 'a>(
+	pub fn render<'a>(
 		&'a self,
-		render_pass: &mut render::RenderPass<'a>,
-		view_checker: &mut lod::Checker,
+		render_pass: &mut render::PointCloudPass<'a>,
+		view_checker: lod::Checker,
 		camera: &camera::Camera,
-		state: &render::State,
-		loaded_manager: &'b LoadedManager,
+		loaded_manager: &'a LoadedManager,
 	) {
 		if !camera.inside_frustrum(self.corner, self.size) {
 			return;
@@ -66,13 +66,10 @@ impl Node {
 				{
 					loaded_manager.render(self.index, render_pass);
 				} else {
-					view_checker.level_down();
-					for child in children.iter() {
-						if let Some(child) = child {
-							child.render(render_pass, view_checker, camera, state, loaded_manager);
-						}
+					let view_checker = view_checker.level_down();
+					for child in children.iter().flatten() {
+						child.render(render_pass, view_checker, camera, loaded_manager);
 					}
-					view_checker.level_up();
 				}
 			},
 			Data::Leaf() => loaded_manager.render(self.index, render_pass),
@@ -80,31 +77,23 @@ impl Node {
 	}
 
 	pub fn can_render_children(
-		children: &Box<[Option<Node>; 8]>,
+		children: &[Option<Node>; 8],
 		loaded_manager: &LoadedManager,
 		camera: &camera::Camera,
 	) -> bool {
 		let mut count = 0;
-		for child in children.iter() {
-			if let Some(child) = child {
-				if !camera.inside_frustrum(child.corner, child.size) {
-					continue;
-				}
-				if !loaded_manager.exist(child.index) {
-					count += 1;
-				}
+		for child in children.iter().flatten() {
+			if !camera.inside_frustrum(child.corner, child.size) {
+				continue;
+			}
+			if !loaded_manager.exist(child.index) {
+				count += 1;
 			}
 		}
-		count < 3
+		count < 1
 	}
 
-	pub fn update(
-		&mut self,
-		state: &render::State,
-		view_checker: &mut lod::Checker,
-		camera: &camera::Camera,
-		loaded_manager: &mut LoadedManager,
-	) {
+	pub fn update(&mut self, view_checker: lod::Checker, camera: &camera::Camera, loaded_manager: &mut LoadedManager) {
 		if !camera.inside_moved_frustrum(self.corner, self.size, -100.0) {
 			self.clear(loaded_manager);
 			return;
@@ -113,22 +102,17 @@ impl Node {
 			Data::Branch { children } => {
 				if view_checker.should_render(self.corner, self.size, camera) {
 					loaded_manager.request(self.index);
-					for child in children.iter_mut() {
-						if let Some(child) = child {
-							child.clear(loaded_manager);
-						}
+					for child in children.iter_mut().flatten() {
+						child.clear(loaded_manager);
 					}
 				} else {
 					if !loaded_manager.exist(self.index) {
 						loaded_manager.request(self.index);
 					}
-					view_checker.level_down();
-					for child in children.iter_mut() {
-						if let Some(child) = child {
-							child.update(state, view_checker, camera, loaded_manager);
-						}
+					let view_checker = view_checker.level_down();
+					for child in children.iter_mut().flatten() {
+						child.update(view_checker, camera, loaded_manager);
 					}
-					view_checker.level_up();
 				}
 			},
 			Data::Leaf() => {
@@ -144,10 +128,8 @@ impl Node {
 		loaded_manager.unload(self.index);
 		match &self.data {
 			Data::Branch { children } => {
-				for child in children.iter() {
-					if let Some(child) = child {
-						child.clear(loaded_manager);
-					}
+				for child in children.iter().flatten() {
+					child.clear(loaded_manager);
 				}
 			},
 			Data::Leaf() => {},
@@ -155,14 +137,13 @@ impl Node {
 	}
 }
 
-impl render::Renderable for Tree {
-	fn render<'a, 'b: 'a>(&'a self, render_pass: &mut render::RenderPass<'a>, state: &'b render::State) {
-		let mut checker = lod::Checker::new(&self.camera.lod);
+impl render::Renderable<State> for Tree {
+	fn render<'a>(&'a self, render_pass: &mut render::RenderPass<'a>, state: &'a State) {
+		let render_pass = <State as Has<render::PointCloudState>>::get(state).activate(render_pass);
 		self.root.render(
 			render_pass,
-			&mut checker,
+			lod::Checker::new(&self.camera.lod),
 			&self.camera,
-			state,
 			&self.loaded_manager,
 		);
 	}

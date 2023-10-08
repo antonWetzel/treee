@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::io::{BufWriter, Read, Seek, Write};
+use std::mem::MaybeUninit;
 
 use common::{IndexData, IndexNode, Project, Statistics};
 use math::Vector;
@@ -39,16 +40,17 @@ impl Leaf {
 	pub fn get_points(self) -> Vec<render::Point> {
 		let mut file = self.file.into_inner().unwrap();
 		file.seek(std::io::SeekFrom::Start(8)).unwrap();
-		let mut data = Vec::<render::Point>::with_capacity(self.size);
 		unsafe {
+			let mut data = Vec::<MaybeUninit<render::Point>>::new();
+			data.reserve_exact(self.size);
 			data.set_len(self.size);
 			let view = std::slice::from_raw_parts_mut(
 				data.as_mut_ptr() as *mut u8,
 				std::mem::size_of::<render::Point>() * self.size,
 			);
 			file.read_exact(view).unwrap();
-		};
-		data
+			std::mem::transmute(data)
+		}
 	}
 }
 
@@ -128,10 +130,7 @@ impl Node {
 					leaf.add_point(point);
 					return;
 				}
-				let leaf = match std::mem::replace(
-					&mut self.data,
-					Data::Branch { children: Box::new(Default::default()) },
-				) {
+				let leaf = match std::mem::replace(&mut self.data, Data::Branch { children: Box::default() }) {
 					Data::Leaf(leaf) => leaf,
 					_ => unreachable!(),
 				};
@@ -215,10 +214,7 @@ impl Node {
 			Data::Branch { children } => {
 				let mut indices = [None; 8];
 				for (i, child) in children.into_iter().enumerate() {
-					indices[i] = match child {
-						Some(node) => Some(node.flatten(nodes)),
-						None => None,
-					}
+					indices[i] = child.map(|node| node.flatten(nodes))
 				}
 				FlatData::Branch { children: indices }
 			},
@@ -229,7 +225,7 @@ impl Node {
 		nodes.push(FLatNode {
 			corner: self.corner,
 			size: self.size,
-			data: data,
+			data,
 			index: self.index,
 		});
 		index
@@ -242,7 +238,7 @@ pub struct Tree {
 
 impl Tree {
 	pub fn new(writer: &mut Writer, corner: Vector<3, f32>, size: f32) -> Self {
-		return Self { root: Node::new(corner, size, writer) };
+		Self { root: Node::new(corner, size, writer) }
 	}
 
 	pub fn insert(&mut self, point: DataPoint, writer: &mut Writer) {
@@ -285,7 +281,7 @@ impl FlatTree {
 		let density = density.sqrt();
 		Project {
 			statistics: Statistics {
-				density: density,
+				density,
 				max_neighbor_distance: density * MAX_NEIGHBOR_DISTANCE_SCALE,
 				center: self.get_center(),
 			},
@@ -374,15 +370,14 @@ impl FLatNode {
 		writer: &Writer,
 		statistics: &Statistics,
 	) -> Vec<render::Point> {
-		let res = match &mut self.data {
+		match &mut self.data {
 			FlatData::Branch { children } => {
 				let mut points = Vec::with_capacity(8);
-				for child in children.into_iter().filter_map(|child| *child) {
+				for child in children.iter_mut().filter_map(|child| *child) {
 					let lod = loop {
 						let mut data = data.lock().unwrap();
-						match data.remove(&child) {
-							Some(v) => break v,
-							None => {},
+						if let Some(v) = data.remove(&child) {
+							break v;
 						}
 						drop(data);
 						std::thread::yield_now();
@@ -416,7 +411,6 @@ impl FLatNode {
 				writer.save(self.index, &points);
 				points
 			},
-		};
-		res
+		}
 	}
 }

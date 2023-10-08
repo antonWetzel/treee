@@ -4,7 +4,7 @@ fn edge_adjust_factor(direction: f32) -> f32 {
 	// approximate in the range [0, 1] the inverse function of sin(pi*x^2) / (pi*x^2)
 	const LINEAR_WEIGHT: f32 = 0.44876004;
 	const POW_8_WEIGHT: f32 = 0.23475774;
-	return 1.0 - LINEAR_WEIGHT * direction - POW_8_WEIGHT * direction.powi(8);
+	1.0 - LINEAR_WEIGHT * direction - POW_8_WEIGHT * direction.powi(8)
 }
 
 pub fn calculate(neighbors: &[(f32, usize)], points: &[render::Point]) -> f32 {

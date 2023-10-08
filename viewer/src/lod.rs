@@ -7,6 +7,7 @@ pub enum Mode {
 	Level { target: usize, max: usize },
 }
 
+#[derive(Clone, Copy)]
 pub enum Checker {
 	Normal { threshold: f32 },
 	Level { current: usize, target: usize },
@@ -46,29 +47,22 @@ impl Mode {
 
 impl Checker {
 	pub fn new(mode: &Mode) -> Self {
-		match mode {
-			&Mode::Normal { threshold } => Self::Normal { threshold },
-			&Mode::Level { target, .. } => Self::Level { current: 0, target },
+		match *mode {
+			Mode::Normal { threshold } => Self::Normal { threshold },
+			Mode::Level { target, .. } => Self::Level { current: 0, target },
 		}
 	}
-	pub fn level_down(&mut self) {
+	pub fn level_down(self) -> Self {
 		match self {
-			Self::Level { current, .. } => *current += 1,
-			_ => {},
-		}
-	}
-
-	pub fn level_up(&mut self) {
-		match self {
-			Self::Level { current, .. } => *current -= 1,
-			_ => {},
+			Self::Level { current, target } => Self::Level { current: current + 1, target },
+			_ => self,
 		}
 	}
 
-	pub fn should_render(&self, corner: Vector<3, f32>, size: f32, camera: &camera::Camera) -> bool {
+	pub fn should_render(self, corner: Vector<3, f32>, size: f32, camera: &camera::Camera) -> bool {
 		match self {
-			&Self::Level { current, target } => current >= target,
-			&Self::Normal { threshold } => {
+			Self::Level { current, target } => current >= target,
+			Self::Normal { threshold } => {
 				let rad = size * 0.5;
 				let pos = corner + Vector::new([rad, rad, rad]);
 				let dist = (camera.position() - pos).length() - (3.0 * rad * rad).sqrt();

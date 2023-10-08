@@ -18,11 +18,11 @@ where
 	T: Zero,
 {
 	fn default() -> Self {
-		let mut data: [T; N] = unsafe { MaybeUninit::uninit().assume_init() };
+		let mut data: [MaybeUninit<T>; N] = unsafe { MaybeUninit::uninit().assume_init() };
 		for value in data.iter_mut() {
-			*value = T::ZERO;
+			value.write(T::ZERO);
 		}
-		Self(data)
+		unsafe { (*(&data as *const _ as *const MaybeUninit<_>)).assume_init_read() }
 	}
 }
 

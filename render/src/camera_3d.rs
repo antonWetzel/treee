@@ -1,25 +1,34 @@
 use math::{Mat, Projection, Transform};
+use wgpu::util::DeviceExt;
 
-use super::*;
+use crate::{Has, RenderPass, State};
 
+#[derive(Clone, Copy)]
 pub struct Camera3D {
-	pub(crate) bind_group: wgpu::BindGroup,
+	pub aspect: f32,
+	pub fovy: f32,
+	pub near: f32,
+	pub far: f32,
 }
 
 impl Camera3D {
-	pub fn new_empty(state: &crate::State) -> Self {
-		return Self::create(state, Mat::default());
+	pub fn new(aspect: f32, fovy: f32, near: f32, far: f32) -> Self {
+		Self { aspect, fovy, near, far }
 	}
+}
 
-	pub fn new(state: &crate::State, camera: &crate::Camera3D, transform: &Transform<3, f32>) -> Self {
+pub struct Camera3DGPU {
+	bind_group: wgpu::BindGroup,
+}
+
+impl Camera3DGPU {
+	pub fn new(state: &impl Has<State>, camera: &crate::Camera3D, transform: &Transform<3, f32>) -> Self {
 		let view = transform.inverse().as_matrix();
 		let proj = Projection::create_perspective(camera.fovy, camera.aspect, camera.near, camera.far);
-		return Self::create(state, proj * view);
-	}
 
-	fn create(state: &crate::State, matrix: Mat<4, f32>) -> Self {
-		let uniform = Uniform { view_proj: matrix };
+		let uniform = Uniform { view_proj: proj * view };
 		let buffer = state
+			.get()
 			.device
 			.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 				label: Some("Camera Buffer"),
@@ -27,19 +36,23 @@ impl Camera3D {
 				usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
 			});
 
-		let bind_group = state.device.create_bind_group(&wgpu::BindGroupDescriptor {
-			layout: &Self::get_layout(state),
-			entries: &[wgpu::BindGroupEntry {
-				binding: 0,
-				resource: buffer.as_entire_binding(),
-			}],
-			label: Some("camera_bind_group"),
-		});
-		return Self { bind_group };
+		let bind_group = state
+			.get()
+			.device
+			.create_bind_group(&wgpu::BindGroupDescriptor {
+				layout: &Self::get_layout(state),
+				entries: &[wgpu::BindGroupEntry {
+					binding: 0,
+					resource: buffer.as_entire_binding(),
+				}],
+				label: Some("camera_bind_group"),
+			});
+		Self { bind_group }
 	}
 
-	pub fn get_layout(state: &crate::State) -> wgpu::BindGroupLayout {
+	pub fn get_layout(state: &impl Has<State>) -> wgpu::BindGroupLayout {
 		state
+			.get()
 			.device
 			.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
 				entries: &[wgpu::BindGroupLayoutEntry {
@@ -54,6 +67,10 @@ impl Camera3D {
 				}],
 				label: Some("camera_bind_group_layout"),
 			})
+	}
+
+	pub fn bind<'a>(&'a self, render_pass: &mut RenderPass<'a>, index: u32) {
+		render_pass.set_bind_group(index, &self.bind_group, &[]);
 	}
 }
 

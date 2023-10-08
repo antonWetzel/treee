@@ -1,17 +1,17 @@
 mod camera;
 mod loaded_manager;
 mod lod;
-mod point_cloud;
+mod state;
 mod tree;
 
 use common::Project;
-pub use render::gpu;
 
 use loaded_manager::LoadedManager;
 use math::Vector;
 use math::X;
 use math::Y;
 use pollster::FutureExt;
+use state::State;
 use tree::Node;
 use tree::Tree;
 
@@ -24,13 +24,16 @@ impl FpsCounter {
 	pub fn new() -> Self {
 		Self { count: 0, time: 0.0 }
 	}
-	pub fn update(&mut self, delta: f64) {
+	pub fn update(&mut self, delta: f64) -> Option<usize> {
 		self.count += 1;
 		self.time += delta;
 		if self.time >= 1.0 {
-			println!("fps: {}", self.count);
+			let fps = self.count;
 			self.count = 0;
 			self.time -= 1.0;
+			Some(fps)
+		} else {
+			None
 		}
 	}
 }
@@ -60,22 +63,21 @@ struct Game {
 	path: String,
 	project_time: std::time::SystemTime,
 
-	state: &'static render::State,
+	state: &'static State,
 	mouse: input::Mouse,
 	keyboard: input::Keyboard,
 	time: Time,
 }
+
 impl render::Game for Game {
 	fn render(&mut self, _window_id: render::WindowId) {
-		let mut checker = lod::Checker::new(&self.tree.camera.lod);
 		self.tree.root.update(
-			&self.state,
-			&mut checker,
+			lod::Checker::new(&self.tree.camera.lod),
 			&self.tree.camera,
 			&mut self.tree.loaded_manager,
 		);
 		self.window.render(
-			&self.state,
+			self.state,
 			&self.pipeline,
 			&self.tree.camera.gpu,
 			&self.tree,
@@ -83,19 +85,19 @@ impl render::Game for Game {
 	}
 
 	fn resize_window(&mut self, _window_id: render::WindowId, _size: Vector<2, u32>) -> render::ControlFlow {
-		self.window.resized(&self.state);
+		self.window.resized(self.state);
 		self.tree.camera.cam.aspect = self.window.get_aspect();
-		self.tree.camera.gpu = gpu::Camera3D::new(
-			&self.state,
+		self.tree.camera.gpu = render::Camera3DGPU::new(
+			self.state,
 			&self.tree.camera.cam,
 			&self.tree.camera.transform,
 		);
 		self.camera_changed();
-		return render::ControlFlow::Poll;
+		render::ControlFlow::Poll
 	}
 
 	fn close_window(&mut self, _window_id: render::WindowId) -> render::ControlFlow {
-		return render::ControlFlow::Exit;
+		render::ControlFlow::Exit
 	}
 
 	fn time(&mut self) -> render::ControlFlow {
@@ -116,10 +118,13 @@ impl render::Game for Game {
 		let l = direction.length();
 		if l > 0.0 {
 			direction *= 10.0 * delta.as_secs_f32() / l;
-			self.tree.camera.movement(direction, &self.state);
+			self.tree.camera.movement(direction, self.state);
 			self.camera_changed();
 		}
-		self.fps_counter.update(delta.as_secs_f64());
+		if let Some(fps) = self.fps_counter.update(delta.as_secs_f64()) {
+			let workload = self.tree.loaded_manager.workload();
+			println!("FPS: {} | Chunks queued: {}", fps, workload);
+		}
 
 		self.check_reload();
 
@@ -127,7 +132,7 @@ impl render::Game for Game {
 
 		self.tree.loaded_manager.update();
 
-		return render::ControlFlow::Poll;
+		render::ControlFlow::Poll
 	}
 
 	fn key_changed(
@@ -169,7 +174,7 @@ impl render::Game for Game {
 	}
 
 	fn mouse_wheel(&mut self, delta: f32) -> render::ControlFlow {
-		self.tree.camera.scroll(delta, &self.state);
+		self.tree.camera.scroll(delta, self.state);
 		self.camera_changed();
 		render::ControlFlow::Poll
 	}
@@ -181,16 +186,16 @@ impl render::Game for Game {
 		button_state: input::State,
 	) -> render::ControlFlow {
 		self.mouse.update(button, button_state);
-		return render::ControlFlow::Poll;
+		render::ControlFlow::Poll
 	}
 
 	fn mouse_moved(&mut self, _window_id: render::WindowId, position: Vector<2, f64>) -> render::ControlFlow {
 		let delta = self.mouse.delta(position);
 		if self.mouse.pressed(input::MouseButton::Left) {
-			self.tree.camera.rotate(delta, &self.state);
+			self.tree.camera.rotate(delta, self.state);
 			self.camera_changed();
 		}
-		return render::ControlFlow::Poll;
+		render::ControlFlow::Poll
 	}
 }
 
@@ -199,26 +204,26 @@ impl Game {
 		self.window.request_redraw();
 	}
 
-	fn new(state: &'static render::State, path: String, runner: &render::Runner) -> Self {
+	fn new(state: &'static State, path: String, runner: &render::Runner) -> Self {
 		let project_path = format!("{}/project.epc", path);
 		let project = Project::from_file(&project_path);
 
 		let tree = Tree {
-			camera: camera::Camera::new(project.statistics.center, &state),
-			root: Node::new(&project.root, &state, &path),
-			loaded_manager: LoadedManager::new(&state, path.clone()),
+			camera: camera::Camera::new(project.statistics.center, state),
+			root: Node::new(&project.root),
+			loaded_manager: LoadedManager::new(state, path.clone()),
 		};
 
 		Self {
-			window: render::Window::new(&state, &runner.event_loop, "test"),
+			window: render::Window::new(state, &runner.event_loop, "test"),
 			tree,
-			pipeline: render::Pipeline3D::new(&state),
+			pipeline: render::Pipeline3D::new(state),
 			project,
 			fps_counter: FpsCounter::new(),
-			path: path,
+			path,
 			project_time: std::fs::metadata(project_path).unwrap().modified().unwrap(),
 
-			state: &state,
+			state,
 			mouse: input::Mouse::new(),
 			keyboard: input::Keyboard::new(),
 			time: Time::new(),
@@ -243,9 +248,9 @@ impl Game {
 		}
 		self.project_time = project_time;
 		self.project = Project::from_file(project_path);
-		self.tree.root = Node::new(&self.project.root, &self.state, &self.path);
+		self.tree.root = Node::new(&self.project.root);
 
-		self.tree.loaded_manager = LoadedManager::new(&self.state, self.path.clone());
+		self.tree.loaded_manager = LoadedManager::new(self.state, self.path.clone());
 	}
 }
 
@@ -255,6 +260,7 @@ fn main() {
 	let path = args.pop().unwrap();
 
 	let (state, runner) = render::State::new().block_on();
+	let state = State::new(state);
 	let state = Box::leak(Box::new(state));
 
 	let mut game = Game::new(state, path, &runner);

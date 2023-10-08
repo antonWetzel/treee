@@ -1,14 +1,15 @@
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
+use std::mem::MaybeUninit;
 
-use crate::point_cloud::PointCloud;
-use render::gpu;
+use crate::State;
 
 pub struct LoadedManager {
-	available: HashMap<usize, PointCloud>,
+	available: HashMap<usize, render::PointCloud>,
 	requested: HashSet<usize>,
 	sender: std::sync::mpsc::Sender<Action>,
-	reciever: std::sync::mpsc::Receiver<(usize, PointCloud)>,
+	reciever: std::sync::mpsc::Receiver<Response>,
+	workload: usize,
 }
 
 enum Action {
@@ -16,8 +17,14 @@ enum Action {
 	Unload(usize),
 }
 
+struct Response {
+	index: usize,
+	data: render::PointCloud,
+	workload: usize,
+}
+
 impl LoadedManager {
-	pub fn new(state: &'static render::State, path: String) -> Self {
+	pub fn new(state: &'static State, path: String) -> Self {
 		let (index_tx, index_rx) = std::sync::mpsc::channel();
 		let (pc_tx, pc_rx) = std::sync::mpsc::channel();
 
@@ -31,26 +38,27 @@ impl LoadedManager {
 						Err(std::sync::mpsc::TryRecvError::Empty) => break,
 					};
 					match action {
-						Action::Load(v) => work.insert(v),
-						Action::Unload(v) => work.remove(&v),
+						Action::Load(v) => {
+							work.insert(v);
+						},
+						Action::Unload(v) => {
+							work.remove(&v);
+						},
 					};
 				}
 				let mut removed = None;
-				if work.len() > 0 {
-					println!("Chunks queued: {}", work.len());
-				}
 				for &index in work.iter() {
-					let path: String = format!("{}/data/{}.data", path, index);
+					let path = format!("{}/data/{}.data", path, index);
 					let pc = match load(path, state) {
 						Some(pc) => pc,
 						None => continue,
 					};
-					let _ = pc_tx.send((index, pc));
-					removed = Some(index);
+					removed = Some((index, pc));
 					break;
 				}
-				if let Some(removed) = removed {
-					work.remove(&removed);
+				if let Some((index, data)) = removed {
+					work.remove(&index);
+					let _ = pc_tx.send(Response { index, data, workload: work.len() });
 				}
 			}
 		});
@@ -60,6 +68,7 @@ impl LoadedManager {
 			requested: HashSet::new(),
 			sender: index_tx,
 			reciever: pc_rx,
+			workload: 0,
 		}
 	}
 
@@ -85,24 +94,29 @@ impl LoadedManager {
 		self.requested.contains(&index)
 	}
 
-	pub fn render<'a, 'b: 'a>(&'b self, index: usize, render_pass: &mut render::RenderPass<'a>) {
+	pub fn render<'a>(&'a self, index: usize, render_pass: &mut render::PointCloudPass<'a>) {
 		let pc = self.available.get(&index);
 		match pc {
 			None => {},
-			Some(pc) => pc.gpu.render(render_pass),
+			Some(pc) => pc.render(render_pass),
 		}
 	}
 
+	pub fn workload(&self) -> usize {
+		self.workload
+	}
+
 	pub fn update(&mut self) {
-		for (index, pc) in self.reciever.try_iter() {
-			if self.requested.contains(&index) {
-				self.available.insert(index, pc);
+		for response in self.reciever.try_iter() {
+			if self.requested.contains(&response.index) {
+				self.available.insert(response.index, response.data);
 			}
+			self.workload = response.workload;
 		}
 	}
 }
 
-fn load<T: Into<String>>(path: T, state: &render::State) -> Option<PointCloud> {
+fn load<T: Into<String>>(path: T, state: &State) -> Option<render::PointCloud> {
 	let mut file = std::fs::File::open(path.into()).ok()?;
 	let file_length = file.metadata().ok()?.len() as usize;
 	if file_length < 8 {
@@ -118,15 +132,16 @@ fn load<T: Into<String>>(path: T, state: &render::State) -> Option<PointCloud> {
 	if file_length != size * std::mem::size_of::<render::Point>() + 8 {
 		return None;
 	}
-	let mut data = Vec::with_capacity(size);
-	unsafe {
+	let data = unsafe {
+		let mut data = Vec::<MaybeUninit<render::Point>>::new();
+		data.reserve_exact(size);
 		data.set_len(size);
 		let view = std::slice::from_raw_parts_mut(
 			data.as_mut_ptr() as *mut u8,
 			std::mem::size_of::<render::Point>() * size,
 		);
 		file.read_exact(view).ok()?;
+		std::mem::transmute(data)
 	};
-	let gpu = gpu::PointCloud::new(state, &data);
-	Some(PointCloud { gpu })
+	Some(render::PointCloud::new(state, &data))
 }

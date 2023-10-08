@@ -1,4 +1,4 @@
-use math::Dimension;
+use std::cmp::Ordering;
 
 use crate::{best_set::BestSet, Adapter, Metric};
 
@@ -23,11 +23,7 @@ where
 		let mut tree = vec![None; next_power_2];
 		let mut positions = Vec::with_capacity(data.len());
 		for (i, p) in data.iter().enumerate() {
-			let mut position = [Value::default(); N];
-			for d in 0..N {
-				position[d] = Ada::get(p, Dimension(d));
-			}
-			positions.push((position, i));
+			positions.push((Ada::get_all(p), i));
 		}
 		Self::create_tree(0, 0, &mut tree, 0, positions.len() - 1, &mut positions);
 		KDTree { tree, phantom: std::marker::PhantomData }
@@ -69,12 +65,10 @@ where
 				}
 			}
 			positions.swap(store, upper);
-			if target == store {
-				break;
-			} else if target < store {
-				upper = store - 1;
-			} else {
-				lower = store + 1;
+			match target.cmp(&store) {
+				Ordering::Equal => break,
+				Ordering::Less => upper = store - 1,
+				Ordering::Greater => lower = store + 1,
 			}
 		}
 	}
@@ -102,7 +96,7 @@ where
 			Some(v) => v,
 			None => return,
 		};
-		let diff = Met::distance(&point, &position);
+		let diff = Met::distance(&point, position);
 		if diff < best_set.distance() {
 			best_set.insert((diff, point_index));
 		}
@@ -113,7 +107,7 @@ where
 		} else {
 			self.search_nearest(index * 2 + 2, position, next_dim, best_set);
 		}
-		if Met::distance_plane(&position, point[dim], dim) < best_set.distance() {
+		if Met::distance_plane(position, point[dim], dim) < best_set.distance() {
 			if is_left {
 				self.search_nearest(index * 2 + 2, position, next_dim, best_set);
 			} else {

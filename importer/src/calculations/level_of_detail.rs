@@ -51,7 +51,7 @@ pub fn calculate(children: Vec<Vec<render::Point>>, corner: Vector<3, f32>, size
 			size: POINT_SCALE * cell.total_area.sqrt(),
 		});
 	}
-	return res;
+	res
 }
 
 fn approximate_theta(dist: f32) -> f32 {
@@ -61,7 +61,7 @@ fn approximate_theta(dist: f32) -> f32 {
 	//   theta = acos(1 - dist*dist/2)
 	const LINEAR_SCALE: f32 = 0.95;
 	const QUADRATIC_SCALE: f32 = 0.1;
-	return LINEAR_SCALE * dist + QUADRATIC_SCALE * dist * dist;
+	LINEAR_SCALE * dist + QUADRATIC_SCALE * dist * dist
 }
 
 fn fast_spherical_linear_interpolation(start: Vector<3, f32>, end: Vector<3, f32>, percent: f32) -> Vector<3, f32> {

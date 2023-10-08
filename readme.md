@@ -13,5 +13,6 @@
 - viewer
 	- fix crash on minimize
 	- render parameters
-	- eye dome sensitivity and strengh
-	- color by height
+		- eye dome sensitivity and strengh
+		- color by height
+	- load priority
