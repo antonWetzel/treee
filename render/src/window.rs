@@ -30,11 +30,12 @@ impl Window {
 		let size = window.inner_size();
 		let surface = unsafe { state.instance.create_surface(&window) }.unwrap();
 		let surface_caps = surface.get_capabilities(&state.adapter);
-		let surface_format = *surface_caps
+		let surface_format = surface_caps
 			.formats
 			.iter()
-			.find(|f| f.describe().srgb)
-			.unwrap_or(&surface_caps.formats[0]);
+			.find(|f| f.is_srgb())
+			.unwrap_or(&surface_caps.formats[0])
+			.clone();
 		let config = wgpu::SurfaceConfiguration {
 			usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
 			format: surface_format,
@@ -94,6 +95,10 @@ impl Window {
 	}
 	pub fn request_redraw(&self) {
 		self.window.request_redraw();
+	}
+
+	pub fn config(&self) -> &wgpu::SurfaceConfiguration {
+		&self.config
 	}
 
 	pub fn resized(&mut self, state: &impl Has<State>) {
@@ -156,15 +161,28 @@ impl Window {
 					stencil_ops: None,
 				}),
 			};
-			let mut render_pass = encoder.begin_render_pass(&desc);
-			pipeline.render(&mut render_pass, cam, renderable, state);
+			let render_pass = encoder.begin_render_pass(&desc);
+			let _render_pass = pipeline.render(render_pass, cam, renderable, state);
 		}
 
 		let output = self.surface.get_current_texture().unwrap();
-		let view = output
-			.texture
-			.create_view(&wgpu::TextureViewDescriptor::default());
-		self.eye_dome.render(&view, &mut encoder);
+
+		{
+			let view = output
+				.texture
+				.create_view(&wgpu::TextureViewDescriptor::default());
+			let render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+				label: Some("eye dome"),
+				color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+					view: &view,
+					resolve_target: None,
+					ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: true },
+				})],
+				depth_stencil_attachment: None,
+			});
+			let render_pass = self.eye_dome.render(render_pass);
+			let _render_pass = renderable.ui(render_pass, state);
+		}
 		state.get().queue.submit(Some(encoder.finish()));
 		output.present();
 	}

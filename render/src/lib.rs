@@ -6,6 +6,7 @@ mod pipeline;
 mod point;
 mod point_cloud;
 mod state;
+mod ui;
 mod window;
 
 pub use camera_3d::*;
@@ -14,12 +15,18 @@ pub use pipeline::*;
 pub use point::*;
 pub use point_cloud::*;
 pub use state::*;
+pub use ui::*;
 pub use window::*;
 
 use depth_texture::*;
 
 pub trait Renderable<State> {
-	fn render<'a>(&'a self, render_pass: &mut RenderPass<'a>, state: &'a State);
+	fn render<'a>(&'a self, render_pass: RenderPass<'a>, state: &'a State) -> RenderPass<'a>;
+
+	#[allow(unused_variables)]
+	fn ui<'a>(&'a self, render_pass: RenderPass<'a>, state: &'a State) -> RenderPass<'a> {
+		render_pass
+	}
 }
 
 pub type Device = wgpu::Device;

@@ -94,11 +94,11 @@ impl LoadedManager {
 		self.requested.contains(&index)
 	}
 
-	pub fn render<'a>(&'a self, index: usize, render_pass: &mut render::PointCloudPass<'a>) {
+	pub fn render<'a>(&'a self, index: usize, point_cloud_pass: &mut render::PointCloudPass<'a>) {
 		let pc = self.available.get(&index);
 		match pc {
 			None => {},
-			Some(pc) => pc.render(render_pass),
+			Some(pc) => pc.render(point_cloud_pass),
 		}
 	}
 

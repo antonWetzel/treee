@@ -67,6 +67,9 @@ struct Game {
 	mouse: input::Mouse,
 	keyboard: input::Keyboard,
 	time: Time,
+
+	ui: render::UI,
+	test: render::UIElement,
 }
 
 impl render::Game for Game {
@@ -76,12 +79,12 @@ impl render::Game for Game {
 			&self.tree.camera,
 			&mut self.tree.loaded_manager,
 		);
-		self.window.render(
-			self.state,
-			&self.pipeline,
-			&self.tree.camera.gpu,
-			&self.tree,
-		);
+
+		self.test
+			.prepare(&mut self.ui, self.state, self.window.config());
+
+		self.window
+			.render(self.state, &self.pipeline, &self.tree.camera.gpu, self);
 	}
 
 	fn resize_window(&mut self, _window_id: render::WindowId, _size: Vector<2, u32>) -> render::ControlFlow {
@@ -199,6 +202,17 @@ impl render::Game for Game {
 	}
 }
 
+impl render::Renderable<State> for Game {
+	fn render<'a>(&'a self, render_pass: render::RenderPass<'a>, state: &'a State) -> render::RenderPass<'a> {
+		self.tree.render(render_pass, state)
+	}
+
+	fn ui<'a>(&'a self, mut render_pass: render::RenderPass<'a>, _state: &'a State) -> render::RenderPass<'a> {
+		self.ui.render(&mut render_pass);
+		render_pass
+	}
+}
+
 impl Game {
 	fn camera_changed(&mut self) {
 		self.window.request_redraw();
@@ -214,6 +228,9 @@ impl Game {
 			loaded_manager: LoadedManager::new(state, path.clone()),
 		};
 
+		let mut ui = render::UI::new(state);
+		let test = render::UIElement::new(&mut ui, "hi");
+
 		Self {
 			window: render::Window::new(state, &runner.event_loop, "test"),
 			tree,
@@ -227,6 +244,9 @@ impl Game {
 			mouse: input::Mouse::new(),
 			keyboard: input::Keyboard::new(),
 			time: Time::new(),
+
+			ui,
+			test,
 		}
 	}
 

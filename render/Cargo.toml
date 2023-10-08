@@ -16,7 +16,8 @@ image = { version = "0.24.5", default-features = false, features = [
 ] }
 log = "0.4.17"
 pollster = "0.3.0"
-wgpu = "0.15.1"
+wgpu = "0.17"
 winit = "0.28.1"
 num = "0.4.0"
 memoffset = "0.8.0"
+glyphon = { git = "https://github.com/grovesNL/glyphon", ref = "20f0f8fa80e0d0df4c63634ce9176fa489546ca9" }

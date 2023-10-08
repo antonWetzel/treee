@@ -24,4 +24,8 @@ impl State {
 			state,
 		}
 	}
+
+	pub fn pointcloud(&self) -> &render::PointCloudState {
+		&self.pointcloud
+	}
 }

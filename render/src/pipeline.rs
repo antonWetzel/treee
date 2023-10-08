@@ -20,14 +20,14 @@ impl Pipeline3D {
 
 	pub fn render<'a, S>(
 		&'a self,
-		render_pass: &mut wgpu::RenderPass<'a>,
+		mut render_pass: wgpu::RenderPass<'a>,
 		cam: &'a Camera3DGPU,
 		renderable: &'a impl Renderable<S>,
 		state: &'static S,
-	) {
+	) -> wgpu::RenderPass<'a> {
 		render_pass.set_pipeline(&self.pipeline);
-		cam.bind(render_pass, 0);
-		renderable.render(render_pass, state);
+		cam.bind(&mut render_pass, 0);
+		renderable.render(render_pass, state)
 	}
 }
 

@@ -26,15 +26,20 @@ impl PointCloudState {
 		Self { quad }
 	}
 
-	pub fn activate<'a, 'b>(&'a self, render_pass: &'b mut RenderPass<'a>) -> &'b mut PointCloudPass<'a> {
+	pub fn activate<'a>(&'a self, mut render_pass: RenderPass<'a>) -> PointCloudPass<'a> {
 		render_pass.set_vertex_buffer(0, self.quad.slice(..));
-		unsafe { std::mem::transmute(render_pass) }
+		PointCloudPass(render_pass)
 	}
 }
 
-// type PointCloudPass<'a> = RenderPass<'a>;
 #[repr(transparent)]
 pub struct PointCloudPass<'a>(wgpu::RenderPass<'a>);
+
+impl<'a> PointCloudPass<'a> {
+	pub fn stop(self) -> RenderPass<'a> {
+		self.0
+	}
+}
 
 impl<'a> std::ops::Deref for PointCloudPass<'a> {
 	type Target = wgpu::RenderPass<'a>;
@@ -68,8 +73,8 @@ impl PointCloud {
 		Self { buffer, instances: vertices.len() as u32 }
 	}
 
-	pub fn render<'a>(&'a self, render_pass: &mut PointCloudPass<'a>) {
-		render_pass.set_vertex_buffer(1, self.buffer.slice(..));
-		render_pass.draw(0..6, 0..self.instances);
+	pub fn render<'a>(&'a self, point_cloud_pass: &mut PointCloudPass<'a>) {
+		point_cloud_pass.set_vertex_buffer(1, self.buffer.slice(..));
+		point_cloud_pass.draw(0..6, 0..self.instances);
 	}
 }

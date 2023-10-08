@@ -1,6 +1,6 @@
 use wgpu::util::DeviceExt;
 
-use crate::{depth_texture::DepthTexture, State};
+use crate::{depth_texture::DepthTexture, RenderPass, State};
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -186,19 +186,11 @@ impl EyeDome {
 		});
 	}
 
-	pub fn render(&self, view: &wgpu::TextureView, encoder: &mut wgpu::CommandEncoder) {
-		let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-			label: Some("eye dome"),
-			color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-				view,
-				resolve_target: None,
-				ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: true },
-			})],
-			depth_stencil_attachment: None,
-		});
+	pub fn render<'a>(&'a self, mut render_pass: RenderPass<'a>) -> RenderPass<'a> {
 		render_pass.set_pipeline(&self.render_pipeline);
 		render_pass.set_bind_group(0, &self.bind_group, &[]);
 		render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
 		render_pass.draw(0..(FULL_SCREEN_VERTICES.len() as u32), 0..1);
+		render_pass
 	}
 }

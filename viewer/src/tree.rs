@@ -50,7 +50,7 @@ impl Node {
 
 	pub fn render<'a>(
 		&'a self,
-		render_pass: &mut render::PointCloudPass<'a>,
+		point_cloud_pass: &mut render::PointCloudPass<'a>,
 		view_checker: lod::Checker,
 		camera: &camera::Camera,
 		loaded_manager: &'a LoadedManager,
@@ -64,15 +64,15 @@ impl Node {
 					&& (view_checker.should_render(self.corner, self.size, camera)
 						|| !Self::can_render_children(children, loaded_manager, camera))
 				{
-					loaded_manager.render(self.index, render_pass);
+					loaded_manager.render(self.index, point_cloud_pass);
 				} else {
 					let view_checker = view_checker.level_down();
 					for child in children.iter().flatten() {
-						child.render(render_pass, view_checker, camera, loaded_manager);
+						child.render(point_cloud_pass, view_checker, camera, loaded_manager);
 					}
 				}
 			},
-			Data::Leaf() => loaded_manager.render(self.index, render_pass),
+			Data::Leaf() => loaded_manager.render(self.index, point_cloud_pass),
 		}
 	}
 
@@ -138,13 +138,14 @@ impl Node {
 }
 
 impl render::Renderable<State> for Tree {
-	fn render<'a>(&'a self, render_pass: &mut render::RenderPass<'a>, state: &'a State) {
-		let render_pass = <State as Has<render::PointCloudState>>::get(state).activate(render_pass);
+	fn render<'a>(&'a self, render_pass: render::RenderPass<'a>, state: &'a State) -> render::RenderPass<'a> {
+		let mut point_cloud_pass = state.pointcloud().activate(render_pass);
 		self.root.render(
-			render_pass,
+			&mut point_cloud_pass,
 			lod::Checker::new(&self.camera.lod),
 			&self.camera,
 			&self.loaded_manager,
 		);
+		point_cloud_pass.stop()
 	}
 }
