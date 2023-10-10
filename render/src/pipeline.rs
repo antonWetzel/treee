@@ -9,7 +9,7 @@ impl Pipeline3D {
 		return Self {
 			pipeline: create_pipeline(
 				state,
-				wgpu::include_wgsl!("../assets/shader_3d.wgsl"),
+				wgpu::include_wgsl!("pipeline_3d.wgsl"),
 				&[Point::quad_description(), Point::description()],
 				&[&Camera3DGPU::get_layout(state)],
 				Some("3d"),

@@ -14,7 +14,7 @@ pub struct UI {
 impl UI {
 	pub fn new(state: &impl Has<State>, config: &SurfaceConfiguration) -> Self {
 		let state = state.get();
-		let font = include_bytes!("../assets/Inter-Bold.ttf");
+		let font = include_bytes!("ui_Urbanist-Bold.ttf");
 		let font = FontRef::try_from_slice(font).unwrap();
 
 		let brush = BrushBuilder::using_font(font).build(&state.device, config.width, config.height, config.format);
@@ -56,9 +56,15 @@ impl<'a> UICollector<'a> {
 	pub fn add_element(&mut self, element: &'a UIElement) {
 		self.data.push(Section {
 			screen_position: (element.position[X], element.position[Y]),
-			text: vec![Text::new(element.text.as_str())
-				.with_scale(element.font_size)
-				.with_color([0.0, 0.0, 0.0, 1.0])],
+			text: element
+				.text
+				.iter()
+				.map(|t| {
+					Text::new(t.as_str())
+						.with_scale(element.font_size)
+						.with_color([0.0, 0.0, 0.0, 1.0])
+				})
+				.collect(),
 			..Default::default()
 		});
 	}
@@ -66,12 +72,12 @@ impl<'a> UICollector<'a> {
 
 pub struct UIElement {
 	pub position: Vector<2, f32>,
-	pub text: String,
+	pub text: Vec<String>,
 	pub font_size: f32,
 }
 
 impl UIElement {
-	pub fn new<'a>(text: impl Into<String>, position: Vector<2, f32>, font_size: f32) -> Self {
-		Self { text: text.into(), position, font_size }
+	pub fn new(text: Vec<String>, position: Vector<2, f32>, font_size: f32) -> Self {
+		Self { text, position, font_size }
 	}
 }

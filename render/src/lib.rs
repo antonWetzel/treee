@@ -10,6 +10,7 @@ mod ui;
 mod window;
 
 pub use camera_3d::*;
+pub use eye_dome::*;
 pub use game::*;
 pub use pipeline::*;
 pub use point::*;
@@ -24,7 +25,7 @@ pub trait Renderable<State> {
 	fn render<'a>(&'a self, render_pass: RenderPass<'a>, state: &'a State) -> RenderPass<'a>;
 
 	#[allow(unused_variables)]
-	fn ui<'a>(&'a self, render_pass: RenderPass<'a>, state: &'a State) -> RenderPass<'a> {
+	fn post_process<'a>(&'a self, render_pass: RenderPass<'a>, state: &'a State) -> RenderPass<'a> {
 		render_pass
 	}
 }

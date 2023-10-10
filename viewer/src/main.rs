@@ -71,7 +71,73 @@ struct Game {
 	time: Time,
 
 	ui: render::UI,
+	eye_dome: render::EyeDome,
 	interface: Interface,
+}
+
+impl Game {
+	fn camera_changed(&mut self) {
+		self.window.request_redraw();
+	}
+
+	fn new(state: &'static State, path: String, runner: &render::Runner) -> Self {
+		let project_path = format!("{}/project.epc", path);
+		let project = Project::from_file(&project_path);
+
+		let tree = Tree {
+			camera: camera::Camera::new(state),
+			root: Node::new(&project.root),
+			loaded_manager: LoadedManager::new(state, path.clone()),
+		};
+		let window = render::Window::new(state, &runner.event_loop, &path);
+
+		let eye_dome = render::EyeDome::new(state, window.config(), window.depth_texture(), 1.5, 0.01);
+		let ui = render::UI::new(state, window.config());
+		let mut interface = Interface::new();
+		interface.update_eye_dome_settings(eye_dome.strength, eye_dome.sensitivity);
+
+		Self {
+			ui,
+			eye_dome,
+			interface,
+
+			window,
+			tree,
+			pipeline: render::Pipeline3D::new(state),
+			project,
+			fps_counter: FpsCounter::new(),
+			path,
+			project_time: std::fs::metadata(project_path).unwrap().modified().unwrap(),
+
+			state,
+			mouse: input::Mouse::new(),
+			keyboard: input::Keyboard::new(),
+			time: Time::new(),
+		}
+	}
+
+	fn check_reload(&mut self) {
+		let project_path = format!("{}/project.epc", self.path);
+		let meta = match std::fs::metadata(&project_path) {
+			Ok(v) => v,
+			Err(_) => return,
+		};
+		let project_time = match meta.modified() {
+			Ok(v) => v,
+			Err(_) => return,
+		};
+		if self.project_time == project_time {
+			return;
+		}
+		if project_time.elapsed().unwrap() < std::time::Duration::from_millis(1000) {
+			return;
+		}
+		self.project_time = project_time;
+		self.project = Project::from_file(project_path);
+		self.tree.root = Node::new(&self.project.root);
+
+		self.tree.loaded_manager = LoadedManager::new(self.state, self.path.clone());
+	}
 }
 
 impl render::Game for Game {
@@ -98,6 +164,8 @@ impl render::Game for Game {
 		);
 		self.camera_changed();
 		self.ui.resize(self.state, self.window.config());
+		self.eye_dome
+			.update_depth(self.state, self.window.depth_texture());
 		render::ControlFlow::Poll
 	}
 
@@ -126,10 +194,38 @@ impl render::Game for Game {
 			self.tree.camera.movement(direction, self.state);
 			self.camera_changed();
 		}
-		if let Some(fps) = self.fps_counter.update(delta.as_secs_f64()) {
-			let workload = self.tree.loaded_manager.workload();
-			self.interface.update_statisitics(fps, workload);
+
+		{
+			let amount = 0.5 * delta.as_secs_f32();
+			let mut update = false;
+			if self.keyboard.pressed(input::KeyCode::U) {
+				self.eye_dome.strength /= 1.0 + amount;
+				update = true;
+			}
+			if self.keyboard.pressed(input::KeyCode::I) {
+				self.eye_dome.strength *= 1.0 + amount;
+				update = true;
+			}
+			if self.keyboard.pressed(input::KeyCode::J) {
+				self.eye_dome.sensitivity /= 1.0 + amount;
+				update = true;
+			}
+			if self.keyboard.pressed(input::KeyCode::K) {
+				self.eye_dome.sensitivity *= 1.0 + amount;
+				update = true;
+			}
+			if update {
+				self.eye_dome.update_settings(self.state);
+				self.interface
+					.update_eye_dome_settings(self.eye_dome.strength, self.eye_dome.sensitivity);
+			}
 		}
+
+		if let Some(fps) = self.fps_counter.update(delta.as_secs_f64()) {
+			self.interface.update_fps(fps);
+		}
+		self.interface
+			.update_workload(self.tree.loaded_manager.workload());
 
 		self.check_reload();
 
@@ -209,69 +305,9 @@ impl render::Renderable<State> for Game {
 		self.tree.render(render_pass, state)
 	}
 
-	fn ui<'a>(&'a self, render_pass: render::RenderPass<'a>, _state: &'a State) -> render::RenderPass<'a> {
+	fn post_process<'a>(&'a self, render_pass: render::RenderPass<'a>, _state: &'a State) -> render::RenderPass<'a> {
+		let render_pass = self.eye_dome.render(render_pass);
 		self.ui.render(render_pass)
-	}
-}
-
-impl Game {
-	fn camera_changed(&mut self) {
-		self.window.request_redraw();
-	}
-
-	fn new(state: &'static State, path: String, runner: &render::Runner) -> Self {
-		let project_path = format!("{}/project.epc", path);
-		let project = Project::from_file(&project_path);
-
-		let tree = Tree {
-			camera: camera::Camera::new(state),
-			root: Node::new(&project.root),
-			loaded_manager: LoadedManager::new(state, path.clone()),
-		};
-		let window = render::Window::new(state, &runner.event_loop, "test");
-
-		let ui = render::UI::new(state, window.config());
-
-		Self {
-			window,
-			tree,
-			pipeline: render::Pipeline3D::new(state),
-			project,
-			fps_counter: FpsCounter::new(),
-			path,
-			project_time: std::fs::metadata(project_path).unwrap().modified().unwrap(),
-
-			state,
-			mouse: input::Mouse::new(),
-			keyboard: input::Keyboard::new(),
-			time: Time::new(),
-
-			ui,
-			interface: Interface::new(),
-		}
-	}
-
-	fn check_reload(&mut self) {
-		let project_path = format!("{}/project.epc", self.path);
-		let meta = match std::fs::metadata(&project_path) {
-			Ok(v) => v,
-			Err(_) => return,
-		};
-		let project_time = match meta.modified() {
-			Ok(v) => v,
-			Err(_) => return,
-		};
-		if self.project_time == project_time {
-			return;
-		}
-		if project_time.elapsed().unwrap() < std::time::Duration::from_millis(1000) {
-			return;
-		}
-		self.project_time = project_time;
-		self.project = Project::from_file(project_path);
-		self.tree.root = Node::new(&self.project.root);
-
-		self.tree.loaded_manager = LoadedManager::new(self.state, self.path.clone());
 	}
 }
 

@@ -11,8 +11,6 @@ pub struct Window {
 	config: wgpu::SurfaceConfiguration,
 	surface: wgpu::Surface,
 	depth_texture: DepthTexture,
-	middle_texture: wgpu::Texture,
-	eye_dome: EyeDome,
 }
 
 impl Window {
@@ -47,32 +45,9 @@ impl Window {
 		};
 		surface.configure(&state.device, &config);
 
-		let middle_texture = state.device.create_texture(&wgpu::TextureDescriptor {
-			label: Some("test"),
-			size: wgpu::Extent3d {
-				width: config.width,
-				height: config.height,
-				depth_or_array_layers: 1,
-			},
-			mip_level_count: 1,
-			sample_count: 1,
-			dimension: wgpu::TextureDimension::D2,
-			format: config.format,
-			usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::RENDER_ATTACHMENT,
-			view_formats: &[],
-		});
-
 		let depth_texture = DepthTexture::new(&state.device, &config, "depth");
-		let eye_dome = EyeDome::new(state, &config, &depth_texture, &middle_texture);
 
-		Self {
-			window,
-			surface,
-			depth_texture,
-			config,
-			eye_dome,
-			middle_texture,
-		}
+		Self { window, surface, depth_texture, config }
 	}
 
 	pub fn get_aspect(&self) -> f32 {
@@ -101,6 +76,10 @@ impl Window {
 		&self.config
 	}
 
+	pub fn depth_texture(&self) -> &DepthTexture {
+		&self.depth_texture
+	}
+
 	pub fn resized(&mut self, state: &impl Has<State>) {
 		let state = state.get();
 		let size = self.size();
@@ -108,22 +87,7 @@ impl Window {
 		self.config.height = size.height;
 		self.surface.configure(&state.device, &self.config);
 		self.depth_texture = DepthTexture::new(&state.device, &self.config, "depth");
-		self.middle_texture = state.device.create_texture(&wgpu::TextureDescriptor {
-			label: Some("test"),
-			size: wgpu::Extent3d {
-				width: self.config.width,
-				height: self.config.height,
-				depth_or_array_layers: 1,
-			},
-			mip_level_count: 1,
-			sample_count: 1,
-			dimension: wgpu::TextureDimension::D2,
-			format: self.config.format,
-			usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::RENDER_ATTACHMENT,
-			view_formats: &[],
-		});
-		self.eye_dome
-			.update(state, &self.depth_texture, &self.middle_texture);
+		// self.eye_dome.update_depth(state, &self.depth_texture);
 	}
 
 	pub fn render<S: Has<State>>(
@@ -133,8 +97,9 @@ impl Window {
 		cam: &Camera3DGPU,
 		renderable: &impl Renderable<S>,
 	) {
-		let view = self
-			.middle_texture
+		let output = self.surface.get_current_texture().unwrap();
+		let view = output
+			.texture
 			.create_view(&wgpu::TextureViewDescriptor::default());
 
 		let mut encoder = state
@@ -165,8 +130,6 @@ impl Window {
 			let _render_pass = pipeline.render(render_pass, cam, renderable, state);
 		}
 
-		let output = self.surface.get_current_texture().unwrap();
-
 		{
 			let view = output
 				.texture
@@ -180,8 +143,7 @@ impl Window {
 				})],
 				depth_stencil_attachment: None,
 			});
-			let render_pass = self.eye_dome.render(render_pass);
-			let _render_pass = renderable.ui(render_pass, state);
+			let _render_pass = renderable.post_process(render_pass, state);
 		}
 		state.get().queue.submit(Some(encoder.finish()));
 		output.present();
