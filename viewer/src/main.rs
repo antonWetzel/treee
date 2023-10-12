@@ -88,6 +88,7 @@ impl Game {
 			camera: camera::Camera::new(state),
 			root: Node::new(&project.root),
 			loaded_manager: LoadedManager::new(state, path.clone()),
+			lookup: render::Lookup::new_png(state, include_bytes!("../assets/grad_warm.png")),
 		};
 		let window = render::Window::new(state, &runner.event_loop, &path);
 

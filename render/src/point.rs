@@ -6,7 +6,7 @@ use wgpu::vertex_attr_array;
 pub struct Point {
 	pub position: Vector<3, f32>,
 	pub normal: Vector<3, f32>,
-	pub color: Vector<3, f32>,
+	pub value: u32,
 	pub size: f32,
 }
 
@@ -24,7 +24,7 @@ unsafe impl bytemuck::Pod for PointEdge {}
 
 impl Point {
 	const ATTRIBUTES: &[wgpu::VertexAttribute] =
-		&vertex_attr_array![1 => Float32x3, 2 => Float32x3, 3 => Float32x3, 4 => Float32];
+		&vertex_attr_array![1 => Float32x3, 2 => Float32x3, 3 => Uint32, 4 => Float32];
 
 	pub fn quad_description<'a>() -> wgpu::VertexBufferLayout<'a> {
 		wgpu::VertexBufferLayout {

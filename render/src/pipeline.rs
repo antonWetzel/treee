@@ -1,4 +1,4 @@
-use crate::{depth_texture::DepthTexture, Camera3DGPU, Has, Point, Renderable, State};
+use crate::{depth_texture::DepthTexture, Camera3DGPU, Has, Lookup, Point, Renderable, State};
 
 pub struct Pipeline3D {
 	pipeline: wgpu::RenderPipeline,
@@ -11,7 +11,7 @@ impl Pipeline3D {
 				state,
 				wgpu::include_wgsl!("pipeline_3d.wgsl"),
 				&[Point::quad_description(), Point::description()],
-				&[&Camera3DGPU::get_layout(state)],
+				&[&Camera3DGPU::get_layout(state), &Lookup::get_layout(state)],
 				Some("3d"),
 				true,
 			),

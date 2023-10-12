@@ -96,7 +96,7 @@ impl Node {
 			&render::Point {
 				position: point.position,
 				normal: [0.0, 1.0, 0.0].into(),
-				color: point.color,
+				value: point.value,
 				size: 0.001,
 			},
 			writer,

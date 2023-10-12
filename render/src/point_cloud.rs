@@ -1,6 +1,6 @@
 use wgpu::util::DeviceExt;
 
-use crate::{Has, RenderPass, State};
+use crate::{Has, Lookup, RenderPass, State};
 
 pub struct PointCloudState {
 	pub quad: wgpu::Buffer,
@@ -26,8 +26,9 @@ impl PointCloudState {
 		Self { quad }
 	}
 
-	pub fn activate<'a>(&'a self, mut render_pass: RenderPass<'a>) -> PointCloudPass<'a> {
+	pub fn activate<'a>(&'a self, mut render_pass: RenderPass<'a>, lookup: &'a Lookup) -> PointCloudPass<'a> {
 		render_pass.set_vertex_buffer(0, self.quad.slice(..));
+		render_pass.set_bind_group(1, lookup.get_bind_group(), &[]);
 		PointCloudPass(render_pass)
 	}
 }

@@ -10,6 +10,7 @@ pub struct Tree {
 	pub root: Node,
 	pub camera: camera::Camera,
 	pub loaded_manager: LoadedManager,
+	pub lookup: render::Lookup,
 }
 
 pub struct Node {
@@ -138,7 +139,7 @@ impl Node {
 
 impl render::Renderable<State> for Tree {
 	fn render<'a>(&'a self, render_pass: render::RenderPass<'a>, state: &'a State) -> render::RenderPass<'a> {
-		let mut point_cloud_pass = state.pointcloud().activate(render_pass);
+		let mut point_cloud_pass = state.pointcloud().activate(render_pass, &self.lookup);
 		self.root.render(
 			&mut point_cloud_pass,
 			lod::Checker::new(&self.camera.lod),

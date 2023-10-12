@@ -1,7 +1,5 @@
 use math::Vector;
 
-use crate::eye_dome::EyeDome;
-
 use super::*;
 
 pub type WindowId = winit::window::WindowId;
@@ -28,12 +26,11 @@ impl Window {
 		let size = window.inner_size();
 		let surface = unsafe { state.instance.create_surface(&window) }.unwrap();
 		let surface_caps = surface.get_capabilities(&state.adapter);
-		let surface_format = surface_caps
+		let surface_format = *surface_caps
 			.formats
 			.iter()
 			.find(|f| f.is_srgb())
-			.unwrap_or(&surface_caps.formats[0])
-			.clone();
+			.unwrap_or(&surface_caps.formats[0]);
 		let config = wgpu::SurfaceConfiguration {
 			usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
 			format: surface_format,

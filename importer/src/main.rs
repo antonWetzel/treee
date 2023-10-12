@@ -13,12 +13,6 @@ use tree::Tree;
 
 use crate::progress::Progress;
 
-const GRADIENT: [Vector<3, f32>; 3] = [
-	Vector::new([0.2, 1.0, 1.0]),
-	Vector::new([1.0, 1.0, 0.2]),
-	Vector::new([1.0, 0.2, 0.2]),
-];
-
 fn main() {
 	let mut args = std::env::args().rev().collect::<Vec<_>>();
 	args.pop();
@@ -57,19 +51,9 @@ fn main() {
 				(-point.y - pos[Z]) as f32,
 			]
 			.into(),
-			color: if let Some(color) = point.color {
-				[
-					color.red as f32 / u16::MAX as f32,
-					color.green as f32 / u16::MAX as f32,
-					color.blue as f32 / u16::MAX as f32,
-				]
-				.into()
-			} else {
+			value: {
 				let b = (point.z - min[Y]) / diff[Y];
-				let b = b * (GRADIENT.len() - 1) as f64;
-				let idx = (b as usize).clamp(0, GRADIENT.len() - 2);
-				let frac = (b - idx as f64).clamp(0.0, 1.0) as f32;
-				GRADIENT[idx] * (1.0 - frac) + GRADIENT[idx + 1] * frac
+				(b * (u32::MAX - 1) as f64) as u32
 			},
 		};
 		tree.insert(res, &mut writer);

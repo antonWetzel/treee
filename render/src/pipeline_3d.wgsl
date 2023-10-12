@@ -11,13 +11,13 @@ struct VertexInput {
 struct InstanceInput {
     @location(1) position: vec3<f32>,
     @location(2) normal: vec3<f32>,
-    @location(3) color: vec3<f32>,
+    @location(3) value: u32,
     @location(4) size: f32,
 }
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
-    @location(0) color: vec3<f32>,
+    @location(0) @interpolate(flat) value: u32,
     @location(1) pos: vec2<f32>,
 }
 
@@ -36,15 +36,25 @@ fn vs_main(
             vertex_in.position.y * instance_in.size * b,
         1.0,
     );
-    out.color = instance_in.color;
+    out.value = instance_in.value;
     out.pos = vertex_in.position;
     return out;
 }
+
+struct LookupUniform {
+    scale: u32,
+};
+
+@group(1) @binding(0)
+var lookup: texture_1d<f32>;
+@group(1) @binding(1)
+var<uniform> lookup_uniform: LookupUniform;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     if in.pos.x * in.pos.x + in.pos.y * in.pos.y >= 1.0 {
         discard;
     }
-    return vec4<f32>(in.color, 1.0);
+    let idx = in.value >> lookup_uniform.scale;
+    return textureLoad(lookup, idx, 0);
 }

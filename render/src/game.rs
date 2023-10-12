@@ -41,5 +41,3 @@ pub trait Game {
 pub type ControlFlow = winit::event_loop::ControlFlow;
 
 pub type RenderPass<'a> = wgpu::RenderPass<'a>;
-
-// todo: typesafe renderpass

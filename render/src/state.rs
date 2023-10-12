@@ -50,12 +50,11 @@ impl State {
 			.unwrap();
 
 		let surface_caps = surface.get_capabilities(&adapter);
-		let surface_format = surface_caps
+		let surface_format = *surface_caps
 			.formats
 			.iter()
 			.find(|f| f.is_srgb())
-			.unwrap_or(&surface_caps.formats[0])
-			.clone();
+			.unwrap_or(&surface_caps.formats[0]);
 
 		(
 			Self {
