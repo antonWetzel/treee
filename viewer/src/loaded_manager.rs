@@ -102,17 +102,14 @@ impl LoadedManager {
 		}
 	}
 
-	pub fn workload(&self) -> usize {
-		self.workload
-	}
-
-	pub fn update(&mut self) {
+	pub fn update(&mut self) -> usize {
 		for response in self.reciever.try_iter() {
 			if self.requested.contains(&response.index) {
 				self.available.insert(response.index, response.data);
 			}
 			self.workload = response.workload;
 		}
+		self.workload
 	}
 }
 

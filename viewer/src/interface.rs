@@ -1,5 +1,4 @@
 pub struct Interface {
-	last_fps: usize,
 	last_workload: usize,
 	statistics: render::UIElement,
 }
@@ -7,7 +6,6 @@ pub struct Interface {
 impl Interface {
 	pub fn new() -> Self {
 		Self {
-			last_fps: 0,
 			last_workload: 0,
 			statistics: render::UIElement::new(
 				vec![
@@ -22,17 +20,17 @@ impl Interface {
 		}
 	}
 
-	pub fn update_fps(&mut self, fps: usize) {
-		if fps != self.last_fps {
-			self.statistics.text[0] = format!("FPS: {}\n", fps);
-			self.last_fps = fps;
-		}
+	pub fn update_fps(&mut self, fps: f64) {
+		self.statistics.text[0] = format!("Max FPS: {:.0}\n", fps);
 	}
 
-	pub fn update_workload(&mut self, workload: usize) {
+	pub fn update_workload(&mut self, workload: usize) -> bool {
 		if workload != self.last_workload {
 			self.statistics.text[1] = format!("Chunks queued: {}\n", workload);
 			self.last_workload = workload;
+			true
+		} else {
+			false
 		}
 	}
 

@@ -14,7 +14,6 @@ pub struct Game {
 	tree: Tree,
 	pipeline: render::Pipeline3D,
 	project: Project,
-	fps_counter: FpsCounter,
 	path: String,
 	project_time: std::time::SystemTime,
 
@@ -22,6 +21,8 @@ pub struct Game {
 	mouse: input::Mouse,
 	keyboard: input::Keyboard,
 	time: Time,
+	always_redraw: bool,
+	paused: bool,
 
 	ui: render::UI,
 	eye_dome: render::EyeDome,
@@ -29,10 +30,6 @@ pub struct Game {
 }
 
 impl Game {
-	fn camera_changed(&mut self) {
-		self.window.request_redraw();
-	}
-
 	pub fn new(state: &'static State, path: String, runner: &render::Runner) -> Self {
 		let project_path = format!("{}/project.epc", path);
 		let project = Project::from_file(&project_path);
@@ -49,20 +46,26 @@ impl Game {
 			ui,
 			eye_dome,
 			interface,
+			paused: false,
 
 			window,
 			tree,
 			pipeline: render::Pipeline3D::new(state),
 			project,
-			fps_counter: FpsCounter::new(),
 			path,
 			project_time: std::fs::metadata(project_path).unwrap().modified().unwrap(),
+
+			always_redraw: false,
 
 			state,
 			mouse: input::Mouse::new(),
 			keyboard: input::Keyboard::new(),
 			time: Time::new(),
 		}
+	}
+
+	fn camera_changed(&mut self) {
+		self.window.request_redraw();
 	}
 
 	fn check_reload(&mut self) {
@@ -91,6 +94,10 @@ impl Game {
 
 impl render::Game for Game {
 	fn render(&mut self, _window_id: render::WindowId) {
+		if self.paused {
+			return;
+		}
+		let start = std::time::Instant::now();
 		self.tree.root.update(
 			lod::Checker::new(&self.tree.camera.lod),
 			&self.tree.camera,
@@ -101,9 +108,15 @@ impl render::Game for Game {
 
 		self.window
 			.render(self.state, &self.pipeline, &self.tree.camera.gpu, self);
+		let end = std::time::Instant::now();
+		self.interface.update_fps(1.0 / (end - start).as_secs_f64());
 	}
 
-	fn resize_window(&mut self, _window_id: render::WindowId, _size: Vector<2, u32>) -> render::ControlFlow {
+	fn resize_window(&mut self, _window_id: render::WindowId, size: Vector<2, u32>) -> render::ControlFlow {
+		self.paused = size[X] == 0 || size[Y] == 0;
+		if self.paused {
+			return render::ControlFlow::Wait;
+		}
 		self.window.resized(self.state);
 		self.tree.camera.cam.aspect = self.window.get_aspect();
 		self.tree.camera.gpu = render::Camera3DGPU::new(
@@ -115,7 +128,7 @@ impl render::Game for Game {
 		self.ui.resize(self.state, self.window.config());
 		self.eye_dome
 			.update_depth(self.state, self.window.depth_texture());
-		render::ControlFlow::Poll
+		render::ControlFlow::Wait
 	}
 
 	fn close_window(&mut self, _window_id: render::WindowId) -> render::ControlFlow {
@@ -169,20 +182,14 @@ impl render::Game for Game {
 					.update_eye_dome_settings(self.eye_dome.strength, self.eye_dome.sensitivity);
 			}
 		}
-
-		if let Some(fps) = self.fps_counter.update(delta.as_secs_f64()) {
-			self.interface.update_fps(fps);
+		let workload = self.tree.loaded_manager.update();
+		if self.interface.update_workload(workload) || self.always_redraw {
+			self.window.request_redraw();
 		}
-		self.interface
-			.update_workload(self.tree.loaded_manager.workload());
 
 		self.check_reload();
 
-		self.window.request_redraw(); // todo: toggle
-
-		self.tree.loaded_manager.update();
-
-		render::ControlFlow::Poll
+		render::ControlFlow::Wait
 	}
 
 	fn key_changed(
@@ -216,7 +223,7 @@ impl render::Game for Game {
 			},
 			_ => {},
 		}
-		render::ControlFlow::Poll
+		render::ControlFlow::Wait
 	}
 
 	fn modifiers_changed(&mut self, modifiers: input::Modifiers) {
@@ -226,7 +233,7 @@ impl render::Game for Game {
 	fn mouse_wheel(&mut self, delta: f32) -> render::ControlFlow {
 		self.tree.camera.scroll(delta, self.state);
 		self.camera_changed();
-		render::ControlFlow::Poll
+		render::ControlFlow::Wait
 	}
 
 	fn mouse_pressed(
@@ -236,7 +243,7 @@ impl render::Game for Game {
 		button_state: input::State,
 	) -> render::ControlFlow {
 		self.mouse.update(button, button_state);
-		render::ControlFlow::Poll
+		render::ControlFlow::Wait
 	}
 
 	fn mouse_moved(&mut self, _window_id: render::WindowId, position: Vector<2, f64>) -> render::ControlFlow {
@@ -245,7 +252,7 @@ impl render::Game for Game {
 			self.tree.camera.rotate(delta, self.state);
 			self.camera_changed();
 		}
-		render::ControlFlow::Poll
+		render::ControlFlow::Wait
 	}
 }
 
@@ -257,29 +264,6 @@ impl render::Renderable<State> for Game {
 	fn post_process<'a>(&'a self, render_pass: render::RenderPass<'a>, _state: &'a State) -> render::RenderPass<'a> {
 		let render_pass = self.eye_dome.render(render_pass);
 		self.ui.render(render_pass)
-	}
-}
-
-struct FpsCounter {
-	count: usize,
-	time: f64,
-}
-
-impl FpsCounter {
-	pub fn new() -> Self {
-		Self { count: 0, time: 0.0 }
-	}
-	pub fn update(&mut self, delta: f64) -> Option<usize> {
-		self.count += 1;
-		self.time += delta;
-		if self.time >= 1.0 {
-			let fps = self.count;
-			self.count = 0;
-			self.time -= 1.0;
-			Some(fps)
-		} else {
-			None
-		}
 	}
 }
 
