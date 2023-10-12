@@ -2,8 +2,8 @@ use crate::loaded_manager::LoadedManager;
 use crate::state::State;
 use crate::{camera, lod};
 
-use common::IndexData;
 use common::IndexNode;
+use common::{IndexData, Project};
 use math::Vector;
 
 pub struct Tree {
@@ -137,8 +137,17 @@ impl Node {
 	}
 }
 
-impl render::Renderable<State> for Tree {
-	fn render<'a>(&'a self, render_pass: render::RenderPass<'a>, state: &'a State) -> render::RenderPass<'a> {
+impl Tree {
+	pub fn new(state: &'static State, project: &Project, path: String) -> Self {
+		Self {
+			camera: camera::Camera::new(state),
+			root: Node::new(&project.root),
+			loaded_manager: LoadedManager::new(state, path),
+			lookup: render::Lookup::new_png(state, include_bytes!("../assets/grad_warm.png")),
+		}
+	}
+
+	pub fn render<'a>(&'a self, render_pass: render::RenderPass<'a>, state: &'a State) -> render::RenderPass<'a> {
 		let mut point_cloud_pass = state.pointcloud().activate(render_pass, &self.lookup);
 		self.root.render(
 			&mut point_cloud_pass,

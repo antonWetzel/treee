@@ -26,10 +26,7 @@ use depth_texture::*;
 pub trait Renderable<State> {
 	fn render<'a>(&'a self, render_pass: RenderPass<'a>, state: &'a State) -> RenderPass<'a>;
 
-	#[allow(unused_variables)]
-	fn post_process<'a>(&'a self, render_pass: RenderPass<'a>, state: &'a State) -> RenderPass<'a> {
-		render_pass
-	}
+	fn post_process<'a>(&'a self, render_pass: RenderPass<'a>, state: &'a State) -> RenderPass<'a>;
 }
 
 pub type Device = wgpu::Device;

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, path::Path};
 
 use math::Vector;
 use serde::{Deserialize, Serialize};
@@ -39,12 +39,9 @@ struct FlatProject {
 }
 
 impl Project {
-	pub fn from_file<T: Into<String>>(path: T) -> Self {
-		let file = std::fs::OpenOptions::new()
-			.read(true)
-			.open(path.into())
-			.unwrap();
-		let flat: FlatProject = ron::de::from_reader(file).unwrap();
+	pub fn from_file(path: impl AsRef<Path>) -> Self {
+		let file = std::fs::OpenOptions::new().read(true).open(path).unwrap();
+		let flat: FlatProject = bincode::deserialize_from(file).unwrap();
 		Project {
 			statistics: flat.statistics,
 			level: flat.level,
@@ -53,11 +50,11 @@ impl Project {
 		}
 	}
 
-	pub fn save<T: Into<String>>(&self, path: T) {
+	pub fn save(&self, path: impl AsRef<Path>) {
 		let file = std::fs::OpenOptions::new()
 			.write(true)
 			.create(true)
-			.open(path.into())
+			.open(path)
 			.unwrap();
 		let flat = FlatProject {
 			statistics: self.statistics,
@@ -65,7 +62,7 @@ impl Project {
 			nodes: flatten(&self.root),
 			node_count: self.node_count,
 		};
-		ron::ser::to_writer(file, &flat).unwrap();
+		bincode::serialize_into(file, &flat).unwrap();
 	}
 }
 

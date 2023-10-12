@@ -23,25 +23,22 @@ unsafe impl bytemuck::Zeroable for PointEdge {}
 unsafe impl bytemuck::Pod for PointEdge {}
 
 impl Point {
-	const ATTRIBUTES: &[wgpu::VertexAttribute] =
-		&vertex_attr_array![1 => Float32x3, 2 => Float32x3, 3 => Uint32, 4 => Float32];
+	const QUAD_ATTRIBUTES: [wgpu::VertexAttribute; 1] = vertex_attr_array![0 => Float32x2];
+	const ATTRIBUTES: [wgpu::VertexAttribute; 4] =
+		vertex_attr_array![1 => Float32x3, 2 => Float32x3, 3 => Uint32, 4 => Float32];
 
 	pub fn quad_description<'a>() -> wgpu::VertexBufferLayout<'a> {
 		wgpu::VertexBufferLayout {
 			array_stride: std::mem::size_of::<PointEdge>() as wgpu::BufferAddress,
 			step_mode: wgpu::VertexStepMode::Vertex,
-			attributes: &[wgpu::VertexAttribute {
-				offset: 0,
-				shader_location: 0,
-				format: wgpu::VertexFormat::Float32x2,
-			}],
+			attributes: &Self::QUAD_ATTRIBUTES,
 		}
 	}
 	pub fn description<'a>() -> wgpu::VertexBufferLayout<'a> {
 		wgpu::VertexBufferLayout {
 			array_stride: std::mem::size_of::<Point>() as wgpu::BufferAddress,
 			step_mode: wgpu::VertexStepMode::Instance,
-			attributes: Self::ATTRIBUTES,
+			attributes: &Self::ATTRIBUTES,
 		}
 	}
 }
