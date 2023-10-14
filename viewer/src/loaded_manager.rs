@@ -1,74 +1,56 @@
 use std::collections::{HashMap, HashSet};
+use std::hint::spin_loop;
 use std::io::Read;
 use std::mem::MaybeUninit;
+use std::path::{Path, PathBuf};
 
 use crate::State;
 
 pub struct LoadedManager {
 	available: HashMap<usize, render::PointCloud>,
 	requested: HashSet<usize>,
-	sender: std::sync::mpsc::Sender<Action>,
-	reciever: std::sync::mpsc::Receiver<Response>,
-	workload: usize,
-}
-
-enum Action {
-	Load(usize),
-	Unload(usize),
+	sender: crossbeam_channel::Sender<usize>,
+	reciever: crossbeam_channel::Receiver<Response>,
 }
 
 struct Response {
 	index: usize,
 	data: render::PointCloud,
-	workload: usize,
 }
 
 impl LoadedManager {
-	pub fn new(state: &'static State, path: String) -> Self {
-		let (index_tx, index_rx) = std::sync::mpsc::channel();
-		let (pc_tx, pc_rx) = std::sync::mpsc::channel();
-
-		std::thread::spawn(move || {
-			let mut work = HashSet::new();
-			loop {
-				loop {
-					let action = match index_rx.try_recv() {
-						Ok(v) => v,
-						Err(std::sync::mpsc::TryRecvError::Disconnected) => return,
-						Err(std::sync::mpsc::TryRecvError::Empty) => break,
-					};
-					match action {
-						Action::Load(v) => {
-							work.insert(v);
-						},
-						Action::Unload(v) => {
-							work.remove(&v);
-						},
-					};
-				}
-				let mut removed = None;
-				for &index in work.iter() {
-					let path = format!("{}/data/{}.data", path, index);
-					let pc = match load(path, state) {
-						Some(pc) => pc,
-						None => continue,
-					};
-					removed = Some((index, pc));
-					break;
-				}
-				if let Some((index, data)) = removed {
-					work.remove(&index);
-					let _ = pc_tx.send(Response { index, data, workload: work.len() });
-				}
-			}
-		});
+	pub fn new(state: &'static State, mut path: PathBuf) -> Self {
+		let (index_tx, index_rx) = crossbeam_channel::bounded(512);
+		let (pc_tx, pc_rx) = crossbeam_channel::bounded(512);
+		path.push("data");
+		path.push("0.data");
+		for _ in 0..2 {
+			let index_rx = index_rx.clone();
+			let mut path = path.clone();
+			let pc_tx = pc_tx.clone();
+			std::thread::spawn(move || loop {
+				let index = match index_rx.try_recv() {
+					Ok(v) => v,
+					Err(crossbeam_channel::TryRecvError::Disconnected) => return,
+					Err(crossbeam_channel::TryRecvError::Empty) => {
+						spin_loop();
+						continue;
+					},
+				};
+				path.set_file_name(format!("{}.data", index));
+				let pc = match load(&path, state) {
+					Some(pc) => pc,
+					None => continue,
+				};
+				let _ = pc_tx.send(Response { index, data: pc });
+			});
+		}
 
 		Self {
 			available: HashMap::new(),
 			requested: HashSet::new(),
 			sender: index_tx,
 			reciever: pc_rx,
-			workload: 0,
 		}
 	}
 
@@ -76,15 +58,14 @@ impl LoadedManager {
 		if self.requested.contains(&index) {
 			return;
 		}
-		self.requested.insert(index);
-		self.sender.send(Action::Load(index)).unwrap();
+		if self.sender.try_send(index).is_ok() {
+			self.requested.insert(index);
+		}
 	}
 
 	pub fn unload(&mut self, index: usize) {
 		self.available.remove(&index);
-		if self.requested.remove(&index) {
-			self.sender.send(Action::Unload(index)).unwrap();
-		};
+		self.requested.remove(&index);
 	}
 
 	pub fn exist(&self, index: usize) -> bool {
@@ -107,14 +88,13 @@ impl LoadedManager {
 			if self.requested.contains(&response.index) {
 				self.available.insert(response.index, response.data);
 			}
-			self.workload = response.workload;
 		}
-		self.workload
+		self.sender.len()
 	}
 }
 
-fn load<T: Into<String>>(path: T, state: &State) -> Option<render::PointCloud> {
-	let mut file = std::fs::File::open(path.into()).ok()?;
+fn load(path: &Path, state: &State) -> Option<render::PointCloud> {
+	let mut file = std::fs::File::open(path).ok()?;
 	let file_length = file.metadata().ok()?.len() as usize;
 	if file_length < 8 {
 		return None;

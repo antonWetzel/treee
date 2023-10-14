@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use crate::loaded_manager::LoadedManager;
 use crate::state::State;
 use crate::{camera, lod};
@@ -138,7 +140,7 @@ impl Node {
 }
 
 impl Tree {
-	pub fn new(state: &'static State, project: &Project, path: String) -> Self {
+	pub fn new(state: &'static State, project: &Project, path: PathBuf) -> Self {
 		Self {
 			camera: camera::Camera::new(state),
 			root: Node::new(&project.root),
@@ -146,15 +148,28 @@ impl Tree {
 			lookup: render::Lookup::new_png(state, include_bytes!("../assets/grad_warm.png")),
 		}
 	}
+}
 
-	pub fn render<'a>(&'a self, render_pass: render::RenderPass<'a>, state: &'a State) -> render::RenderPass<'a> {
-		let mut point_cloud_pass = state.pointcloud().activate(render_pass, &self.lookup);
+impl render::RenderablePointCloud<State> for Tree {
+	fn get_cam(&self) -> &render::Camera3DGPU {
+		&self.camera.gpu
+	}
+
+	fn get_lookup(&self) -> &render::Lookup {
+		&self.lookup
+	}
+
+	fn render<'a>(
+		&'a self,
+		mut render_pass: render::PointCloudPass<'a>,
+		_state: &'a State,
+	) -> render::PointCloudPass<'a> {
 		self.root.render(
-			&mut point_cloud_pass,
+			&mut render_pass,
 			lod::Checker::new(&self.camera.lod),
 			&self.camera,
 			&self.loaded_manager,
 		);
-		point_cloud_pass.stop()
+		render_pass
 	}
 }

@@ -84,23 +84,16 @@ impl Window {
 		self.config.height = size.height;
 		self.surface.configure(&state.device, &self.config);
 		self.depth_texture = DepthTexture::new(&state.device, &self.config, "depth");
-		// self.eye_dome.update_depth(state, &self.depth_texture);
 	}
 
-	pub fn render<S: Has<State>>(
-		&self,
-		state: &'static S,
-		pipeline: &Pipeline3D,
-		cam: &Camera3DGPU,
-		renderable: &impl Renderable<S>,
-	) {
+	pub fn render<S: Has<State>>(&self, state: &'static S, renderable: &impl Renderable<S>) {
+		let render_state: &State = state.get();
 		let output = self.surface.get_current_texture().unwrap();
 		let view = output
 			.texture
 			.create_view(&wgpu::TextureViewDescriptor::default());
 
-		let mut encoder = state
-			.get()
+		let mut encoder = render_state
 			.device
 			.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("Render Encoder") });
 		{
@@ -124,7 +117,7 @@ impl Window {
 				}),
 			};
 			let render_pass = encoder.begin_render_pass(&desc);
-			let _render_pass = pipeline.render(render_pass, cam, renderable, state);
+			let _render_pass = renderable.render(render_pass, state);
 		}
 
 		{
@@ -142,7 +135,7 @@ impl Window {
 			});
 			let _render_pass = renderable.post_process(render_pass, state);
 		}
-		state.get().queue.submit(Some(encoder.finish()));
+		render_state.queue.submit(Some(encoder.finish()));
 		output.present();
 	}
 }

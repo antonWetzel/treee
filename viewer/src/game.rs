@@ -1,20 +1,16 @@
+use std::path::PathBuf;
+
 use common::Project;
 use math::{Vector, X, Y};
+use render::PointCloudStateExtension;
 
-use crate::{
-	interface::Interface,
-	loaded_manager::LoadedManager,
-	lod,
-	state::State,
-	tree::{Node, Tree},
-};
+use crate::{interface::Interface, lod, state::State, tree::Tree};
 
 pub struct Game {
 	window: render::Window,
 	tree: Tree,
-	pipeline: render::Pipeline3D,
 	project: Project,
-	path: String,
+	path: PathBuf,
 	project_time: std::time::SystemTime,
 
 	state: &'static State,
@@ -30,12 +26,12 @@ pub struct Game {
 }
 
 impl Game {
-	pub fn new(state: &'static State, path: String, runner: &render::Runner) -> Self {
-		let project_path = format!("{}/project.epc", path);
-		let project = Project::from_file(&project_path);
+	pub fn new(state: &'static State, path: PathBuf, runner: &render::Runner) -> Self {
+		// let project_path = format!("{}/project.epc", path);
+		let project = Project::from_file(&path);
 
-		let tree = Tree::new(state, &project, path.clone());
-		let window = render::Window::new(state, &runner.event_loop, &path);
+		let tree = Tree::new(state, &project, path.parent().unwrap().to_owned());
+		let window = render::Window::new(state, &runner.event_loop, "test");
 
 		let eye_dome = render::EyeDome::new(state, window.config(), window.depth_texture(), 5.0, 0.005);
 		let ui = render::UI::new(state, window.config());
@@ -50,10 +46,9 @@ impl Game {
 
 			window,
 			tree,
-			pipeline: render::Pipeline3D::new(state),
 			project,
+			project_time: std::fs::metadata(&path).unwrap().modified().unwrap(),
 			path,
-			project_time: std::fs::metadata(project_path).unwrap().modified().unwrap(),
 
 			always_redraw: false,
 
@@ -64,31 +59,44 @@ impl Game {
 		}
 	}
 
-	fn camera_changed(&mut self) {
+	fn request_redraw(&mut self) {
 		self.window.request_redraw();
 	}
 
-	fn check_reload(&mut self) {
-		let project_path = format!("{}/project.epc", self.path);
-		let meta = match std::fs::metadata(&project_path) {
-			Ok(v) => v,
-			Err(_) => return,
-		};
-		let project_time = match meta.modified() {
-			Ok(v) => v,
-			Err(_) => return,
-		};
+	fn change_project(&mut self) -> Option<()> {
+		self.path = rfd::FileDialog::new()
+			.add_filter("Project File", &["epc"])
+			.pick_file()?;
+		self.reload(self.current_poject_time()?);
+		Some(())
+	}
+
+	fn check_reload(&mut self) -> Option<()> {
+		let project_time = self.current_poject_time()?;
 		if self.project_time == project_time {
-			return;
+			return None;
 		}
 		if project_time.elapsed().unwrap() < std::time::Duration::from_millis(1000) {
-			return;
+			return None;
 		}
-		self.project_time = project_time;
-		self.project = Project::from_file(project_path);
-		self.tree.root = Node::new(&self.project.root);
+		self.reload(project_time);
+		Some(())
+	}
 
-		self.tree.loaded_manager = LoadedManager::new(self.state, self.path.clone());
+	fn current_poject_time(&self) -> Option<std::time::SystemTime> {
+		let meta = std::fs::metadata(&self.path).ok()?;
+		meta.modified().ok()
+	}
+
+	fn reload(&mut self, project_time: std::time::SystemTime) {
+		self.project_time = project_time;
+		self.project = Project::from_file(&self.path);
+		self.tree = Tree::new(
+			self.state,
+			&self.project,
+			self.path.parent().unwrap().to_owned(),
+		);
+		self.request_redraw();
 	}
 }
 
@@ -106,8 +114,7 @@ impl render::Game for Game {
 
 		self.ui.queue(self.state, &self.interface);
 
-		self.window
-			.render(self.state, &self.pipeline, &self.tree.camera.gpu, self);
+		self.window.render(self.state, self);
 		let end = std::time::Instant::now();
 		self.interface.update_fps(1.0 / (end - start).as_secs_f64());
 	}
@@ -124,7 +131,7 @@ impl render::Game for Game {
 			&self.tree.camera.cam,
 			&self.tree.camera.transform,
 		);
-		self.camera_changed();
+		self.request_redraw();
 		self.ui.resize(self.state, self.window.config());
 		self.eye_dome
 			.update_depth(self.state, self.window.depth_texture());
@@ -154,7 +161,7 @@ impl render::Game for Game {
 		if l > 0.0 {
 			direction *= 10.0 * delta.as_secs_f32() / l;
 			self.tree.camera.movement(direction, self.state);
-			self.camera_changed();
+			self.request_redraw();
 		}
 
 		{
@@ -232,7 +239,7 @@ impl render::Game for Game {
 
 	fn mouse_wheel(&mut self, delta: f32) -> render::ControlFlow {
 		self.tree.camera.scroll(delta, self.state);
-		self.camera_changed();
+		self.request_redraw();
 		render::ControlFlow::Wait
 	}
 
@@ -243,6 +250,11 @@ impl render::Game for Game {
 		button_state: input::State,
 	) -> render::ControlFlow {
 		self.mouse.update(button, button_state);
+		if let (input::MouseButton::Left, input::State::Pressed) = (button, button_state) {
+			if self.mouse.position()[X] < 100.0 && self.mouse.position()[Y] < 100.0 {
+				self.change_project();
+			}
+		}
 		render::ControlFlow::Wait
 	}
 
@@ -250,7 +262,7 @@ impl render::Game for Game {
 		let delta = self.mouse.delta(position);
 		if self.mouse.pressed(input::MouseButton::Left) {
 			self.tree.camera.rotate(delta, self.state);
-			self.camera_changed();
+			self.request_redraw();
 		}
 		render::ControlFlow::Wait
 	}
@@ -258,7 +270,7 @@ impl render::Game for Game {
 
 impl render::Renderable<State> for Game {
 	fn render<'a>(&'a self, render_pass: render::RenderPass<'a>, state: &'a State) -> render::RenderPass<'a> {
-		self.tree.render(render_pass, state)
+		state.render_point_clouds(render_pass, &self.tree)
 	}
 
 	fn post_process<'a>(&'a self, render_pass: render::RenderPass<'a>, _state: &'a State) -> render::RenderPass<'a> {

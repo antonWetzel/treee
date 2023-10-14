@@ -1,3 +1,5 @@
+use std::error::Error;
+
 use pollster::FutureExt;
 use state::State;
 
@@ -9,16 +11,33 @@ mod lod;
 mod state;
 mod tree;
 
-fn main() {
-	let mut args = std::env::args().rev().collect::<Vec<_>>();
-	args.pop();
-	let path = args.pop().unwrap();
+#[derive(Debug)]
+enum ViewerError {
+	NoFile,
+	Exit(i32),
+}
+
+impl std::fmt::Display for ViewerError {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "{:?}", self)
+	}
+}
+
+impl Error for ViewerError {}
+
+fn main() -> Result<(), Box<dyn Error>> {
+	let path = rfd::FileDialog::new()
+		.add_filter("Project File", &["epc"])
+		.pick_file()
+		.ok_or(ViewerError::NoFile)?;
 
 	let (state, runner) = render::State::new().block_on();
 	let state = State::new(state);
 	let state = Box::leak(Box::new(state));
 
 	let mut game = game::Game::new(state, path, &runner);
-	let code = runner.run(&mut game);
-	std::process::exit(code);
+	match runner.run(&mut game) {
+		0 => Ok(()),
+		code => Err(ViewerError::Exit(code))?,
+	}
 }
