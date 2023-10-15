@@ -4,7 +4,12 @@ use common::Project;
 use math::{Vector, X, Y};
 use render::{PointCloudStateExtension, RenderEntry, UIStateExtension};
 
-use crate::{interface::Interface, lod, state::State, tree::Tree};
+use crate::{
+	interface::{Interface, UIAction},
+	lod,
+	state::State,
+	tree::Tree,
+};
 
 pub struct Game {
 	window: render::Window,
@@ -23,8 +28,6 @@ pub struct Game {
 	ui: render::UI,
 	eye_dome: render::EyeDome,
 	interface: Interface,
-
-	image: render::UIImage,
 }
 
 impl Game {
@@ -41,7 +44,7 @@ impl Game {
 
 		let eye_dome = render::EyeDome::new(state, window.config(), window.depth_texture(), 5.0, 0.005);
 		let ui = render::UI::new(state, window.config());
-		let mut interface = Interface::new();
+		let mut interface = Interface::new(state);
 		interface.update_eye_dome_settings(eye_dome.strength, eye_dome.sensitivity);
 
 		Self {
@@ -62,13 +65,6 @@ impl Game {
 			mouse: input::Mouse::new(),
 			keyboard: input::Keyboard::new(),
 			time: Time::new(),
-
-			image: render::UIImage::new(
-				state,
-				include_bytes!("../assets/folder-open.png"),
-				[0.0, 0.0].into(),
-				[100.0, 100.0].into(),
-			),
 		}
 	}
 
@@ -267,8 +263,13 @@ impl RenderEntry for Game {
 	) -> render::ControlFlow {
 		self.mouse.update(button, button_state);
 		if let (input::MouseButton::Left, input::State::Pressed) = (button, button_state) {
-			if self.mouse.position()[X] < 100.0 * self.ui.get_scale() && self.mouse.position()[Y] < 100.0 {
-				self.change_project();
+			match self
+				.interface
+				.clicked(self.mouse.position() / self.ui.get_scale())
+			{
+				UIAction::Nothing => {},
+				UIAction::Debug => self.request_redraw(),
+				UIAction::Open => drop(self.change_project()),
 			}
 		}
 		render::ControlFlow::Wait
@@ -292,13 +293,7 @@ impl render::Renderable<State> for Game {
 	fn post_process<'a>(&'a self, render_pass: render::RenderPass<'a>, state: &'a State) -> render::RenderPass<'a> {
 		let render_pass = self.eye_dome.render(render_pass);
 		let render_pass = self.ui.render(render_pass);
-		state.render_ui(render_pass, &self.ui, self)
-	}
-}
-
-impl render::RenderableUI<State> for Game {
-	fn render<'a>(&'a self, mut render_pass: render::UIPass<'a>, _state: &'a State) -> render::UIPass<'a> {
-		self.image.render(&mut render_pass);
+		let render_pass = state.render_ui(render_pass, &self.ui, &self.interface);
 		render_pass
 	}
 }

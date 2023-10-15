@@ -7,9 +7,10 @@ pub struct Texture {
 	pub size: Vector<2, u32>,
 	pub gpu: wgpu::Texture,
 }
+pub type TextureDimension = wgpu::TextureDimension;
 
 impl Texture {
-	pub fn new(state: &impl Has<State>, data: &[u8], dimension: wgpu::TextureDimension) -> Self {
+	pub fn new(state: &impl Has<State>, data: &[u8], dimension: TextureDimension) -> Self {
 		let img = image::load_from_memory(data).unwrap();
 		let dimensions = img.dimensions();
 

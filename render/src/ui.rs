@@ -43,7 +43,7 @@ impl UIState {
 					entry_point: "fs_main",
 					targets: &[Some(wgpu::ColorTargetState {
 						format: state.surface_format,
-						blend: Some(wgpu::BlendState::REPLACE),
+						blend: Some(wgpu::BlendState::ALPHA_BLENDING),
 						write_mask: wgpu::ColorWrites::ALL,
 					})],
 				}),
@@ -234,12 +234,11 @@ pub struct UIImage {
 impl UIImage {
 	pub fn new(
 		state: &(impl Has<State> + Has<UIState>),
-		data: &[u8],
+		texture: &Texture,
 		position: Vector<2, f32>,
 		size: Vector<2, f32>,
 	) -> Self {
 		let (state, ui_state): (&State, &UIState) = (state.get(), state.get());
-		let texture = Texture::new(state, data, wgpu::TextureDimension::D2);
 
 		assert_eq!(
 			texture.size[X] / size[X] as u32,
