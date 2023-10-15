@@ -34,7 +34,7 @@ impl From<winit::event::MouseButton> for MouseButton {
 
 pub struct Mouse {
 	pub(crate) pressed: HashSet<MouseButton>,
-	pub(crate) position: Vector<2, f64>,
+	pub(crate) position: Vector<2, f32>,
 }
 
 impl Mouse {
@@ -52,7 +52,7 @@ impl Mouse {
 		};
 	}
 
-	pub fn delta(&mut self, position: Vector<2, f64>) -> Vector<2, f64> {
+	pub fn delta(&mut self, position: Vector<2, f32>) -> Vector<2, f32> {
 		let delta = position - self.position;
 		self.position = position;
 		delta
@@ -61,7 +61,7 @@ impl Mouse {
 	pub fn pressed(&self, button: MouseButton) -> bool {
 		self.pressed.contains(&button)
 	}
-	pub fn position(&self) -> Vector<2, f64> {
+	pub fn position(&self) -> Vector<2, f32> {
 		self.position
 	}
 }

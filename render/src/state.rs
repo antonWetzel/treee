@@ -74,7 +74,7 @@ pub struct Runner {
 }
 
 impl Runner {
-	pub fn run<T: Game>(mut self, game: &mut T) -> i32 {
+	pub fn run<T: RenderEntry>(mut self, game: &mut T) -> i32 {
 		self.event_loop
 			.run_return(|event, _event_loop, control_flow| {
 				*control_flow = match event {
@@ -102,7 +102,7 @@ impl Runner {
 							game.mouse_wheel(delta)
 						},
 						winit::event::WindowEvent::CursorMoved { position, .. } => {
-							let position = Vector::from([position.x, position.y]);
+							let position = Vector::from([position.x as f32, position.y as f32]);
 							game.mouse_moved(window_id, position)
 						},
 						&winit::event::WindowEvent::ModifiersChanged(modifiers) => {

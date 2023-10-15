@@ -18,8 +18,8 @@ pub struct Camera {
 }
 
 impl Camera {
-	pub fn new(state: &State) -> Self {
-		let camera = render::Camera3D::new(1.0, 45.0, 0.1, 10_000.0);
+	pub fn new(state: &State, aspect: f32) -> Self {
+		let camera = render::Camera3D::new(aspect, 45.0, 0.1, 10_000.0);
 		let controller = Controller::Orbital { offset: 100.0 };
 		let position = [0.0, 0.0, 100.0].into();
 		let transform = Transform::translation(position);
@@ -38,7 +38,7 @@ impl Camera {
 		self.gpu = render::Camera3DGPU::new(state, &self.cam, &self.transform);
 	}
 
-	pub fn rotate(&mut self, delta: Vector<2, f64>, state: &State) {
+	pub fn rotate(&mut self, delta: Vector<2, f32>, state: &State) {
 		self.controller.rotate(delta, &mut self.transform);
 		self.gpu = render::Camera3DGPU::new(state, &self.cam, &self.transform);
 	}
@@ -141,27 +141,27 @@ impl Controller {
 		}
 	}
 
-	pub fn rotate(&mut self, delta: Vector<2, f64>, transform: &mut Transform<3, f32>) {
+	pub fn rotate(&mut self, delta: Vector<2, f32>, transform: &mut Transform<3, f32>) {
 		match *self {
 			Controller::FirstPerson { .. } => {
 				transform.rotate_local_before(
 					[0.0, 1.0, 0.0].into(),
-					Angle::radians(delta[X] as f32) * -BASE_ROTATE_SPEED,
+					Angle::radians(delta[X]) * -BASE_ROTATE_SPEED,
 				);
 				transform.rotate_local(
 					[1.0, 0.0, 0.0].into(),
-					Angle::radians(delta[Y] as f32) * -BASE_ROTATE_SPEED,
+					Angle::radians(delta[Y]) * -BASE_ROTATE_SPEED,
 				);
 			},
 			Controller::Orbital { offset } => {
 				transform.position += transform.basis[Z] * -offset;
 				transform.rotate_local_before(
 					[0.0, 1.0, 0.0].into(),
-					Angle::radians(delta[X] as f32) * -BASE_ROTATE_SPEED,
+					Angle::radians(delta[X]) * -BASE_ROTATE_SPEED,
 				);
 				transform.rotate_local(
 					[1.0, 0.0, 0.0].into(),
-					Angle::radians(delta[Y] as f32) * -BASE_ROTATE_SPEED,
+					Angle::radians(delta[Y]) * -BASE_ROTATE_SPEED,
 				);
 				transform.position += transform.basis[Z] * offset;
 			},

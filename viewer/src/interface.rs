@@ -1,6 +1,8 @@
+use math::X;
+
 pub struct Interface {
-	last_workload: usize,
-	statistics: render::UIElement,
+	pub last_workload: usize,
+	pub statistics: render::UIElement,
 }
 
 impl Interface {
@@ -18,6 +20,11 @@ impl Interface {
 				25.0,
 			),
 		}
+	}
+
+	pub fn set_scale(&mut self, scale: f32) {
+		self.statistics.position[X] = 110.0 * scale;
+		self.statistics.font_size = 25.0 * scale;
 	}
 
 	pub fn update_fps(&mut self, fps: f64) {

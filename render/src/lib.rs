@@ -1,22 +1,26 @@
 mod camera_3d;
 mod depth_texture;
+mod entry;
 mod eye_dome;
-mod game;
 mod lookup;
 mod point;
 mod point_cloud;
 mod state;
+mod texture;
 mod ui;
+mod vertex_2d;
 mod window;
 
 pub use camera_3d::*;
+pub use entry::*;
 pub use eye_dome::*;
-pub use game::*;
 pub use lookup::*;
 pub use point::*;
 pub use point_cloud::*;
 pub use state::*;
+pub use texture::*;
 pub use ui::*;
+pub use vertex_2d::*;
 pub use window::*;
 
 use depth_texture::*;

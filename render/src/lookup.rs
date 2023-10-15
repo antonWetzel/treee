@@ -1,7 +1,8 @@
 use image::GenericImageView;
+use math::{X, Y};
 use wgpu::util::DeviceExt;
 
-use crate::{Has, State};
+use crate::{Has, State, Texture};
 
 pub struct Lookup {
 	bind_group: wgpu::BindGroup,
@@ -10,48 +11,17 @@ pub struct Lookup {
 impl Lookup {
 	pub fn new_png(state: &impl Has<State>, data: &[u8]) -> Self {
 		let state: &State = state.get();
-		let img = image::load_from_memory(data).unwrap();
-		let dimensions = img.dimensions();
+		let texture = Texture::new(state, data, wgpu::TextureDimension::D1);
+		assert!(texture.size[X].is_power_of_two());
+		assert_eq!(texture.size[Y], 1);
 
-		assert!(dimensions.0.is_power_of_two());
-		assert_eq!(dimensions.1, 1);
-
-		let texture_size = wgpu::Extent3d {
-			width: dimensions.0,
-			height: 1,
-			depth_or_array_layers: 1,
-		};
-		let texture = state.device.create_texture(&wgpu::TextureDescriptor {
-			size: texture_size,
-			mip_level_count: 1,
-			sample_count: 1,
-			dimension: wgpu::TextureDimension::D1,
-			format: wgpu::TextureFormat::Rgba8UnormSrgb,
-			usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-			label: Some("lookup texture"),
-			view_formats: &[],
-		});
-
-		state.queue.write_texture(
-			wgpu::ImageCopyTexture {
-				texture: &texture,
-				mip_level: 0,
-				origin: wgpu::Origin3d::ZERO,
-				aspect: wgpu::TextureAspect::All,
-			},
-			&img.to_rgba8(),
-			wgpu::ImageDataLayout {
-				offset: 0,
-				bytes_per_row: Some(4 * dimensions.0),
-				rows_per_image: Some(dimensions.1),
-			},
-			texture_size,
-		);
-		let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+		let view = texture
+			.gpu
+			.create_view(&wgpu::TextureViewDescriptor::default());
 
 		let bind_group_layout = Self::get_layout(state);
 
-		let scale = dimensions.0.leading_zeros() + 1;
+		let scale = texture.size[X].leading_zeros() + 1;
 
 		let buffer = state
 			.device

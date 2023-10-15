@@ -140,9 +140,9 @@ impl Node {
 }
 
 impl Tree {
-	pub fn new(state: &'static State, project: &Project, path: PathBuf) -> Self {
+	pub fn new(state: &'static State, project: &Project, path: PathBuf, aspect: f32) -> Self {
 		Self {
-			camera: camera::Camera::new(state),
+			camera: camera::Camera::new(state, aspect),
 			root: Node::new(&project.root),
 			loaded_manager: LoadedManager::new(state, path),
 			lookup: render::Lookup::new_png(state, include_bytes!("../assets/grad_warm.png")),

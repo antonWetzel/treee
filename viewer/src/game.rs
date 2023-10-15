@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use common::Project;
 use math::{Vector, X, Y};
-use render::PointCloudStateExtension;
+use render::{PointCloudStateExtension, RenderEntry, UIStateExtension};
 
 use crate::{interface::Interface, lod, state::State, tree::Tree};
 
@@ -23,15 +23,21 @@ pub struct Game {
 	ui: render::UI,
 	eye_dome: render::EyeDome,
 	interface: Interface,
+
+	image: render::UIImage,
 }
 
 impl Game {
 	pub fn new(state: &'static State, path: PathBuf, runner: &render::Runner) -> Self {
-		// let project_path = format!("{}/project.epc", path);
 		let project = Project::from_file(&path);
 
-		let tree = Tree::new(state, &project, path.parent().unwrap().to_owned());
 		let window = render::Window::new(state, &runner.event_loop, "test");
+		let tree = Tree::new(
+			state,
+			&project,
+			path.parent().unwrap().to_owned(),
+			window.get_aspect(),
+		);
 
 		let eye_dome = render::EyeDome::new(state, window.config(), window.depth_texture(), 5.0, 0.005);
 		let ui = render::UI::new(state, window.config());
@@ -56,6 +62,13 @@ impl Game {
 			mouse: input::Mouse::new(),
 			keyboard: input::Keyboard::new(),
 			time: Time::new(),
+
+			image: render::UIImage::new(
+				state,
+				include_bytes!("../assets/folder-open.png"),
+				[0.0, 0.0].into(),
+				[100.0, 100.0].into(),
+			),
 		}
 	}
 
@@ -95,12 +108,13 @@ impl Game {
 			self.state,
 			&self.project,
 			self.path.parent().unwrap().to_owned(),
+			self.window.get_aspect(),
 		);
 		self.request_redraw();
 	}
 }
 
-impl render::Game for Game {
+impl RenderEntry for Game {
 	fn render(&mut self, _window_id: render::WindowId) {
 		if self.paused {
 			return;
@@ -135,6 +149,8 @@ impl render::Game for Game {
 		self.ui.resize(self.state, self.window.config());
 		self.eye_dome
 			.update_depth(self.state, self.window.depth_texture());
+
+		self.interface.set_scale(self.ui.get_scale());
 		render::ControlFlow::Wait
 	}
 
@@ -251,14 +267,14 @@ impl render::Game for Game {
 	) -> render::ControlFlow {
 		self.mouse.update(button, button_state);
 		if let (input::MouseButton::Left, input::State::Pressed) = (button, button_state) {
-			if self.mouse.position()[X] < 100.0 && self.mouse.position()[Y] < 100.0 {
+			if self.mouse.position()[X] < 100.0 * self.ui.get_scale() && self.mouse.position()[Y] < 100.0 {
 				self.change_project();
 			}
 		}
 		render::ControlFlow::Wait
 	}
 
-	fn mouse_moved(&mut self, _window_id: render::WindowId, position: Vector<2, f64>) -> render::ControlFlow {
+	fn mouse_moved(&mut self, _window_id: render::WindowId, position: Vector<2, f32>) -> render::ControlFlow {
 		let delta = self.mouse.delta(position);
 		if self.mouse.pressed(input::MouseButton::Left) {
 			self.tree.camera.rotate(delta, self.state);
@@ -273,9 +289,17 @@ impl render::Renderable<State> for Game {
 		state.render_point_clouds(render_pass, &self.tree)
 	}
 
-	fn post_process<'a>(&'a self, render_pass: render::RenderPass<'a>, _state: &'a State) -> render::RenderPass<'a> {
+	fn post_process<'a>(&'a self, render_pass: render::RenderPass<'a>, state: &'a State) -> render::RenderPass<'a> {
 		let render_pass = self.eye_dome.render(render_pass);
-		self.ui.render(render_pass)
+		let render_pass = self.ui.render(render_pass);
+		state.render_ui(render_pass, &self.ui, self)
+	}
+}
+
+impl render::RenderableUI<State> for Game {
+	fn render<'a>(&'a self, mut render_pass: render::UIPass<'a>, _state: &'a State) -> render::UIPass<'a> {
+		self.image.render(&mut render_pass);
+		render_pass
 	}
 }
 

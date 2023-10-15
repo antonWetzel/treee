@@ -54,10 +54,6 @@ impl Window {
 		[self.config.width, self.config.height].into()
 	}
 
-	pub fn size(&self) -> winit::dpi::PhysicalSize<u32> {
-		self.window.inner_size()
-	}
-
 	pub fn set_title(&self, title: String) {
 		self.window.set_title(title.as_str())
 	}
@@ -79,7 +75,7 @@ impl Window {
 
 	pub fn resized(&mut self, state: &impl Has<State>) {
 		let state = state.get();
-		let size = self.size();
+		let size = self.window.inner_size();
 		self.config.width = size.width;
 		self.config.height = size.height;
 		self.surface.configure(&state.device, &self.config);
@@ -120,21 +116,21 @@ impl Window {
 			let _render_pass = renderable.render(render_pass, state);
 		}
 
-		{
-			let view = output
-				.texture
-				.create_view(&wgpu::TextureViewDescriptor::default());
-			let render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-				label: Some("eye dome"),
-				color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-					view: &view,
-					resolve_target: None,
-					ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: true },
-				})],
-				depth_stencil_attachment: None,
-			});
-			let _render_pass = renderable.post_process(render_pass, state);
-		}
+		let view = output
+			.texture
+			.create_view(&wgpu::TextureViewDescriptor::default());
+		let render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+			label: Some("eye dome"),
+			color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+				view: &view,
+				resolve_target: None,
+				ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: true },
+			})],
+			depth_stencil_attachment: None,
+		});
+		let render_pass = renderable.post_process(render_pass, state);
+		drop(render_pass);
+
 		render_state.queue.submit(Some(encoder.finish()));
 		output.present();
 	}

@@ -37,15 +37,8 @@ impl PointCloudState {
 			),
 		}
 	}
-
-	pub fn activate<'a>(&'a self, mut render_pass: RenderPass<'a>, lookup: &'a Lookup) -> PointCloudPass<'a> {
-		render_pass.set_vertex_buffer(0, self.quad.slice(..));
-		render_pass.set_bind_group(1, lookup.get_bind_group(), &[]);
-		PointCloudPass(render_pass)
-	}
 }
 
-#[repr(transparent)]
 pub struct PointCloudPass<'a>(wgpu::RenderPass<'a>);
 
 #[derive(Debug)]

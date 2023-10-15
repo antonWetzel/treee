@@ -1,38 +1,18 @@
 use math::{Vector, X, Y, Z};
 use wgpu::util::DeviceExt;
 
-use crate::{depth_texture::DepthTexture, Has, RenderPass, State};
+use crate::{depth_texture::DepthTexture, Has, RenderPass, State, Vertex2D};
 
-#[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct Vertex {
-	position: [f32; 2],
-	tex_coords: [f32; 2],
-}
-
-impl Vertex {
-	const ATTRIBUTES: &[wgpu::VertexAttribute] = &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2];
-
-	fn desc() -> wgpu::VertexBufferLayout<'static> {
-		use std::mem;
-		wgpu::VertexBufferLayout {
-			array_stride: mem::size_of::<Vertex>() as wgpu::BufferAddress,
-			step_mode: wgpu::VertexStepMode::Vertex,
-			attributes: Self::ATTRIBUTES,
-		}
-	}
-}
-
-const FULL_SCREEN_VERTICES: &[Vertex] = &[
-	Vertex {
+const FULL_SCREEN_VERTICES: &[Vertex2D] = &[
+	Vertex2D {
 		position: [-1.0, -1.0],
 		tex_coords: [0.0, 1.0],
 	},
-	Vertex {
+	Vertex2D {
 		position: [3.0, -1.0],
 		tex_coords: [2.0, 1.0],
 	},
-	Vertex {
+	Vertex2D {
 		position: [-1.0, 3.0],
 		tex_coords: [0.0, -1.0],
 	},
@@ -140,7 +120,7 @@ impl EyeDome {
 				vertex: wgpu::VertexState {
 					module: &shader,
 					entry_point: "vs_main",
-					buffers: &[Vertex::desc()],
+					buffers: &[Vertex2D::desc()],
 				},
 				fragment: Some(wgpu::FragmentState {
 					module: &shader,
