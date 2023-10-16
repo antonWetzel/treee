@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use common::Project;
 use math::{Vector, X, Y};
-use render::{PointCloudStateExtension, RenderEntry, UIStateExtension};
+use render::{ChainExtension, RenderEntry};
 
 use crate::{
 	interface::{Interface, UIAction},
@@ -285,16 +285,18 @@ impl RenderEntry for Game {
 	}
 }
 
-impl render::Renderable<State> for Game {
-	fn render<'a>(&'a self, render_pass: render::RenderPass<'a>, state: &'a State) -> render::RenderPass<'a> {
-		state.render_point_clouds(render_pass, &self.tree)
+impl render::Renderable for Game {
+	fn render<'a>(&'a self, render_pass: render::RenderPass<'a>) -> render::RenderPass<'a> {
+		render_pass
+			.next(|render_pass| render::PointCloudPass::start(render_pass, self.state, &self.tree))
+			.next(|point_cloud_pass| self.tree.render(point_cloud_pass))
+			.next(|point_cloud_pass| point_cloud_pass.end())
 	}
 
-	fn post_process<'a>(&'a self, render_pass: render::RenderPass<'a>, state: &'a State) -> render::RenderPass<'a> {
-		let render_pass = self.eye_dome.render(render_pass);
-		let render_pass = self.ui.render(render_pass);
-		let render_pass = state.render_ui(render_pass, &self.ui, &self.interface);
+	fn post_process<'a>(&'a self, render_pass: render::RenderPass<'a>) -> render::RenderPass<'a> {
 		render_pass
+			.next(|render_pass| self.eye_dome.render(render_pass))
+			.next(|render_pass| self.ui.render(&self.interface, self.state, render_pass))
 	}
 }
 

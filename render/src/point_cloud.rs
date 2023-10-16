@@ -41,6 +41,30 @@ impl PointCloudState {
 
 pub struct PointCloudPass<'a>(wgpu::RenderPass<'a>);
 
+impl<'a> PointCloudPass<'a> {
+	pub fn start(
+		mut render_pass: RenderPass<'a>,
+		state: &'a impl Has<PointCloudState>,
+		environment: &'a impl PointCloudEnvironment,
+	) -> Self {
+		let state = state.get();
+		render_pass.set_pipeline(&state.pipeline);
+		environment.camera().bind(&mut render_pass, 0);
+		render_pass.set_vertex_buffer(0, state.get().quad.slice(..));
+		render_pass.set_bind_group(1, environment.lookup().get_bind_group(), &[]);
+		Self(render_pass)
+	}
+
+	pub fn end(self) -> RenderPass<'a> {
+		self.0
+	}
+}
+
+pub trait PointCloudEnvironment {
+	fn camera(&self) -> &Camera3DGPU;
+	fn lookup(&self) -> &Lookup;
+}
+
 #[derive(Debug)]
 pub struct PointCloud {
 	pub buffer: wgpu::Buffer,
@@ -67,41 +91,6 @@ impl PointCloud {
 			.set_vertex_buffer(1, self.buffer.slice(..));
 		point_cloud_pass.0.draw(0..6, 0..self.instances);
 	}
-}
-
-pub trait PointCloudStateExtension
-where
-	Self: Sized,
-{
-	fn render_point_clouds<'a>(
-		&'a self,
-		render_pass: RenderPass<'a>,
-		renderable: &'a impl RenderablePointCloud<Self>,
-	) -> RenderPass<'a>;
-}
-
-impl<S> PointCloudStateExtension for S
-where
-	S: Has<PointCloudState>,
-{
-	fn render_point_clouds<'a>(
-		&'a self,
-		mut render_pass: RenderPass<'a>,
-		renderable: &'a impl RenderablePointCloud<S>,
-	) -> RenderPass<'a> {
-		let state = self.get();
-		render_pass.set_pipeline(&state.pipeline);
-		renderable.get_cam().bind(&mut render_pass, 0);
-		render_pass.set_vertex_buffer(0, state.get().quad.slice(..));
-		render_pass.set_bind_group(1, renderable.get_lookup().get_bind_group(), &[]);
-		renderable.render(PointCloudPass(render_pass), self).0
-	}
-}
-
-pub trait RenderablePointCloud<State> {
-	fn get_cam(&self) -> &Camera3DGPU;
-	fn get_lookup(&self) -> &Lookup;
-	fn render<'a>(&'a self, render_pass: PointCloudPass<'a>, state: &'a State) -> PointCloudPass<'a>;
 }
 
 fn create_pipeline(

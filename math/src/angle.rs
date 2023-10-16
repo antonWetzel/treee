@@ -10,7 +10,7 @@ where
 	T: FromF64,
 	T: Mul<T, Output = T>,
 {
-	const DEG_TO_RAD: f64 = 2.0 * std::f64::consts::PI / 360.0;
+	const DEG_TO_RAD: f64 = std::f64::consts::TAU / 360.0;
 	const RAD_TO_DEG: f64 = 1.0 / Self::DEG_TO_RAD;
 
 	pub fn degree(value: T) -> Angle<T> {

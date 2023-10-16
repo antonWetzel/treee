@@ -25,10 +25,10 @@ pub use window::*;
 
 use depth_texture::*;
 
-pub trait Renderable<State> {
-	fn render<'a>(&'a self, render_pass: RenderPass<'a>, state: &'a State) -> RenderPass<'a>;
+pub trait Renderable {
+	fn render<'a>(&'a self, render_pass: RenderPass<'a>) -> RenderPass<'a>;
 
-	fn post_process<'a>(&'a self, render_pass: RenderPass<'a>, state: &'a State) -> RenderPass<'a>;
+	fn post_process<'a>(&'a self, render_pass: RenderPass<'a>) -> RenderPass<'a>;
 }
 
 pub type Device = wgpu::Device;
@@ -42,3 +42,16 @@ impl<T> Has<T> for T {
 		self
 	}
 }
+
+pub trait ChainExtension
+where
+	Self: Sized,
+{
+	fn next<O>(self, f: impl FnOnce(Self) -> O) -> O {
+		f(self)
+	}
+}
+
+impl ChainExtension for RenderPass<'_> {}
+impl ChainExtension for UIPass<'_> {}
+impl ChainExtension for PointCloudPass<'_> {}

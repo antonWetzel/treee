@@ -6,14 +6,14 @@ pub struct Vertex2D {
 }
 
 impl Vertex2D {
-	const ATTRIBUTES: &[wgpu::VertexAttribute] = &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2];
+	const ATTRIBUTES: [wgpu::VertexAttribute; 2] = wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2];
 
 	pub fn desc() -> wgpu::VertexBufferLayout<'static> {
 		use std::mem;
 		wgpu::VertexBufferLayout {
 			array_stride: mem::size_of::<Vertex2D>() as wgpu::BufferAddress,
 			step_mode: wgpu::VertexStepMode::Vertex,
-			attributes: Self::ATTRIBUTES,
+			attributes: &Self::ATTRIBUTES,
 		}
 	}
 }

@@ -131,9 +131,17 @@ impl UI {
 			.unwrap();
 	}
 
-	pub fn render<'a>(&'a self, mut render_pass: RenderPass<'a>) -> RenderPass<'a> {
+	pub fn render<'a, S: Has<UIState>>(
+		&'a self,
+		renderable: &'a impl RenderableUI<S>,
+		state: &'a S,
+		mut render_pass: RenderPass<'a>,
+	) -> RenderPass<'a> {
+		let ui_state = state.get();
 		self.brush.draw(&mut render_pass);
-		render_pass
+		render_pass.set_pipeline(&ui_state.pipeline);
+		render_pass.set_bind_group(0, &self.projection, &[]);
+		renderable.render(UIPass(render_pass), state).0
 	}
 
 	fn create_projection(state: &(impl Has<State> + Has<UIState>), config: &SurfaceConfiguration) -> wgpu::BindGroup {
@@ -341,33 +349,4 @@ pub struct UIPass<'a>(RenderPass<'a>);
 
 pub trait RenderableUI<State> {
 	fn render<'a>(&'a self, render_pass: UIPass<'a>, state: &'a State) -> UIPass<'a>;
-}
-
-pub trait UIStateExtension
-where
-	Self: Sized,
-{
-	fn render_ui<'a>(
-		&'a self,
-		render_pass: RenderPass<'a>,
-		ui: &'a UI,
-		renderable: &'a impl RenderableUI<Self>,
-	) -> RenderPass<'a>;
-}
-
-impl<S> UIStateExtension for S
-where
-	S: Has<UIState>,
-{
-	fn render_ui<'a>(
-		&'a self,
-		mut render_pass: RenderPass<'a>,
-		ui: &'a UI,
-		renderable: &'a impl RenderableUI<S>,
-	) -> RenderPass<'a> {
-		let state = self.get();
-		render_pass.set_pipeline(&state.pipeline);
-		render_pass.set_bind_group(0, &ui.projection, &[]);
-		renderable.render(UIPass(render_pass), self).0
-	}
 }

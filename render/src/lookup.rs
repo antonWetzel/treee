@@ -1,4 +1,3 @@
-use image::GenericImageView;
 use math::{X, Y};
 use wgpu::util::DeviceExt;
 

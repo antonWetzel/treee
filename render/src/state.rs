@@ -22,7 +22,7 @@ impl State {
 			.unwrap();
 
 		let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-			backends: wgpu::Backends::all(),
+			backends: wgpu::Backends::PRIMARY,
 			dx12_shader_compiler: Default::default(),
 		});
 
@@ -30,7 +30,7 @@ impl State {
 
 		let adapter = instance
 			.request_adapter(&wgpu::RequestAdapterOptions {
-				power_preference: wgpu::PowerPreference::default(),
+				power_preference: wgpu::PowerPreference::HighPerformance,
 				compatible_surface: Some(&surface),
 				force_fallback_adapter: false,
 			})

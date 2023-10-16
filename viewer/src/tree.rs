@@ -148,28 +148,23 @@ impl Tree {
 			lookup: render::Lookup::new_png(state, include_bytes!("../assets/grad_warm.png")),
 		}
 	}
-}
 
-impl render::RenderablePointCloud<State> for Tree {
-	fn get_cam(&self) -> &render::Camera3DGPU {
-		&self.camera.gpu
-	}
-
-	fn get_lookup(&self) -> &render::Lookup {
-		&self.lookup
-	}
-
-	fn render<'a>(
-		&'a self,
-		mut render_pass: render::PointCloudPass<'a>,
-		_state: &'a State,
-	) -> render::PointCloudPass<'a> {
+	pub fn render<'a>(&'a self, mut point_cloud_pass: render::PointCloudPass<'a>) -> render::PointCloudPass<'a> {
 		self.root.render(
-			&mut render_pass,
+			&mut point_cloud_pass,
 			lod::Checker::new(&self.camera.lod),
 			&self.camera,
 			&self.loaded_manager,
 		);
-		render_pass
+		point_cloud_pass
+	}
+}
+
+impl render::PointCloudEnvironment for Tree {
+	fn camera(&self) -> &render::Camera3DGPU {
+		&self.camera.gpu
+	}
+	fn lookup(&self) -> &render::Lookup {
+		&self.lookup
 	}
 }

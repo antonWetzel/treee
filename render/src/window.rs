@@ -82,7 +82,7 @@ impl Window {
 		self.depth_texture = DepthTexture::new(&state.device, &self.config, "depth");
 	}
 
-	pub fn render<S: Has<State>>(&self, state: &'static S, renderable: &impl Renderable<S>) {
+	pub fn render(&self, state: &'static impl Has<State>, renderable: &impl Renderable) {
 		let render_state: &State = state.get();
 		let output = self.surface.get_current_texture().unwrap();
 		let view = output
@@ -92,29 +92,28 @@ impl Window {
 		let mut encoder = render_state
 			.device
 			.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("Render Encoder") });
-		{
-			let desc: wgpu::RenderPassDescriptor = wgpu::RenderPassDescriptor {
-				label: Some("Render Pass"),
-				color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-					view: &view,
-					resolve_target: None,
-					ops: wgpu::Operations {
-						load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.1, g: 0.2, b: 0.3, a: 1.0 }),
-						store: true,
-					},
-				})],
-				depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-					view: &self.depth_texture.view,
-					depth_ops: Some(wgpu::Operations {
-						load: wgpu::LoadOp::Clear(1.0),
-						store: true,
-					}),
-					stencil_ops: None,
+
+		let render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+			label: Some("Render Pass"),
+			color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+				view: &view,
+				resolve_target: None,
+				ops: wgpu::Operations {
+					load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.1, g: 0.2, b: 0.3, a: 1.0 }),
+					store: true,
+				},
+			})],
+			depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+				view: &self.depth_texture.view,
+				depth_ops: Some(wgpu::Operations {
+					load: wgpu::LoadOp::Clear(1.0),
+					store: true,
 				}),
-			};
-			let render_pass = encoder.begin_render_pass(&desc);
-			let _render_pass = renderable.render(render_pass, state);
-		}
+				stencil_ops: None,
+			}),
+		});
+		let render_pass = renderable.render(render_pass);
+		drop(render_pass);
 
 		let view = output
 			.texture
@@ -128,7 +127,7 @@ impl Window {
 			})],
 			depth_stencil_attachment: None,
 		});
-		let render_pass = renderable.post_process(render_pass, state);
+		let render_pass = renderable.post_process(render_pass);
 		drop(render_pass);
 
 		render_state.queue.submit(Some(encoder.finish()));
