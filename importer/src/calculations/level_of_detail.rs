@@ -9,7 +9,6 @@ struct Cell {
 	count: usize,
 	position: Vector<3, f32>,
 	normal: Vector<3, f32>,
-	value: f32,
 	total_area: f32,
 }
 
@@ -32,7 +31,6 @@ pub fn calculate(children: Vec<Vec<render::Point>>, corner: Vector<3, f32>, size
 			let area = point.size * point.size;
 			let weight = area / (cell.total_area + area);
 			cell.normal = fast_spherical_linear_interpolation(cell.normal, point.normal, weight);
-			cell.value = cell.value * (1.0 - weight) + point.value as f32 * weight;
 			cell.total_area += area;
 			cell.count += 1;
 		}
@@ -46,7 +44,6 @@ pub fn calculate(children: Vec<Vec<render::Point>>, corner: Vector<3, f32>, size
 
 		res.push(render::Point {
 			position: cell.position / cell.count as f32,
-			value: cell.value as u32,
 			normal: cell.normal,
 			size: POINT_SCALE * cell.total_area.sqrt(),
 		});

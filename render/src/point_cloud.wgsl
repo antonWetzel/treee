@@ -11,8 +11,11 @@ struct VertexInput {
 struct InstanceInput {
     @location(1) position: vec3<f32>,
     @location(2) normal: vec3<f32>,
-    @location(3) value: u32,
-    @location(4) size: f32,
+    @location(3) size: f32,
+}
+
+struct PropertyInput {
+    @location(4) value: u32,
 }
 
 struct VertexOutput {
@@ -21,10 +24,12 @@ struct VertexOutput {
     @location(1) pos: vec2<f32>,
 }
 
+
 @vertex
 fn vs_main(
     vertex_in: VertexInput,
     instance_in: InstanceInput,
+    property_in: PropertyInput,
 ) -> VertexOutput {
     let a = normalize(cross(instance_in.normal, vec3<f32>(instance_in.normal.y, instance_in.normal.z, -instance_in.normal.x)));
     let b = cross(instance_in.normal, a);
@@ -36,7 +41,7 @@ fn vs_main(
             vertex_in.position.y * instance_in.size * b,
         1.0,
     );
-    out.value = instance_in.value;
+    out.value = property_in.value;
     out.pos = vertex_in.position;
     return out;
 }

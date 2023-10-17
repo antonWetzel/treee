@@ -2,16 +2,15 @@ use std::collections::HashMap;
 use std::io::{BufWriter, Read, Seek, Write};
 use std::mem::MaybeUninit;
 
-use common::{IndexData, IndexNode, Project, Statistics};
+use common::{IndexData, IndexNode, Project, Statistics, MAX_LEAF_SIZE};
 use math::Vector;
 use math::{Dimension, Dimensions, X, Z};
 
 use crate::calculations::{level_of_detail, normal, size};
 use crate::data_point::DataPoint;
 use crate::progress::Progress;
-use crate::Writer;
+use crate::{HeightCalculator, Writer};
 
-pub const MAX_LEAF_SIZE: usize = 1 << 15;
 pub const MAX_NEIGHBORS: usize = 32 - 1;
 pub const MAX_NEIGHBOR_DISTANCE_SCALE: f32 = 32.0;
 
@@ -96,7 +95,6 @@ impl Node {
 			&render::Point {
 				position: point.position,
 				normal: [0.0, 1.0, 0.0].into(),
-				value: point.value,
 				size: 0.001,
 			},
 			writer,
@@ -289,9 +287,6 @@ impl FlatTree {
 			node_count: node_count as u32,
 		}
 	}
-	pub fn calculate_properties(self, writer: &mut Writer, project: Project) {
-		self.calculate(writer, &project);
-	}
 
 	fn get_density(&self) -> f32 {
 		let mut total_size = 0.0;
@@ -312,7 +307,7 @@ impl FlatTree {
 		density
 	}
 
-	pub fn calculate(self, writer: &Writer, project: &Project) {
+	pub fn calculate(self, writer: &Writer, project: &Project, height_calculator: &HeightCalculator) {
 		let progress = Progress::new("Calculate".into(), project.node_count as usize);
 		let progress = std::sync::Mutex::new(progress);
 
@@ -325,7 +320,7 @@ impl FlatTree {
 				let reciever = reciever.clone();
 				scope.spawn(|| {
 					for (i, node) in reciever {
-						let res = node.calculate(&data, writer, &project.statistics);
+						let res = node.calculate(&data, writer, &project.statistics, height_calculator);
 						let mut data = data.lock().unwrap();
 						data.insert(i, res);
 						drop(data);
@@ -350,6 +345,7 @@ impl FLatNode {
 		data: &std::sync::Mutex<HashMap<usize, Vec<render::Point>>>,
 		writer: &Writer,
 		statistics: &Statistics,
+		height_calculator: &HeightCalculator,
 	) -> Vec<render::Point> {
 		match &mut self.data {
 			FlatData::Branch { children } => {
@@ -368,6 +364,12 @@ impl FLatNode {
 
 				let lod = level_of_detail::calculate(points, self.corner, self.size);
 				writer.save(self.index, &lod);
+
+				let mut heights = Vec::with_capacity(lod.len());
+				for i in 0..lod.len() {
+					heights.push(height_calculator.calculate(i, &lod));
+				}
+				writer.save_property(self.index, "height", &heights);
 				lod
 			},
 			FlatData::Leaf { size } => {
@@ -390,6 +392,12 @@ impl FLatNode {
 					points[i].size = size::calculate(neighbors, &points);
 				}
 				writer.save(self.index, &points);
+
+				let mut heights = Vec::with_capacity(points.len());
+				for i in 0..points.len() {
+					heights.push(height_calculator.calculate(i, &points));
+				}
+				writer.save_property(self.index, "height", &heights);
 				points
 			},
 		}

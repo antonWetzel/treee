@@ -36,7 +36,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let size = textureDimensions(depths);
     let coord = vec2<i32>(in.tex_coords * vec2<f32>(size));
     let depth = get_depth(coord);
-    if depth == 0.0 {
+    if depth == 1.0 {
         return vec4<f32>(0.0, 0.0, 0.0, 0.0);
     }
     var m = depth;
@@ -55,7 +55,7 @@ fn get_depth(uv: vec2<i32>) -> f32 {
     let far = 10000.0;
     let depth = textureLoad(depths, uv, 0).x;
     if depth >= 1.0{
-        return 0.0;
+        return 1.0;
     }
     return (2.0 * near) / (far + near - depth * (far - near));
 }

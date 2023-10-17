@@ -131,19 +131,6 @@ impl UI {
 			.unwrap();
 	}
 
-	pub fn render<'a, S: Has<UIState>>(
-		&'a self,
-		renderable: &'a impl RenderableUI<S>,
-		state: &'a S,
-		mut render_pass: RenderPass<'a>,
-	) -> RenderPass<'a> {
-		let ui_state = state.get();
-		self.brush.draw(&mut render_pass);
-		render_pass.set_pipeline(&ui_state.pipeline);
-		render_pass.set_bind_group(0, &self.projection, &[]);
-		renderable.render(UIPass(render_pass), state).0
-	}
-
 	fn create_projection(state: &(impl Has<State> + Has<UIState>), config: &SurfaceConfiguration) -> wgpu::BindGroup {
 		let (state, ui_state): (&State, &UIState) = (state.get(), state.get());
 		let projection: Transform<2, f32> = Transform::translation([-1.0, 1.0].into())
@@ -346,6 +333,20 @@ impl UIImage {
 }
 
 pub struct UIPass<'a>(RenderPass<'a>);
+
+impl<'a> UIPass<'a> {
+	pub fn start(mut render_pass: RenderPass<'a>, ui: &'a UI, state: &'a impl Has<UIState>) -> Self {
+		let state = state.get();
+		ui.brush.draw(&mut render_pass);
+		render_pass.set_pipeline(&state.pipeline);
+		render_pass.set_bind_group(0, &ui.projection, &[]);
+		Self(render_pass)
+	}
+
+	pub fn end(self) -> RenderPass<'a> {
+		self.0
+	}
+}
 
 pub trait RenderableUI<State> {
 	fn render<'a>(&'a self, render_pass: UIPass<'a>, state: &'a State) -> UIPass<'a>;

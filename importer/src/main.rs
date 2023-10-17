@@ -4,6 +4,8 @@ mod progress;
 mod tree;
 mod writer;
 
+use std::process::id;
+
 use data_point::DataPoint;
 use las::Read;
 use math::{Vector, X, Y, Z};
@@ -61,6 +63,26 @@ fn main() {
 	}
 
 	let (tree, project) = tree.flatten();
+	writer.setup_property("height");
 	writer.save_project(&project);
-	tree.calculate_properties(&mut writer, project);
+
+	let heigt_calculator = HeightCalculator::new((min[Y] - pos[Y]) as f32, (max[Y] - pos[Y]) as f32);
+	tree.calculate(&mut writer, &project, &heigt_calculator);
+}
+
+pub struct HeightCalculator {
+	min: f32,
+	diff: f32,
+}
+
+impl HeightCalculator {
+	pub fn new(min: f32, max: f32) -> Self {
+		Self { min, diff: max - min }
+	}
+
+	pub fn calculate(&self, index: usize, points: &[render::Point]) -> u32 {
+		let height = points[index].position[Y];
+		let b = (height - self.min) / self.diff;
+		(b * (u32::MAX - 1) as f32) as u32
+	}
 }

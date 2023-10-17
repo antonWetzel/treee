@@ -8,11 +8,34 @@ use common::IndexNode;
 use common::{IndexData, Project};
 use math::Vector;
 
+#[derive(Clone, Copy)]
+enum LookupName {
+	Warm,
+	Cold,
+}
+
+impl LookupName {
+	pub fn next(self) -> Self {
+		match self {
+			LookupName::Warm => LookupName::Cold,
+			LookupName::Cold => LookupName::Warm,
+		}
+	}
+
+	pub fn data(self) -> &'static [u8] {
+		match self {
+			LookupName::Warm => include_bytes!("../assets/grad_warm.png"),
+			LookupName::Cold => include_bytes!("../assets/grad_cold.png"),
+		}
+	}
+}
+
 pub struct Tree {
 	pub root: Node,
 	pub camera: camera::Camera,
 	pub loaded_manager: LoadedManager,
 	pub lookup: render::Lookup,
+	lookup_name: LookupName,
 }
 
 pub struct Node {
@@ -141,11 +164,13 @@ impl Node {
 
 impl Tree {
 	pub fn new(state: &'static State, project: &Project, path: PathBuf, aspect: f32) -> Self {
+		let lookup_name = LookupName::Warm;
 		Self {
 			camera: camera::Camera::new(state, aspect),
 			root: Node::new(&project.root),
-			loaded_manager: LoadedManager::new(state, path),
-			lookup: render::Lookup::new_png(state, include_bytes!("../assets/grad_warm.png")),
+			loaded_manager: LoadedManager::new(state, path, "height"),
+			lookup_name,
+			lookup: render::Lookup::new_png(state, lookup_name.data()),
 		}
 	}
 
@@ -157,6 +182,11 @@ impl Tree {
 			&self.loaded_manager,
 		);
 		point_cloud_pass
+	}
+
+	pub fn next_lookup(&mut self, state: &'static State) {
+		self.lookup_name = self.lookup_name.next();
+		self.lookup = render::Lookup::new_png(state, self.lookup_name.data());
 	}
 }
 

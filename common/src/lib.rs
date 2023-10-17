@@ -3,6 +3,8 @@ use std::{collections::HashMap, path::Path};
 use math::Vector;
 use serde::{Deserialize, Serialize};
 
+pub const MAX_LEAF_SIZE: usize = 1 << 15;
+
 #[derive(Debug, Default, Clone, Copy, Deserialize, Serialize)]
 pub struct Statistics {
 	pub density: f32,

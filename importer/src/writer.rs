@@ -49,7 +49,29 @@ impl Writer {
 			.open(path)
 			.unwrap();
 		file.set_len(8 + view.len() as u64).unwrap();
-		file.write_all(&points.len().to_le_bytes()).unwrap();
+		file.write_all(&(points.len() as u64).to_le_bytes())
+			.unwrap();
+		file.write_all(view).unwrap();
+	}
+
+	pub fn setup_property(&self, name: &str) {
+		std::fs::create_dir_all(format!("{}/data/{}", self.path, name)).unwrap();
+	}
+
+	pub fn save_property(&self, index: usize, name: &str, property: &[u32]) {
+		let view = unsafe {
+			std::slice::from_raw_parts(
+				property as *const _ as *const u8,
+				std::mem::size_of_val(property),
+			)
+		};
+		let path = format!("{}/data/{}/{}.data", self.path, name, index);
+		let mut file = std::fs::OpenOptions::new()
+			.write(true)
+			.create(true)
+			.open(path)
+			.unwrap();
+		file.set_len(view.len() as u64).unwrap();
 		file.write_all(view).unwrap();
 	}
 

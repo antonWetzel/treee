@@ -8,6 +8,7 @@ pub struct Interface {
 	show_statistics: bool,
 	open: Button,
 	debug: Button,
+	color_palette: Button,
 }
 
 struct Button {
@@ -39,6 +40,7 @@ pub enum InterfaceAction {
 	Nothing,
 	Open,
 	Debug,
+	ColorPalette,
 }
 
 impl Interface {
@@ -66,6 +68,12 @@ impl Interface {
 				state,
 				include_bytes!("../assets/debug.png"),
 				[0.0, 100.0].into(),
+				[100.0, 100.0].into(),
+			),
+			color_palette: Button::new(
+				state,
+				include_bytes!("../assets/color-palette.png"),
+				[0.0, 200.0].into(),
 				[100.0, 100.0].into(),
 			),
 		}
@@ -103,7 +111,17 @@ impl Interface {
 			self.show_statistics = !self.show_statistics;
 			return InterfaceAction::Debug;
 		}
+		if self.color_palette.inside(position) {
+			return InterfaceAction::ColorPalette;
+		}
 		InterfaceAction::Nothing
+	}
+
+	pub fn render<'a>(&'a self, mut render_pass: render::UIPass<'a>) -> render::UIPass<'a> {
+		self.open.render(&mut render_pass);
+		self.debug.render(&mut render_pass);
+		self.color_palette.render(&mut render_pass);
+		render_pass
 	}
 }
 
@@ -112,13 +130,5 @@ impl render::UICollect for Interface {
 		if self.show_statistics {
 			collector.add_element(&self.statistics);
 		}
-	}
-}
-
-impl render::RenderableUI<State> for Interface {
-	fn render<'a>(&'a self, mut render_pass: render::UIPass<'a>, _state: &'a State) -> render::UIPass<'a> {
-		self.open.render(&mut render_pass);
-		self.debug.render(&mut render_pass);
-		render_pass
 	}
 }

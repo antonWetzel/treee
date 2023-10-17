@@ -1,7 +1,7 @@
 [package]
 name = "k-nearest"
 version = "0.2.0"
-edition = "2021"
+edition.workspace = true
 license-file = "license"
 description = "K-nearest neighbors search for points with maximal search radius"
 readme = "readme.md"

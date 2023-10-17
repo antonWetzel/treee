@@ -72,29 +72,32 @@ impl Game {
 		self.window.request_redraw();
 	}
 
-	fn change_project(&mut self) -> Option<()> {
-		self.path = rfd::FileDialog::new()
+	fn change_project(&mut self) {
+		let Some(path) = rfd::FileDialog::new()
 			.add_filter("Project File", &["epc"])
-			.pick_file()?;
-		self.reload(self.current_poject_time()?);
-		Some(())
+			.pick_file()
+		else {
+			return;
+		};
+		self.path = path;
+		self.reload(self.current_poject_time());
 	}
 
-	fn check_reload(&mut self) -> Option<()> {
-		let project_time = self.current_poject_time()?;
+	fn check_reload(&mut self) {
+		let project_time = self.current_poject_time();
 		if self.project_time == project_time {
-			return None;
+			return;
 		}
 		if project_time.elapsed().unwrap() < std::time::Duration::from_millis(1000) {
-			return None;
+			return;
 		}
 		self.reload(project_time);
-		Some(())
 	}
 
-	fn current_poject_time(&self) -> Option<std::time::SystemTime> {
-		let meta = std::fs::metadata(&self.path).ok()?;
-		meta.modified().ok()
+	fn current_poject_time(&self) -> std::time::SystemTime {
+		std::fs::metadata(&self.path)
+			.map(|meta| meta.modified().unwrap_or(self.project_time))
+			.unwrap_or(self.project_time)
 	}
 
 	fn reload(&mut self, project_time: std::time::SystemTime) {
@@ -269,7 +272,11 @@ impl RenderEntry for Game {
 			{
 				InterfaceAction::Nothing => {},
 				InterfaceAction::Debug => self.request_redraw(),
-				InterfaceAction::Open => drop(self.change_project()),
+				InterfaceAction::Open => self.change_project(),
+				InterfaceAction::ColorPalette => {
+					self.tree.next_lookup(self.state);
+					self.request_redraw();
+				},
 			}
 		}
 		render::ControlFlow::Wait
@@ -296,7 +303,9 @@ impl render::Renderable for Game {
 	fn post_process<'a>(&'a self, render_pass: render::RenderPass<'a>) -> render::RenderPass<'a> {
 		render_pass
 			.next(|render_pass| self.eye_dome.render(render_pass))
-			.next(|render_pass| self.ui.render(&self.interface, self.state, render_pass))
+			.next(|render_pass| render::UIPass::start(render_pass, &self.ui, self.state))
+			.next(|ui_pass| self.interface.render(ui_pass))
+			.next(|ui_pass| ui_pass.end())
 	}
 }
 
