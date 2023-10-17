@@ -6,15 +6,12 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-math = { path = "../math" }
-input = { path = "../input" }
-bytemuck = "1.13.0"
-env_logger = "0.10.0"
-image = { version = "0.24", default-features = false, features = ["png"] }
-log = "0.4.17"
-pollster = "0.3.0"
-wgpu = "0.17"
-winit = "0.28.1"
-num = "0.4.0"
-memoffset = "0.8.0"
-wgpu_text = "0.8.4"
+math.workspace = true
+input.workspace = true
+bytemuck.workspace = true
+env_logger.workspace = true
+image.workspace = true
+log.workspace = true
+wgpu.workspace = true
+winit.workspace = true
+wgpu_text.workspace = true

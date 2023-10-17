@@ -5,7 +5,7 @@ use math::{Vector, X, Y};
 use render::{ChainExtension, RenderEntry};
 
 use crate::{
-	interface::{Interface, UIAction},
+	interface::{Interface, InterfaceAction},
 	lod,
 	state::State,
 	tree::Tree,
@@ -267,9 +267,9 @@ impl RenderEntry for Game {
 				.interface
 				.clicked(self.mouse.position() / self.ui.get_scale())
 			{
-				UIAction::Nothing => {},
-				UIAction::Debug => self.request_redraw(),
-				UIAction::Open => drop(self.change_project()),
+				InterfaceAction::Nothing => {},
+				InterfaceAction::Debug => self.request_redraw(),
+				InterfaceAction::Open => drop(self.change_project()),
 			}
 		}
 		render::ControlFlow::Wait

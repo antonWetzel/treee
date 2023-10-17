@@ -35,7 +35,7 @@ impl Button {
 	}
 }
 
-pub enum UIAction {
+pub enum InterfaceAction {
 	Nothing,
 	Open,
 	Debug,
@@ -95,15 +95,15 @@ impl Interface {
 		self.statistics.text[3] = format!("Highlight Sensitivity: {}\n", sensitivity);
 	}
 
-	pub fn clicked(&mut self, position: Vector<2, f32>) -> UIAction {
+	pub fn clicked(&mut self, position: Vector<2, f32>) -> InterfaceAction {
 		if self.open.inside(position) {
-			return UIAction::Open;
+			return InterfaceAction::Open;
 		}
 		if self.debug.inside(position) {
 			self.show_statistics = !self.show_statistics;
-			return UIAction::Debug;
+			return InterfaceAction::Debug;
 		}
-		UIAction::Nothing
+		InterfaceAction::Nothing
 	}
 }
 
