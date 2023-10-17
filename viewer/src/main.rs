@@ -2,6 +2,7 @@ use std::error::Error;
 
 use pollster::FutureExt;
 use state::State;
+use thiserror::Error;
 
 mod camera;
 mod game;
@@ -11,22 +12,17 @@ mod lod;
 mod state;
 mod tree;
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 enum ViewerError {
+	#[error("no file")]
 	NoFile,
+	#[error("unexpected exit code '{0}'")]
 	Exit(i32),
 }
 
-impl std::fmt::Display for ViewerError {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "{:?}", self)
-	}
-}
-
-impl Error for ViewerError {}
-
 fn main() -> Result<(), Box<dyn Error>> {
 	let path = rfd::FileDialog::new()
+		.set_title("Select Project File")
 		.add_filter("Project File", &["epc"])
 		.pick_file()
 		.ok_or(ViewerError::NoFile)?;

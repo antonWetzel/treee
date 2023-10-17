@@ -39,3 +39,4 @@ rand = "0.8.5"
 num_cpus = "1.15.0"
 crossbeam = "0.8.2"
 las = { version = "0.8.1", features = ["laz"] }
+thiserror = "1.0"

@@ -155,6 +155,8 @@ impl LoadedManager {
 	}
 
 	pub fn update(&mut self) -> usize {
+		let mut todo_pointcloud = Vec::new();
+		let mut todo_property = Vec::new();
 		for response in self.reciever.try_iter() {
 			match response {
 				Response::PointCloud(index, data) => {
@@ -167,9 +169,15 @@ impl LoadedManager {
 						self.property_available.insert(index, property);
 					}
 				},
-				Response::RedoPointCloud(index) => self.sender.send(WorkerTask::PointCloud(index)).unwrap(),
-				Response::RedoProperty(index) => self.sender.send(WorkerTask::Property(index)).unwrap(),
+				Response::RedoPointCloud(index) => todo_pointcloud.push(index),
+				Response::RedoProperty(index) => todo_property.push(index),
 			}
+		}
+		for index in todo_pointcloud {
+			self.sender.send(WorkerTask::PointCloud(index)).unwrap();
+		}
+		for index in todo_property {
+			self.sender.send(WorkerTask::Property(index)).unwrap();
 		}
 		self.sender.len()
 	}
@@ -185,8 +193,10 @@ fn load_pointcloud(path: &Path, state: &State) -> Option<render::PointCloud> {
 	file.read_exact(&mut buffer).ok()?;
 	let size = u64::from_le_bytes(buffer) as usize;
 
+	if file_length == 0 {
+		return None;
+	}
 	if file_length != size * std::mem::size_of::<render::Point>() + 8 {
-		println!("wrong length");
 		return None;
 	}
 	let data = unsafe {

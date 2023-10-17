@@ -239,10 +239,6 @@ impl RenderEntry for Game {
 				self.tree.camera.change_controller();
 				self.window.request_redraw();
 			},
-			(input::KeyCode::N, input::State::Pressed) => {
-				self.tree.camera.change_controller();
-				self.window.request_redraw();
-			},
 			_ => {},
 		}
 		render::ControlFlow::Wait

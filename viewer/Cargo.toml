@@ -14,3 +14,4 @@ common = { path = "../common" }
 pollster.workspace = true
 rfd.workspace = true
 crossbeam-channel.workspace = true
+thiserror.workspace = true

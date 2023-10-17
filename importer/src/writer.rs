@@ -2,31 +2,31 @@ use common::Project;
 use std::{
 	io::{Read, Seek, Write},
 	mem::MaybeUninit,
+	path::PathBuf,
 };
 
 pub struct Writer {
-	path: String,
+	project_path: PathBuf,
+	data_path: PathBuf,
 	index: usize,
 }
 
 impl Writer {
-	pub fn new<T>(path: T) -> Self
-	where
-		T: Into<String>,
-	{
-		let path_string = path.into();
-		let path = std::path::Path::new(&path_string);
+	pub fn new(mut path: PathBuf) -> Self {
 		if path.is_dir() {
-			std::fs::remove_dir_all(path).unwrap();
+			std::fs::remove_dir_all(&path).unwrap();
 		}
-		std::fs::create_dir_all(path).unwrap();
-		std::fs::create_dir_all(format!("{}/data", path_string)).unwrap();
+		let mut data_path = path.clone();
+		data_path.push("data");
+		std::fs::create_dir_all(&data_path).unwrap();
+		data_path.push("0.data");
 
-		Self { path: path_string, index: 1 }
+		path.push("project.epc");
+		Self { project_path: path, data_path, index: 1 }
 	}
 
 	pub fn save_project(&self, project: &Project) {
-		project.save(format!("{}/project.epc", self.path));
+		project.save(&self.project_path);
 	}
 
 	pub fn next_index(&mut self) -> usize {
@@ -41,7 +41,7 @@ impl Writer {
 				std::mem::size_of_val(points),
 			)
 		};
-		let path = format!("{}/data/{}.data", self.path, index);
+		let path = self.data_path.with_file_name(format!("{}.data", index));
 		let mut file = std::fs::OpenOptions::new()
 			.write(true)
 			// .read(true)
@@ -55,7 +55,7 @@ impl Writer {
 	}
 
 	pub fn setup_property(&self, name: &str) {
-		std::fs::create_dir_all(format!("{}/data/{}", self.path, name)).unwrap();
+		std::fs::create_dir_all(self.data_path.with_file_name(format!("{}", name))).unwrap();
 	}
 
 	pub fn save_property(&self, index: usize, name: &str, property: &[u32]) {
@@ -65,7 +65,9 @@ impl Writer {
 				std::mem::size_of_val(property),
 			)
 		};
-		let path = format!("{}/data/{}/{}.data", self.path, name, index);
+		let path = self
+			.data_path
+			.with_file_name(format!("{}/{}.data", name, index));
 		let mut file = std::fs::OpenOptions::new()
 			.write(true)
 			.create(true)
@@ -76,7 +78,7 @@ impl Writer {
 	}
 
 	pub fn new_file(&self, index: usize) -> std::fs::File {
-		let path = format!("{}/data/{}.data", self.path, index);
+		let path = self.data_path.with_file_name(format!("{}.data", index));
 		let file = std::fs::OpenOptions::new()
 			.write(true)
 			.read(true)
@@ -87,7 +89,7 @@ impl Writer {
 	}
 
 	pub fn load(&self, index: usize, size: usize) -> Vec<render::Point> {
-		let path = format!("{}/data/{}.data", self.path, index);
+		let path = self.data_path.with_file_name(format!("{}.data", index));
 		let mut file = std::fs::File::open(path).unwrap();
 		file.seek(std::io::SeekFrom::Start(8)).unwrap();
 		unsafe {

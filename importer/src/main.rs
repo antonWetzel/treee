@@ -4,22 +4,35 @@ mod progress;
 mod tree;
 mod writer;
 
-use std::process::id;
-
 use data_point::DataPoint;
 use las::Read;
 use math::{Vector, X, Y, Z};
+use thiserror::Error;
 use writer::Writer;
 
 use tree::Tree;
 
 use crate::progress::Progress;
 
-fn main() {
-	let mut args = std::env::args().rev().collect::<Vec<_>>();
-	args.pop();
-	let input = args.pop().unwrap();
-	let output = args.pop().unwrap();
+#[derive(Error, Debug)]
+enum ImporterError {
+	#[error("no input file")]
+	NoInputFile,
+	#[error("no output folder")]
+	NoOutputFolder,
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+	let input = rfd::FileDialog::new()
+		.set_title("Select Input File")
+		.add_filter("Input File", &["las", "laz"])
+		.pick_file()
+		.ok_or(ImporterError::NoInputFile)?;
+
+	let output = rfd::FileDialog::new()
+		.set_title("Select Output Folder")
+		.pick_folder()
+		.ok_or(ImporterError::NoOutputFolder)?;
 
 	let mut reader = las::Reader::from_path(&input).expect("Unable to open reader");
 
@@ -68,6 +81,8 @@ fn main() {
 
 	let heigt_calculator = HeightCalculator::new((min[Y] - pos[Y]) as f32, (max[Y] - pos[Y]) as f32);
 	tree.calculate(&mut writer, &project, &heigt_calculator);
+
+	Ok(())
 }
 
 pub struct HeightCalculator {

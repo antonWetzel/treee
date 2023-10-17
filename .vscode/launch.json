@@ -23,10 +23,6 @@
 				"rust"
 			],
 			"cwd": "${workspaceFolder}/cwd",
-			"args": [
-				"${input:file}",
-				"./${input:output}",
-			],
 		},
 		{
 			"type": "lldb",
@@ -69,10 +65,6 @@
 				"rust"
 			],
 			"cwd": "${workspaceFolder}/cwd",
-			"args": [
-				"${input:file}",
-				"./${input:output}",
-			],
 		},
 		{
 			"type": "lldb",
@@ -97,28 +89,4 @@
 			"args": [],
 		},
 	],
-	"inputs": [
-		{
-			"id": "file",
-			"type": "pickString",
-			"default": "test.laz",
-			"description": "input file",
-			"options": [
-				"ULS-off_BR01_2020-03-27.laz",
-				"ULS-off_SP02_2020-04-01.laz",
-				"ULS-on_SP02_2019-09-03.laz",
-				"ALS-on_SP02_2019-07-05_140m.laz",
-			]
-		},
-		{
-			"id": "output",
-			"type": "pickString",
-			"default": "test",
-			"description": "input file",
-			"options": [
-				"test",
-				"test2",
-			]
-		}
-	]
 }
