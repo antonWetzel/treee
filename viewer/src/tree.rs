@@ -36,6 +36,8 @@ pub struct Tree {
 	pub loaded_manager: LoadedManager,
 	pub lookup: render::Lookup,
 	lookup_name: LookupName,
+
+	property_index: usize,
 }
 
 pub struct Node {
@@ -163,14 +165,15 @@ impl Node {
 }
 
 impl Tree {
-	pub fn new(state: &'static State, project: &Project, path: PathBuf, aspect: f32) -> Self {
+	pub fn new(state: &'static State, project: &Project, path: PathBuf, aspect: f32, property: &str) -> Self {
 		let lookup_name = LookupName::Warm;
 		Self {
 			camera: camera::Camera::new(state, aspect),
 			root: Node::new(&project.root),
-			loaded_manager: LoadedManager::new(state, path, "height"),
+			loaded_manager: LoadedManager::new(state, path, property),
 			lookup_name,
 			lookup: render::Lookup::new_png(state, lookup_name.data()),
+			property_index: 0,
 		}
 	}
 
@@ -187,6 +190,12 @@ impl Tree {
 	pub fn next_lookup(&mut self, state: &'static State) {
 		self.lookup_name = self.lookup_name.next();
 		self.lookup = render::Lookup::new_png(state, self.lookup_name.data());
+	}
+
+	pub fn next_property(&mut self, properties: &[String]) {
+		self.property_index = (self.property_index + 1) % properties.len();
+		self.loaded_manager
+			.change_property(&properties[self.property_index], self.property_index)
 	}
 }
 

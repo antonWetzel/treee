@@ -9,7 +9,7 @@ use math::{Dimension, Dimensions, X, Z};
 use crate::calculations::{level_of_detail, normal, size};
 use crate::data_point::DataPoint;
 use crate::progress::Progress;
-use crate::{HeightCalculator, Writer};
+use crate::{Calculator, HeightCalculator, Writer};
 
 pub const MAX_NEIGHBORS: usize = 32 - 1;
 pub const MAX_NEIGHBOR_DISTANCE_SCALE: f32 = 32.0;
@@ -243,13 +243,13 @@ impl Tree {
 		self.root.insert(point, writer);
 	}
 
-	pub fn flatten(mut self) -> (FlatTree, Project) {
+	pub fn flatten(mut self, calculators: &[&dyn Calculator]) -> (FlatTree, Project) {
 		let (tree, depth, node_count) = self.root.create_index_node();
 		let mut nodes = Vec::with_capacity(node_count);
 		let root = self.root.flatten_root();
 		root.flatten(&mut nodes);
 		let flat = FlatTree { nodes };
-		let project = flat.genereate_project(depth, tree, node_count);
+		let project = flat.genereate_project(depth, tree, node_count, calculators);
 		(flat, project)
 	}
 }
@@ -274,7 +274,13 @@ pub struct FlatTree {
 }
 
 impl FlatTree {
-	pub fn genereate_project(&self, level: usize, root: IndexNode, node_count: usize) -> Project {
+	pub fn genereate_project(
+		&self,
+		level: usize,
+		root: IndexNode,
+		node_count: usize,
+		calculators: &[&dyn Calculator],
+	) -> Project {
 		let density = self.get_density();
 		let density = density.sqrt();
 		Project {
@@ -285,6 +291,7 @@ impl FlatTree {
 			level: level as u32,
 			root,
 			node_count: node_count as u32,
+			properties: calculators.iter().map(|c| c.name().to_owned()).collect(),
 		}
 	}
 
@@ -307,7 +314,7 @@ impl FlatTree {
 		density
 	}
 
-	pub fn calculate(self, writer: &Writer, project: &Project, height_calculator: &HeightCalculator) {
+	pub fn calculate(self, writer: &Writer, project: &Project, calculators: &[&dyn Calculator]) {
 		let progress = Progress::new("Calculate".into(), project.node_count as usize);
 		let progress = std::sync::Mutex::new(progress);
 
@@ -320,7 +327,7 @@ impl FlatTree {
 				let reciever = reciever.clone();
 				scope.spawn(|| {
 					for (i, node) in reciever {
-						let res = node.calculate(&data, writer, &project.statistics, height_calculator);
+						let res = node.calculate(&data, writer, &project.statistics, calculators);
 						let mut data = data.lock().unwrap();
 						data.insert(i, res);
 						drop(data);
@@ -345,7 +352,7 @@ impl FLatNode {
 		data: &std::sync::Mutex<HashMap<usize, Vec<render::Point>>>,
 		writer: &Writer,
 		statistics: &Statistics,
-		height_calculator: &HeightCalculator,
+		calculators: &[&dyn Calculator],
 	) -> Vec<render::Point> {
 		match &mut self.data {
 			FlatData::Branch { children } => {
@@ -365,11 +372,11 @@ impl FLatNode {
 				let lod = level_of_detail::calculate(points, self.corner, self.size);
 				writer.save(self.index, &lod);
 
-				let mut heights = Vec::with_capacity(lod.len());
-				for i in 0..lod.len() {
-					heights.push(height_calculator.calculate(i, &lod));
+				for calculator in calculators {
+					let values = calculator.calculate_all(&lod);
+					writer.save_property(self.index, calculator.name(), &values);
 				}
-				writer.save_property(self.index, "height", &heights);
+
 				lod
 			},
 			FlatData::Leaf { size } => {
@@ -392,12 +399,10 @@ impl FLatNode {
 					points[i].size = size::calculate(neighbors, &points);
 				}
 				writer.save(self.index, &points);
-
-				let mut heights = Vec::with_capacity(points.len());
-				for i in 0..points.len() {
-					heights.push(height_calculator.calculate(i, &points));
+				for calculator in calculators {
+					let values = calculator.calculate_all(&points);
+					writer.save_property(self.index, calculator.name(), &values);
 				}
-				writer.save_property(self.index, "height", &heights);
 				points
 			},
 		}

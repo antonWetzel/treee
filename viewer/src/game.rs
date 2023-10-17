@@ -40,6 +40,7 @@ impl Game {
 			&project,
 			path.parent().unwrap().to_owned(),
 			window.get_aspect(),
+			&project.properties[0],
 		);
 
 		let eye_dome = render::EyeDome::new(state, window.config(), window.depth_texture(), 5.0, 0.005);
@@ -108,6 +109,7 @@ impl Game {
 			&self.project,
 			self.path.parent().unwrap().to_owned(),
 			self.window.get_aspect(),
+			&self.project.properties[0],
 		);
 		self.request_redraw();
 	}
@@ -202,6 +204,7 @@ impl RenderEntry for Game {
 				self.eye_dome.update_settings(self.state);
 				self.interface
 					.update_eye_dome_settings(self.eye_dome.strength, self.eye_dome.sensitivity);
+				self.window.request_redraw();
 			}
 		}
 		let workload = self.tree.loaded_manager.update();
@@ -272,6 +275,10 @@ impl RenderEntry for Game {
 				InterfaceAction::ColorPalette => {
 					self.tree.next_lookup(self.state);
 					self.request_redraw();
+				},
+				InterfaceAction::Property => {
+					self.tree.next_property(&self.project.properties);
+					self.request_redraw()
 				},
 			}
 		}

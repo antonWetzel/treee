@@ -75,14 +75,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 		progress.increase();
 	}
 
-	let (tree, project) = tree.flatten();
-	writer.setup_property("height");
+	let heigt_calculator = HeightCalculator::new((min[Y] - pos[Y]) as f32, (max[Y] - pos[Y]) as f32);
+	let inverse_calculator = InverseHeightCalculator::new((min[Y] - pos[Y]) as f32, (max[Y] - pos[Y]) as f32);
+	let calculators: &[&dyn Calculator] = &[&heigt_calculator, &inverse_calculator];
+	for calculator in calculators {
+		writer.setup_property(calculator.name());
+	}
+
+	let (tree, project) = tree.flatten(calculators);
 	writer.save_project(&project);
 
-	let heigt_calculator = HeightCalculator::new((min[Y] - pos[Y]) as f32, (max[Y] - pos[Y]) as f32);
-	tree.calculate(&mut writer, &project, &heigt_calculator);
+	tree.calculate(&mut writer, &project, calculators);
 
 	Ok(())
+}
+
+pub trait Calculator: Send + Sync {
+	fn name(&self) -> &str;
+	fn calculate(&self, index: usize, points: &[render::Point]) -> u32;
+	fn calculate_all(&self, points: &[render::Point]) -> Vec<u32> {
+		let mut values = Vec::with_capacity(points.len());
+		for i in 0..points.len() {
+			values.push(self.calculate(i, &points));
+		}
+		values
+	}
 }
 
 pub struct HeightCalculator {
@@ -94,10 +111,39 @@ impl HeightCalculator {
 	pub fn new(min: f32, max: f32) -> Self {
 		Self { min, diff: max - min }
 	}
+}
 
-	pub fn calculate(&self, index: usize, points: &[render::Point]) -> u32 {
+impl Calculator for HeightCalculator {
+	fn name(&self) -> &str {
+		"height"
+	}
+
+	fn calculate(&self, index: usize, points: &[render::Point]) -> u32 {
 		let height = points[index].position[Y];
 		let b = (height - self.min) / self.diff;
 		(b * (u32::MAX - 1) as f32) as u32
+	}
+}
+
+pub struct InverseHeightCalculator {
+	min: f32,
+	diff: f32,
+}
+
+impl InverseHeightCalculator {
+	pub fn new(min: f32, max: f32) -> Self {
+		Self { min, diff: max - min }
+	}
+}
+
+impl Calculator for InverseHeightCalculator {
+	fn name(&self) -> &str {
+		"inverse_height"
+	}
+
+	fn calculate(&self, index: usize, points: &[render::Point]) -> u32 {
+		let height = points[index].position[Y];
+		let b = (height - self.min) / self.diff;
+		u32::MAX - (b * (u32::MAX - 1) as f32) as u32
 	}
 }

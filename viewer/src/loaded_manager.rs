@@ -17,21 +17,23 @@ pub struct LoadedManager {
 	property_default: render::PointCloudProperty,
 	property_available: HashMap<usize, render::PointCloudProperty>,
 	property_requested: HashSet<usize>,
+	property_index: usize,
 }
 
 enum WorkerTask {
 	PointCloud(usize),
 	Property(usize),
 }
+
 enum Response {
 	PointCloud(usize, render::PointCloud),
-	Property(usize, render::PointCloudProperty),
+	Property(usize, render::PointCloudProperty, usize),
 	RedoPointCloud(usize),
 	RedoProperty(usize),
 }
 
 enum WorkerUpdate {
-	ChangeProperty(String),
+	ChangeProperty(String, usize),
 }
 
 impl LoadedManager {
@@ -52,13 +54,15 @@ impl LoadedManager {
 			let mut path = path.clone();
 			let mut property_path = property_path.clone();
 			let pc_tx = pc_tx.clone();
+			let mut property_index = 0;
 			std::thread::spawn(move || loop {
 				for update in update_reciever.try_iter() {
 					match update {
-						WorkerUpdate::ChangeProperty(name) => {
+						WorkerUpdate::ChangeProperty(name, index) => {
 							property_path = path.parent().unwrap().to_owned();
 							property_path.push(name);
-							path.push("0.data");
+							property_path.push("0.data");
+							property_index = index;
 						},
 					}
 				}
@@ -83,7 +87,7 @@ impl LoadedManager {
 					WorkerTask::Property(index) => {
 						property_path.set_file_name(format!("{}.data", index));
 						if let Some(property) = load_property(&property_path, state) {
-							let _ = pc_tx.send(Response::Property(index, property));
+							let _ = pc_tx.send(Response::Property(index, property, property_index));
 						} else {
 							let _ = pc_tx.send(Response::RedoProperty(index));
 						};
@@ -99,19 +103,25 @@ impl LoadedManager {
 			reciever: pc_rx,
 			update_senders,
 
+			property_index: 0,
 			property_default: render::PointCloudProperty::new_empty(state),
 			property_available: HashMap::new(),
 			property_requested: HashSet::new(),
 		}
 	}
 
-	pub fn change_property(&mut self, name: &str) {
+	pub fn change_property(&mut self, name: &str, index: usize) {
+		self.property_index = index;
 		for sender in &self.update_senders {
 			sender
-				.send(WorkerUpdate::ChangeProperty(String::from(name)))
+				.send(WorkerUpdate::ChangeProperty(
+					String::from(name),
+					self.property_index,
+				))
 				.unwrap();
 		}
-		//todo: clear properties
+		self.property_available.clear();
+		self.property_requested.clear();
 	}
 
 	pub fn request(&mut self, index: usize) {
@@ -137,6 +147,7 @@ impl LoadedManager {
 	pub fn exist(&self, index: usize) -> bool {
 		self.available.contains_key(&index)
 	}
+
 	pub fn is_requested(&self, index: usize) -> bool {
 		self.requested.contains(&index)
 	}
@@ -164,7 +175,10 @@ impl LoadedManager {
 						self.available.insert(index, data);
 					}
 				},
-				Response::Property(index, property) => {
+				Response::Property(index, property, property_index) => {
+					if property_index != self.property_index {
+						continue;
+					}
 					if self.property_requested.contains(&index) {
 						self.property_available.insert(index, property);
 					}

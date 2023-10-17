@@ -30,6 +30,7 @@ pub struct Project {
 	pub level: u32,
 	pub root: IndexNode,
 	pub node_count: u32,
+	pub properties: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -38,6 +39,7 @@ struct FlatProject {
 	pub level: u32,
 	pub nodes: Vec<FlatNode>,
 	pub node_count: u32,
+	pub properties: Vec<String>,
 }
 
 impl Project {
@@ -49,6 +51,7 @@ impl Project {
 			level: flat.level,
 			root: deflatten(flat.nodes),
 			node_count: flat.node_count,
+			properties: flat.properties,
 		}
 	}
 
@@ -63,6 +66,7 @@ impl Project {
 			level: self.level,
 			nodes: flatten(&self.root),
 			node_count: self.node_count,
+			properties: self.properties.clone(),
 		};
 		bincode::serialize_into(file, &flat).unwrap();
 	}

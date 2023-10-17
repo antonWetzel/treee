@@ -9,6 +9,7 @@ pub struct Interface {
 	open: Button,
 	debug: Button,
 	color_palette: Button,
+	property: Button,
 }
 
 struct Button {
@@ -41,6 +42,7 @@ pub enum InterfaceAction {
 	Open,
 	Debug,
 	ColorPalette,
+	Property,
 }
 
 impl Interface {
@@ -74,6 +76,12 @@ impl Interface {
 				state,
 				include_bytes!("../assets/color-palette.png"),
 				[0.0, 200.0].into(),
+				[100.0, 100.0].into(),
+			),
+			property: Button::new(
+				state,
+				include_bytes!("../assets/information-circle.png"),
+				[0.0, 300.0].into(),
 				[100.0, 100.0].into(),
 			),
 		}
@@ -114,6 +122,9 @@ impl Interface {
 		if self.color_palette.inside(position) {
 			return InterfaceAction::ColorPalette;
 		}
+		if self.property.inside(position) {
+			return InterfaceAction::Property;
+		}
 		InterfaceAction::Nothing
 	}
 
@@ -121,6 +132,7 @@ impl Interface {
 		self.open.render(&mut render_pass);
 		self.debug.render(&mut render_pass);
 		self.color_palette.render(&mut render_pass);
+		self.property.render(&mut render_pass);
 		render_pass
 	}
 }
