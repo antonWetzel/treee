@@ -131,7 +131,7 @@ impl PointCloud {
 			.device
 			.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 				label: Some("point cloud buffer"),
-				contents: bytemuck::cast_slice(&vertices[..]),
+				contents: bytemuck::cast_slice(vertices),
 				usage: wgpu::BufferUsages::VERTEX,
 			});
 
@@ -172,7 +172,7 @@ impl PointCloudProperty {
 			.device
 			.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 				label: Some("point cloud property buffer"),
-				contents: bytemuck::cast_slice(&data[..]),
+				contents: bytemuck::cast_slice(data),
 				usage: wgpu::BufferUsages::VERTEX,
 			});
 

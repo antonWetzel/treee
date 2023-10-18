@@ -1,10 +1,10 @@
 mod calculations;
 mod data_point;
-mod progress;
 mod tree;
 mod writer;
 
 use data_point::DataPoint;
+use indicatif::{ProgressBar, ProgressStyle};
 use las::Read;
 use math::{Vector, X, Y, Z};
 use thiserror::Error;
@@ -12,7 +12,7 @@ use writer::Writer;
 
 use tree::Tree;
 
-use crate::progress::Progress;
+const IMPORT_PROGRESS_SCALE: u64 = 10_000;
 
 #[derive(Error, Debug)]
 enum ImporterError {
@@ -22,7 +22,15 @@ enum ImporterError {
 	NoOutputFolder,
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), ImporterError> {
+	let progress = ProgressBar::new(0);
+	progress.set_style(
+		ProgressStyle::with_template(
+			"{prefix:12} [{elapsed_precise}] {wide_bar:.cyan/blue} {human_pos:>12}/{human_len:12} {eta_precise}",
+		)
+		.unwrap(),
+	);
+
 	let input = rfd::FileDialog::new()
 		.set_title("Select Input File")
 		.add_filter("Input File", &["las", "laz"])
@@ -50,11 +58,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 		diff[X].max(diff[Y]).max(diff[Z]) as f32,
 	);
 
-	let (sender, reciever) = crossbeam::channel::bounded(4);
-	let mut progress = Progress::new("Import".into(), reader.header().number_of_points() as usize);
+	progress.reset();
+	progress.set_length(reader.header().number_of_points() / IMPORT_PROGRESS_SCALE);
+	progress.set_prefix("Import:");
+
+	let (sender, reciever) = crossbeam::channel::bounded(512);
+	//parallel over files?
+	let reader_progress = progress.clone();
 	std::thread::spawn(move || {
+		let mut counter = 0;
 		for point in reader.points().map(|p| p.expect("Unable to read point")) {
 			sender.send(point).unwrap();
+			counter += 1;
+			if counter >= IMPORT_PROGRESS_SCALE {
+				reader_progress.inc(1);
+				counter -= IMPORT_PROGRESS_SCALE;
+			}
 		}
 	});
 
@@ -72,8 +91,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 			},
 		};
 		tree.insert(res, &mut writer);
-		progress.increase();
 	}
+	progress.finish();
+	println!();
 
 	let heigt_calculator = HeightCalculator::new((min[Y] - pos[Y]) as f32, (max[Y] - pos[Y]) as f32);
 	let inverse_calculator = InverseHeightCalculator::new((min[Y] - pos[Y]) as f32, (max[Y] - pos[Y]) as f32);
@@ -85,21 +105,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let (tree, project) = tree.flatten(calculators);
 	writer.save_project(&project);
 
-	tree.calculate(&mut writer, &project, calculators);
+	tree.calculate(&writer, &project, progress, calculators);
 
 	Ok(())
 }
 
-pub trait Calculator: Send + Sync {
+pub trait SimpleCalculator: Send + Sync {
 	fn name(&self) -> &str;
 	fn calculate(&self, index: usize, points: &[render::Point]) -> u32;
-	fn calculate_all(&self, points: &[render::Point]) -> Vec<u32> {
+}
+
+impl<T: SimpleCalculator> Calculator for T {
+	fn name(&self) -> &str {
+		<Self as SimpleCalculator>::name(&self)
+	}
+	fn calculate(&self, points: &[render::Point]) -> Vec<u32> {
 		let mut values = Vec::with_capacity(points.len());
 		for i in 0..points.len() {
-			values.push(self.calculate(i, &points));
+			values.push(self.calculate(i, points));
 		}
 		values
 	}
+}
+pub trait Calculator: Send + Sync {
+	fn name(&self) -> &str;
+	fn calculate(&self, points: &[render::Point]) -> Vec<u32>;
 }
 
 pub struct HeightCalculator {
@@ -113,7 +143,7 @@ impl HeightCalculator {
 	}
 }
 
-impl Calculator for HeightCalculator {
+impl SimpleCalculator for HeightCalculator {
 	fn name(&self) -> &str {
 		"height"
 	}
@@ -136,7 +166,7 @@ impl InverseHeightCalculator {
 	}
 }
 
-impl Calculator for InverseHeightCalculator {
+impl SimpleCalculator for InverseHeightCalculator {
 	fn name(&self) -> &str {
 		"inverse_height"
 	}

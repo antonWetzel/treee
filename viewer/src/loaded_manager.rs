@@ -125,15 +125,11 @@ impl LoadedManager {
 	}
 
 	pub fn request(&mut self, index: usize) {
-		if !self.requested.contains(&index) {
-			if self.sender.try_send(WorkerTask::PointCloud(index)).is_ok() {
-				self.requested.insert(index);
-			}
+		if !self.requested.contains(&index) && self.sender.try_send(WorkerTask::PointCloud(index)).is_ok() {
+			self.requested.insert(index);
 		}
-		if !self.property_requested.contains(&index) {
-			if self.sender.try_send(WorkerTask::Property(index)).is_ok() {
-				self.property_requested.insert(index);
-			}
+		if !self.property_requested.contains(&index) && self.sender.try_send(WorkerTask::Property(index)).is_ok() {
+			self.property_requested.insert(index);
 		}
 	}
 

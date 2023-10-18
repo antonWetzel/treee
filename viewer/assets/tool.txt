@@ -1,2 +1,2 @@
-https://doodad.dev/gradient-generator/
+gradients: https://doodad.dev/gradient-generator/
 icons: https://ionic.io/ionicons

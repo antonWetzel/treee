@@ -10,6 +10,7 @@ pub struct Interface {
 	debug: Button,
 	color_palette: Button,
 	property: Button,
+	eye_dome: Button,
 }
 
 struct Button {
@@ -43,6 +44,7 @@ pub enum InterfaceAction {
 	Debug,
 	ColorPalette,
 	Property,
+	EyeDome,
 }
 
 impl Interface {
@@ -82,6 +84,12 @@ impl Interface {
 				state,
 				include_bytes!("../assets/information-circle.png"),
 				[0.0, 300.0].into(),
+				[100.0, 100.0].into(),
+			),
+			eye_dome: Button::new(
+				state,
+				include_bytes!("../assets/invert-mode.png"),
+				[0.0, 400.0].into(),
 				[100.0, 100.0].into(),
 			),
 		}
@@ -125,6 +133,9 @@ impl Interface {
 		if self.property.inside(position) {
 			return InterfaceAction::Property;
 		}
+		if self.eye_dome.inside(position) {
+			return InterfaceAction::EyeDome;
+		}
 		InterfaceAction::Nothing
 	}
 
@@ -133,6 +144,7 @@ impl Interface {
 		self.debug.render(&mut render_pass);
 		self.color_palette.render(&mut render_pass);
 		self.property.render(&mut render_pass);
+		self.eye_dome.render(&mut render_pass);
 		render_pass
 	}
 }

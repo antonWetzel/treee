@@ -25,8 +25,9 @@ pub struct Game {
 	always_redraw: bool,
 	paused: bool,
 
-	ui: render::UI,
+	ui: render::UI<'static>,
 	eye_dome: render::EyeDome,
+	eye_dome_active: bool,
 	interface: Interface,
 }
 
@@ -44,13 +45,18 @@ impl Game {
 		);
 
 		let eye_dome = render::EyeDome::new(state, window.config(), window.depth_texture(), 5.0, 0.005);
-		let ui = render::UI::new(state, window.config());
+		let ui = render::UI::new(
+			state,
+			window.config(),
+			include_bytes!("../assets/Urbanist-Bold.ttf"),
+		);
 		let mut interface = Interface::new(state);
 		interface.update_eye_dome_settings(eye_dome.strength, eye_dome.sensitivity);
 
 		Self {
 			ui,
 			eye_dome,
+			eye_dome_active: true,
 			interface,
 			paused: false,
 
@@ -112,6 +118,14 @@ impl Game {
 			&self.project.properties[0],
 		);
 		self.request_redraw();
+	}
+
+	fn render_eye_dome<'a>(&'a self, render_pass: render::RenderPass<'a>) -> render::RenderPass<'a> {
+		if self.eye_dome_active {
+			self.eye_dome.render(render_pass)
+		} else {
+			render_pass
+		}
 	}
 }
 
@@ -278,7 +292,11 @@ impl RenderEntry for Game {
 				},
 				InterfaceAction::Property => {
 					self.tree.next_property(&self.project.properties);
-					self.request_redraw()
+					self.request_redraw();
+				},
+				InterfaceAction::EyeDome => {
+					self.eye_dome_active = !self.eye_dome_active;
+					self.request_redraw();
 				},
 			}
 		}
@@ -305,7 +323,7 @@ impl render::Renderable for Game {
 
 	fn post_process<'a>(&'a self, render_pass: render::RenderPass<'a>) -> render::RenderPass<'a> {
 		render_pass
-			.next(|render_pass| self.eye_dome.render(render_pass))
+			.next(|render_pass| self.render_eye_dome(render_pass))
 			.next(|render_pass| render::UIPass::start(render_pass, &self.ui, self.state))
 			.next(|ui_pass| self.interface.render(ui_pass))
 			.next(|ui_pass| ui_pass.end())

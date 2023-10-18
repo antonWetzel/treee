@@ -3,13 +3,13 @@ use std::io::{BufWriter, Read, Seek, Write};
 use std::mem::MaybeUninit;
 
 use common::{IndexData, IndexNode, Project, Statistics, MAX_LEAF_SIZE};
+use indicatif::ProgressBar;
 use math::Vector;
 use math::{Dimension, Dimensions, X, Z};
 
 use crate::calculations::{level_of_detail, normal, size};
 use crate::data_point::DataPoint;
-use crate::progress::Progress;
-use crate::{Calculator, HeightCalculator, Writer};
+use crate::{Calculator, Writer};
 
 pub const MAX_NEIGHBORS: usize = 32 - 1;
 pub const MAX_NEIGHBOR_DISTANCE_SCALE: f32 = 32.0;
@@ -314,13 +314,14 @@ impl FlatTree {
 		density
 	}
 
-	pub fn calculate(self, writer: &Writer, project: &Project, calculators: &[&dyn Calculator]) {
-		let progress = Progress::new("Calculate".into(), project.node_count as usize);
-		let progress = std::sync::Mutex::new(progress);
-
+	pub fn calculate(self, writer: &Writer, project: &Project, progress: ProgressBar, calculators: &[&dyn Calculator]) {
 		let data = std::sync::Mutex::new(HashMap::new());
 
 		let (sender, reciever) = crossbeam::channel::bounded::<(usize, FLatNode)>(4);
+
+		progress.reset();
+		progress.set_length(project.node_count as u64);
+		progress.set_prefix("Calculate:");
 
 		std::thread::scope(|scope| {
 			for _ in 0..num_cpus::get() {
@@ -331,8 +332,7 @@ impl FlatTree {
 						let mut data = data.lock().unwrap();
 						data.insert(i, res);
 						drop(data);
-
-						progress.lock().unwrap().increase();
+						progress.inc(1);
 					}
 				});
 			}
@@ -343,6 +343,9 @@ impl FlatTree {
 			}
 			drop(sender);
 		});
+
+		progress.finish();
+		println!();
 	}
 }
 
@@ -369,15 +372,27 @@ impl FLatNode {
 					points.push(lod);
 				}
 
-				let lod = level_of_detail::calculate(points, self.corner, self.size);
-				writer.save(self.index, &lod);
+				let points = level_of_detail::calculate(points, self.corner, self.size);
+				writer.save(self.index, &points);
+
+				// let kd_tree =
+				// 	k_nearest::KDTree::<3, f32, render::Point, Adapter, k_nearest::EuclideanDistanceSquared>::new(
+				// 		&points,
+				// 	);
+				// let mut neighbors = Vec::<(usize, [(f32, usize); MAX_NEIGHBORS])>::new();
+				// neighbors.reserve_exact(points.len());
+				// unsafe { neighbors.set_len(points.len()) };
+				// for (i, point) in points.iter().enumerate() {
+				// 	let neighbor = &mut neighbors[i];
+				// 	neighbor.0 = kd_tree.k_nearest(point, &mut neighbor.1, statistics.max_neighbor_distance);
+				// }
 
 				for calculator in calculators {
-					let values = calculator.calculate_all(&lod);
+					let values = calculator.calculate(&points);
 					writer.save_property(self.index, calculator.name(), &values);
 				}
 
-				lod
+				points
 			},
 			FlatData::Leaf { size } => {
 				let mut points = writer.load(self.index, *size);
@@ -388,7 +403,7 @@ impl FLatNode {
 				let mut neighbors = Vec::<(usize, [(f32, usize); MAX_NEIGHBORS])>::new();
 				neighbors.reserve_exact(points.len());
 				unsafe { neighbors.set_len(points.len()) };
-				for (i, point) in points.iter_mut().enumerate() {
+				for (i, point) in points.iter().enumerate() {
 					let neighbor = &mut neighbors[i];
 					neighbor.0 = kd_tree.k_nearest(point, &mut neighbor.1, statistics.max_neighbor_distance);
 				}
@@ -400,7 +415,7 @@ impl FLatNode {
 				}
 				writer.save(self.index, &points);
 				for calculator in calculators {
-					let values = calculator.calculate_all(&points);
+					let values = calculator.calculate(&points);
 					writer.save_property(self.index, calculator.name(), &values);
 				}
 				points

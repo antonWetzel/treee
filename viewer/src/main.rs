@@ -1,5 +1,3 @@
-use std::error::Error;
-
 use pollster::FutureExt;
 use state::State;
 use thiserror::Error;
@@ -20,7 +18,7 @@ enum ViewerError {
 	Exit(i32),
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> Result<(), ViewerError> {
 	let path = rfd::FileDialog::new()
 		.set_title("Select Project File")
 		.add_filter("Project File", &["epc"])

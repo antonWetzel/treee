@@ -81,17 +81,16 @@ impl UIState {
 
 use crate::{Has, RenderPass, State, Texture, Vertex2D};
 
-pub struct UI {
-	brush: TextBrush<FontRef<'static>>,
+pub struct UI<'a> {
+	brush: TextBrush<FontRef<'a>>,
 	projection: wgpu::BindGroup,
 	scale: f32,
 }
 
-impl UI {
-	pub fn new(state: &(impl Has<State> + Has<UIState>), config: &SurfaceConfiguration) -> Self {
+impl<'a> UI<'a> {
+	pub fn new(state: &(impl Has<State> + Has<UIState>), config: &SurfaceConfiguration, font_bytes: &'a [u8]) -> Self {
 		let (render_state, ui_state): (&State, &UIState) = (state.get(), state.get());
-		let font = include_bytes!("ui_Urbanist-Bold.ttf");
-		let font = FontRef::try_from_slice(font).unwrap();
+		let font = FontRef::try_from_slice(font_bytes).unwrap();
 
 		let brush = BrushBuilder::using_font(font).build(
 			&render_state.device,

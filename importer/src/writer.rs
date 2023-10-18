@@ -55,7 +55,7 @@ impl Writer {
 	}
 
 	pub fn setup_property(&self, name: &str) {
-		std::fs::create_dir_all(self.data_path.with_file_name(format!("{}", name))).unwrap();
+		std::fs::create_dir_all(self.data_path.with_file_name(name)).unwrap();
 	}
 
 	pub fn save_property(&self, index: usize, name: &str, property: &[u32]) {
