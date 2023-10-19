@@ -25,20 +25,21 @@ input = { path = "./input" }
 common = { path = "./common" }
 k-nearest = { path = "./k-nearest" }
 
-pollster = "0.3.0"
-rfd = "0.12.0"
-crossbeam-channel = "0.5.8"
-env_logger = "0.10.0"
+pollster = "0.3"
+rfd = "0.12"
+crossbeam-channel = "0.5"
+env_logger = "0.10"
 image = { version = "0.24", default-features = false, features = ["png"] }
-log = "0.4.17"
+log = "0.4"
 wgpu = "0.17"
-winit = "0.28.1"
-wgpu_text = "0.8.4"
-bytemuck = { version = "1.14.0", features = ["derive"] }
+winit = "0.28"
+wgpu_text = "0.8"
+bytemuck = { version = "1.14", features = ["derive"] }
 bincode = "1.3.3"
-serde = { version = "1.0.188", features = ["derive"] }
-rand = "0.8.5"
-num_cpus = "1.15.0"
-crossbeam = "0.8.2"
-las = { version = "0.8.1", features = ["laz"] }
+serde = { version = "1.0", features = ["derive"] }
+rand = "0.8"
+num_cpus = "1.15"
+crossbeam = "0.8"
+las = { version = "0.8", features = ["laz"] }
 thiserror = "1.0"
+indicatif = "0.17"

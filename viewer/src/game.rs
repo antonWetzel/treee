@@ -22,7 +22,6 @@ pub struct Game {
 	mouse: input::Mouse,
 	keyboard: input::Keyboard,
 	time: Time,
-	always_redraw: bool,
 	paused: bool,
 
 	ui: render::UI<'static>,
@@ -65,8 +64,6 @@ impl Game {
 			project,
 			project_time: std::fs::metadata(&path).unwrap().modified().unwrap(),
 			path,
-
-			always_redraw: false,
 
 			state,
 			mouse: input::Mouse::new(),
@@ -222,7 +219,7 @@ impl RenderEntry for Game {
 			}
 		}
 		let workload = self.tree.loaded_manager.update();
-		if self.interface.update_workload(workload) || self.always_redraw {
+		if self.interface.update_workload(workload) {
 			self.window.request_redraw();
 		}
 

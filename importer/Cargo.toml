@@ -18,4 +18,4 @@ crossbeam.workspace = true
 las.workspace = true
 rfd.workspace = true
 thiserror.workspace = true
-indicatif = "0.17.7"
+indicatif.workspace = true

@@ -7,11 +7,10 @@ rust-version.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-render = { path = "../render" }
-input = { path = "../input" }
-math = { path = "../math" }
-common = { path = "../common" }
-
+render.workspace = true
+input.workspace = true
+math.workspace = true
+common.workspace = true
 pollster.workspace = true
 rfd.workspace = true
 crossbeam-channel.workspace = true
