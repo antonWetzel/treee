@@ -8,7 +8,6 @@ use math::Vector;
 use math::{Dimension, Dimensions, X, Z};
 
 use crate::calculations::{level_of_detail, normal, size};
-use crate::data_point::DataPoint;
 use crate::{Calculator, Writer};
 
 pub const MAX_NEIGHBORS: usize = 32 - 1;
@@ -21,31 +20,35 @@ pub struct Leaf {
 }
 
 impl Leaf {
-	const POINT_SIZE: usize = std::mem::size_of::<render::Point>();
 	pub fn new(writer: &mut Writer, index: usize) -> Self {
-		let mut file = writer.new_file(index);
-		file.set_len(8 + (MAX_LEAF_SIZE * Self::POINT_SIZE) as u64)
+		let file = writer.new_temp_file(index);
+		file.set_len((MAX_LEAF_SIZE * std::mem::size_of::<Vector<3, f32>>()) as u64)
 			.unwrap();
-		file.write_all(&(0u64.to_le_bytes())).unwrap();
 		Self { file: BufWriter::new(file), size: 0 }
 	}
 
-	pub fn add_point(&mut self, point: &render::Point) {
-		let view = unsafe { std::slice::from_raw_parts(point as *const _ as *const u8, Self::POINT_SIZE) };
+	pub fn add_position(&mut self, position: Vector<3, f32>) {
+		let view = unsafe {
+			std::slice::from_raw_parts(
+				&position as *const _ as *const u8,
+				std::mem::size_of::<Vector<3, f32>>(),
+			)
+		};
 		self.file.write_all(view).unwrap();
 		self.size += 1;
 	}
 
-	pub fn get_points(self) -> Vec<render::Point> {
+	pub fn get_points(self) -> Vec<Vector<3, f32>> {
 		let mut file = self.file.into_inner().unwrap();
-		file.seek(std::io::SeekFrom::Start(8)).unwrap();
+		file.seek(std::io::SeekFrom::Start(0)).unwrap();
+
 		unsafe {
-			let mut data = Vec::<MaybeUninit<render::Point>>::new();
+			let mut data = Vec::<MaybeUninit<Vector<3, f32>>>::new();
 			data.reserve_exact(self.size);
 			data.set_len(self.size);
 			let view = std::slice::from_raw_parts_mut(
 				data.as_mut_ptr() as *mut u8,
-				std::mem::size_of::<render::Point>() * self.size,
+				std::mem::size_of::<Vector<3, f32>>() * self.size,
 			);
 			file.read_exact(view).unwrap();
 			std::mem::transmute(data)
@@ -90,42 +93,31 @@ impl Node {
 		}
 	}
 
-	pub fn insert(&mut self, point: DataPoint, writer: &mut Writer) {
-		self.insert_point(
-			&render::Point {
-				position: point.position,
-				normal: [0.0, 1.0, 0.0].into(),
-				size: 0.001,
-			},
-			writer,
-		);
-	}
-
-	fn insert_point(&mut self, point: &render::Point, writer: &mut Writer) {
+	fn insert_position(&mut self, position: Vector<3, f32>, writer: &mut Writer) {
 		self.total_points += 1;
 		match &mut self.data {
 			Data::Branch { children, .. } => {
 				let mut index = 0;
 				let mut corner = self.corner;
 				for dim in Dimensions(0..3) {
-					if point.position[dim] >= self.corner[dim] + self.size / 2.0 {
+					if position[dim] >= self.corner[dim] + self.size / 2.0 {
 						index += 1 << dim.0;
 						corner[dim] += self.size / 2.0;
 					}
 				}
 
 				match &mut children[index] {
-					Some(v) => v.insert_point(point, writer),
+					Some(v) => v.insert_position(position, writer),
 					None => {
 						let mut node = Node::new(corner, self.size / 2.0, writer);
-						node.insert_point(point, writer);
+						node.insert_position(position, writer);
 						children[index] = Some(node);
 					},
 				}
 			},
 			Data::Leaf(leaf) => {
 				if leaf.size < MAX_LEAF_SIZE {
-					leaf.add_point(point);
+					leaf.add_position(position);
 					return;
 				}
 				let leaf = match std::mem::replace(&mut self.data, Data::Branch { children: Box::default() }) {
@@ -135,29 +127,30 @@ impl Node {
 
 				let mut children: [Option<Self>; 8] = Default::default();
 				let points = leaf.get_points();
-				for point in points {
+				for position in points {
 					let mut index = 0;
 					for dim in X.to(Z) {
-						if point.position[dim] >= self.corner[dim] + self.size / 2.0 {
+						if position[dim] >= self.corner[dim] + self.size / 2.0 {
 							index += 1 << dim.0;
 						}
 					}
 					match &mut children[index] {
-						Some(v) => v.insert_point(&point, writer),
+						Some(v) => v.insert_position(position, writer),
 						None => {
 							let mut corner = self.corner;
 							for dim in X.to(Z) {
-								if point.position[dim] >= self.corner[dim] + self.size / 2.0 {
+								if position[dim] >= self.corner[dim] + self.size / 2.0 {
 									corner[dim] += self.size / 2.0;
 								}
 							}
 							let mut node = Node::new(corner, self.size / 2.0, writer);
-							node.insert_point(&point, writer);
+							node.insert_position(position, writer);
 							children[index] = Some(node);
 						},
 					}
 				}
 				self.data = Data::Branch { children: Box::new(children) };
+				self.insert_position(position, writer);
 			},
 		}
 	}
@@ -239,8 +232,8 @@ impl Tree {
 		Self { root: Node::new(corner, size, writer) }
 	}
 
-	pub fn insert(&mut self, point: DataPoint, writer: &mut Writer) {
-		self.root.insert(point, writer);
+	pub fn insert(&mut self, point: Vector<3, f32>, writer: &mut Writer) {
+		self.root.insert_position(point, writer);
 	}
 
 	pub fn flatten(mut self, calculators: &[&dyn Calculator]) -> (FlatTree, Project) {
@@ -315,13 +308,12 @@ impl FlatTree {
 	}
 
 	pub fn calculate(self, writer: &Writer, project: &Project, progress: ProgressBar, calculators: &[&dyn Calculator]) {
-		let data = std::sync::Mutex::new(HashMap::new());
-
-		let (sender, reciever) = crossbeam::channel::bounded::<(usize, FLatNode)>(4);
-
 		progress.reset();
 		progress.set_length(project.node_count as u64);
 		progress.set_prefix("Calculate:");
+
+		let data = std::sync::Mutex::new(HashMap::new());
+		let (sender, reciever) = crossbeam::channel::bounded::<(usize, FLatNode)>(4);
 
 		std::thread::scope(|scope| {
 			for _ in 0..num_cpus::get() {
@@ -395,7 +387,16 @@ impl FLatNode {
 				points
 			},
 			FlatData::Leaf { size } => {
-				let mut points = writer.load(self.index, *size);
+				let positions = writer.load_temp_file(self.index, *size);
+				let mut points = unsafe {
+					let mut points = Vec::<render::Point>::new();
+					points.reserve_exact(positions.len());
+					points.set_len(positions.len());
+					for (i, position) in positions.into_iter().enumerate() {
+						points[i].position = position;
+					}
+					points
+				};
 				let kd_tree =
 					k_nearest::KDTree::<3, f32, render::Point, Adapter, k_nearest::EuclideanDistanceSquared>::new(
 						&points,

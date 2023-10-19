@@ -14,9 +14,10 @@ Point cloud importer and viewer with focus on forest scans.
 - `cargo run --bin=importer (--release)`
 	- select input file (`.las` or `.laz`)
 	- select empty output folder
-		- content will be deleted
+	- wait to open the input file
 	- wait for import phase
-		- viewer can open the project after the import phase
+	- project file is created
+		- viewer can open the project after the file is created before all calculations are done
 	- wait for calculate phase
 
 ## Viewer
@@ -43,10 +44,4 @@ Point cloud importer and viewer with focus on forest scans.
 			- `Folder`: open other project file
 			- `Bug`: open/close debug information
 			- `Color Palette`: change visualization color palette
-
-## Notes
-
-### To-do
-
-- only use import folders if the folder is empty or a `project.epc` is present
-- ...
+			- `Invert`: toggle eye dome lightning

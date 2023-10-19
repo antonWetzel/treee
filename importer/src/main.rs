@@ -1,9 +1,9 @@
 mod calculations;
-mod data_point;
 mod tree;
 mod writer;
 
-use data_point::DataPoint;
+use std::time::Duration;
+
 use indicatif::{ProgressBar, ProgressStyle};
 use las::Read;
 use math::{Vector, X, Y, Z};
@@ -15,18 +15,27 @@ use tree::Tree;
 const IMPORT_PROGRESS_SCALE: u64 = 10_000;
 
 #[derive(Error, Debug)]
-enum ImporterError {
-	#[error("no input file")]
+pub enum ImporterError {
+	#[error("No input file")]
 	NoInputFile,
-	#[error("no output folder")]
+	#[error("No output folder")]
 	NoOutputFolder,
+
+	#[error(transparent)]
+	InvalidFile(#[from] las::Error),
+
+	#[error("Output folder is file")]
+	OutputFolderIsFile,
+
+	#[error("Output folder is not empty")]
+	OutputFolderIsNotEmpty,
 }
 
-fn main() -> Result<(), ImporterError> {
+fn import() -> Result<(), ImporterError> {
 	let progress = ProgressBar::new(0);
 	progress.set_style(
 		ProgressStyle::with_template(
-			"{prefix:12} [{elapsed_precise}] {wide_bar:.cyan/blue} {human_pos:>12}/{human_len:12} {eta_precise}",
+			"{prefix:15} [{elapsed_precise}] {wide_bar:.cyan/blue} {human_pos:>12}/{human_len:12} {eta_precise}",
 		)
 		.unwrap(),
 	);
@@ -42,8 +51,15 @@ fn main() -> Result<(), ImporterError> {
 		.pick_folder()
 		.ok_or(ImporterError::NoOutputFolder)?;
 
-	let mut reader = las::Reader::from_path(&input).expect("Unable to open reader");
+	let spinner = ProgressBar::new(0);
+	spinner.set_style(ProgressStyle::with_template("{prefix:15} [{elapsed_precise}] {spinner:.blue}").unwrap());
 
+	spinner.reset();
+	spinner.tick();
+	spinner.set_prefix("Unpacking:");
+	spinner.enable_steady_tick(Duration::from_millis(100));
+
+	let mut reader = las::Reader::from_path(&input).expect("Unable to open reader");
 	let header_min = reader.header().bounds().min;
 	let header_max = reader.header().bounds().max;
 	let min = Vector::new([header_min.x, header_min.z, -header_max.y]);
@@ -51,23 +67,29 @@ fn main() -> Result<(), ImporterError> {
 	let diff = max - min;
 	let pos = min + diff / 2.0;
 
-	let mut writer = Writer::new(output);
+	let mut writer = Writer::new(output)?;
 	let mut tree = Tree::new(
 		&mut writer,
 		(min - pos).map(|v| v as f32),
 		diff[X].max(diff[Y]).max(diff[Z]) as f32,
 	);
 
+	spinner.disable_steady_tick();
+	spinner.finish();
+	println!();
+
 	progress.reset();
 	progress.set_length(reader.header().number_of_points() / IMPORT_PROGRESS_SCALE);
 	progress.set_prefix("Import:");
+	progress.inc(0);
 
 	let (sender, reciever) = crossbeam::channel::bounded(512);
 	//parallel over files?
 	let reader_progress = progress.clone();
 	std::thread::spawn(move || {
 		let mut counter = 0;
-		for point in reader.points().map(|p| p.expect("Unable to read point")) {
+		//skips invalid points without error or warning
+		for point in reader.points().flatten() {
 			sender.send(point).unwrap();
 			counter += 1;
 			if counter >= IMPORT_PROGRESS_SCALE {
@@ -78,36 +100,47 @@ fn main() -> Result<(), ImporterError> {
 	});
 
 	for point in reciever {
-		let res = DataPoint {
-			position: [
+		tree.insert(
+			[
 				(point.x - pos[X]) as f32,
 				(point.z - pos[Y]) as f32,
 				(-point.y - pos[Z]) as f32,
 			]
 			.into(),
-			value: {
-				let b = (point.z - min[Y]) / diff[Y];
-				(b * (u32::MAX - 1) as f64) as u32
-			},
-		};
-		tree.insert(res, &mut writer);
+			&mut writer,
+		);
 	}
 	progress.finish();
 	println!();
 
+	spinner.reset();
+	spinner.set_prefix("Save Project:");
+	spinner.tick();
+	spinner.enable_steady_tick(Duration::from_millis(100));
+
 	let heigt_calculator = HeightCalculator::new((min[Y] - pos[Y]) as f32, (max[Y] - pos[Y]) as f32);
 	let inverse_calculator = InverseHeightCalculator::new((min[Y] - pos[Y]) as f32, (max[Y] - pos[Y]) as f32);
-	let calculators: &[&dyn Calculator] = &[&heigt_calculator, &inverse_calculator];
+	let calculators = [&heigt_calculator as &dyn Calculator, &inverse_calculator];
 	for calculator in calculators {
 		writer.setup_property(calculator.name());
 	}
 
-	let (tree, project) = tree.flatten(calculators);
+	let (tree, project) = tree.flatten(&calculators);
 	writer.save_project(&project);
+	spinner.disable_steady_tick();
+	spinner.finish();
+	println!();
 
-	tree.calculate(&writer, &project, progress, calculators);
+	tree.calculate(&writer, &project, progress, &calculators);
 
 	Ok(())
+}
+
+fn main() {
+	match import() {
+		Ok(()) => {},
+		Err(err) => eprintln!("Error: {}", err),
+	}
 }
 
 pub trait SimpleCalculator: Send + Sync {
