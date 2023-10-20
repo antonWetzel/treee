@@ -7,7 +7,7 @@ pub trait RenderEntry {
 	fn close_window(&mut self, window_id: WindowId) -> ControlFlow;
 	fn resize_window(&mut self, window_id: WindowId, size: Vector<2, u32>) -> ControlFlow;
 	fn key_changed(&mut self, window_id: WindowId, key: input::KeyCode, key_state: input::State) -> ControlFlow;
-	fn mouse_pressed(
+	fn mouse_button_changed(
 		&mut self,
 		window_id: WindowId,
 		button: input::MouseButton,

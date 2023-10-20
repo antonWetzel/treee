@@ -124,6 +124,54 @@ impl Game {
 			render_pass
 		}
 	}
+
+	fn handle_interface_action(&mut self, action: InterfaceAction) -> render::ControlFlow {
+		match action {
+			InterfaceAction::Close => return render::ControlFlow::Exit,
+			InterfaceAction::Nothing => {},
+			InterfaceAction::ReDraw => self.request_redraw(),
+			InterfaceAction::Open => self.change_project(),
+			InterfaceAction::ColorPalette => {
+				self.tree.next_lookup(self.state);
+				self.request_redraw();
+			},
+			InterfaceAction::Property => {
+				self.tree.next_property(&self.project.properties);
+				self.request_redraw();
+			},
+			InterfaceAction::EyeDome => {
+				self.eye_dome_active = !self.eye_dome_active;
+				self.request_redraw();
+			},
+			InterfaceAction::Camera => {
+				self.tree.camera.change_controller();
+				self.window.request_redraw();
+			},
+			InterfaceAction::LevelOfDetail => {
+				self.tree.camera.change_lod(self.project.level as usize);
+				self.window.request_redraw();
+			},
+			InterfaceAction::LevelOfDetailChange(change) => {
+				self.tree.camera.lod.change_detail(change);
+				self.window.request_redraw();
+			},
+			InterfaceAction::EyeDomeStrength(change) => {
+				self.eye_dome.strength *= 1.0 + change * 0.1;
+				self.eye_dome.update_settings(self.state);
+				self.interface
+					.update_eye_dome_settings(self.eye_dome.strength, self.eye_dome.sensitivity);
+				self.window.request_redraw();
+			},
+			InterfaceAction::EyeDomeSensitivity(change) => {
+				self.eye_dome.sensitivity *= 1.0 + change * 0.1;
+				self.eye_dome.update_settings(self.state);
+				self.interface
+					.update_eye_dome_settings(self.eye_dome.strength, self.eye_dome.sensitivity);
+				self.window.request_redraw();
+			},
+		}
+		render::ControlFlow::Wait
+	}
 }
 
 impl RenderEntry for Game {
@@ -173,16 +221,16 @@ impl RenderEntry for Game {
 	fn time(&mut self) -> render::ControlFlow {
 		let delta = self.time.elapsed();
 		let mut direction: Vector<2, f32> = [0.0, 0.0].into();
-		if self.keyboard.pressed(input::KeyCode::D) {
+		if self.keyboard.pressed(input::KeyCode::D) || self.keyboard.pressed(input::KeyCode::Right) {
 			direction[X] += 1.0;
 		}
-		if self.keyboard.pressed(input::KeyCode::S) {
+		if self.keyboard.pressed(input::KeyCode::S) || self.keyboard.pressed(input::KeyCode::Down) {
 			direction[Y] += 1.0;
 		}
-		if self.keyboard.pressed(input::KeyCode::A) {
+		if self.keyboard.pressed(input::KeyCode::A) || self.keyboard.pressed(input::KeyCode::Left) {
 			direction[X] -= 1.0;
 		}
-		if self.keyboard.pressed(input::KeyCode::W) {
+		if self.keyboard.pressed(input::KeyCode::W) || self.keyboard.pressed(input::KeyCode::Up) {
 			direction[Y] -= 1.0;
 		}
 		let l = direction.length();
@@ -192,32 +240,6 @@ impl RenderEntry for Game {
 			self.request_redraw();
 		}
 
-		{
-			let amount = 0.5 * delta.as_secs_f32();
-			let mut update = false;
-			if self.keyboard.pressed(input::KeyCode::U) {
-				self.eye_dome.strength /= 1.0 + amount;
-				update = true;
-			}
-			if self.keyboard.pressed(input::KeyCode::I) {
-				self.eye_dome.strength *= 1.0 + amount;
-				update = true;
-			}
-			if self.keyboard.pressed(input::KeyCode::J) {
-				self.eye_dome.sensitivity /= 1.0 + amount;
-				update = true;
-			}
-			if self.keyboard.pressed(input::KeyCode::K) {
-				self.eye_dome.sensitivity *= 1.0 + amount;
-				update = true;
-			}
-			if update {
-				self.eye_dome.update_settings(self.state);
-				self.interface
-					.update_eye_dome_settings(self.eye_dome.strength, self.eye_dome.sensitivity);
-				self.window.request_redraw();
-			}
-		}
 		let workload = self.tree.loaded_manager.update();
 		if self.interface.update_workload(workload) {
 			self.window.request_redraw();
@@ -235,26 +257,6 @@ impl RenderEntry for Game {
 		key_state: input::State,
 	) -> render::ControlFlow {
 		self.keyboard.update(key, key_state);
-		match (key, key_state) {
-			(input::KeyCode::Escape, input::State::Pressed) => return render::ControlFlow::Exit,
-			(input::KeyCode::R, input::State::Pressed) => {
-				self.tree.camera.lod.increase_detail();
-				self.window.request_redraw();
-			},
-			(input::KeyCode::F, input::State::Pressed) => {
-				self.tree.camera.lod.decrese_detail();
-				self.window.request_redraw();
-			},
-			(input::KeyCode::L, input::State::Pressed) => {
-				self.tree.camera.change_lod(self.project.level as usize);
-				self.window.request_redraw();
-			},
-			(input::KeyCode::C, input::State::Pressed) => {
-				self.tree.camera.change_controller();
-				self.window.request_redraw();
-			},
-			_ => {},
-		}
 		render::ControlFlow::Wait
 	}
 
@@ -263,41 +265,35 @@ impl RenderEntry for Game {
 	}
 
 	fn mouse_wheel(&mut self, delta: f32) -> render::ControlFlow {
-		self.tree.camera.scroll(delta, self.state);
-		self.request_redraw();
-		render::ControlFlow::Wait
+		let action = self
+			.interface
+			.scrolled(self.mouse.position() / self.ui.get_scale(), delta);
+
+		if action == InterfaceAction::Nothing {
+			self.tree.camera.scroll(delta, self.state);
+			self.request_redraw();
+			render::ControlFlow::Wait
+		} else {
+			self.handle_interface_action(action)
+		}
 	}
 
-	fn mouse_pressed(
+	fn mouse_button_changed(
 		&mut self,
 		_window_id: render::WindowId,
 		button: input::MouseButton,
 		button_state: input::State,
 	) -> render::ControlFlow {
 		self.mouse.update(button, button_state);
-		if let (input::MouseButton::Left, input::State::Pressed) = (button, button_state) {
-			match self
-				.interface
-				.clicked(self.mouse.position() / self.ui.get_scale())
-			{
-				InterfaceAction::Nothing => {},
-				InterfaceAction::Debug => self.request_redraw(),
-				InterfaceAction::Open => self.change_project(),
-				InterfaceAction::ColorPalette => {
-					self.tree.next_lookup(self.state);
-					self.request_redraw();
-				},
-				InterfaceAction::Property => {
-					self.tree.next_property(&self.project.properties);
-					self.request_redraw();
-				},
-				InterfaceAction::EyeDome => {
-					self.eye_dome_active = !self.eye_dome_active;
-					self.request_redraw();
-				},
-			}
+		match (button, button_state) {
+			(input::MouseButton::Left, input::State::Pressed) => {
+				let action = self
+					.interface
+					.clicked(self.mouse.position() / self.ui.get_scale());
+				self.handle_interface_action(action)
+			},
+			_ => render::ControlFlow::Wait,
 		}
-		render::ControlFlow::Wait
 	}
 
 	fn mouse_moved(&mut self, _window_id: render::WindowId, position: Vector<2, f32>) -> render::ControlFlow {
@@ -305,8 +301,11 @@ impl RenderEntry for Game {
 		if self.mouse.pressed(input::MouseButton::Left) {
 			self.tree.camera.rotate(delta, self.state);
 			self.request_redraw();
+			render::ControlFlow::Wait
+		} else {
+			let action = self.interface.hover(position / self.ui.get_scale());
+			self.handle_interface_action(action)
 		}
-		render::ControlFlow::Wait
 	}
 }
 

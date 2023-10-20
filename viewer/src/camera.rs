@@ -61,8 +61,8 @@ impl Camera {
 
 	pub fn change_controller(&mut self) {
 		self.controller = match &self.controller {
-			Controller::FirstPerson { .. } => Controller::Orbital { offset: 10.0 },
-			Controller::Orbital { .. } => Controller::FirstPerson { sensitivity: 10.0 },
+			Controller::FirstPerson { sensitivity } => Controller::Orbital { offset: *sensitivity },
+			Controller::Orbital { offset } => Controller::FirstPerson { sensitivity: *offset },
 		}
 	}
 

@@ -14,11 +14,12 @@ Point cloud importer and viewer with focus on forest scans.
 - `cargo run --bin=importer (--release)`
 	- select input file (`.las` or `.laz`)
 	- select empty output folder
-	- wait to open the input file
-	- wait for import phase
-	- project file is created
-		- viewer can open the project after the file is created before all calculations are done
-	- wait for calculate phase
+	- phases
+		1. open input file
+		1. import points
+		1. crate project file
+			- viewer can open the project after the file is created before all calculations are done
+		1. calculate data
 
 ## Viewer
 
@@ -26,22 +27,30 @@ Point cloud importer and viewer with focus on forest scans.
 	- select project file
 		- `project.epc` in output folder
 	- controls (work in progress)
-		- <kbd>w</kbd><kbd>a</kbd><kbd>s</kbd><kbd>d</kbd> move camera
-		- <kbd>left mouse</kbd> pan camera
-		- <kbd>c</kbd> change camera controller
-			- panning controls (default)
+		- <kbd>wasd</kbd>/<kbd>↑←↓→</kbd>move camera
+		- <kbd>left mouse button</kbd> pan camera
+		- `Close`: Close application
+		- `Folder`: open project file
+		- `Bug`: toggle debug information
+			- hidden (default)
+			- visible
+		- `Color Palette`: toggle visualization color palette
+			- warm (default)
+			- cold
+		- `Information`: change visualization property
+			- height (default)
+			- inverse height
+		- `Invert`: toggle eye dome lightning
+			- active (default)
+			- inactive
+		- `Invert Popup Buttons`
+			- increase/decrease strength
+			- increase/decrease sensitivity
+		- `Camera`: toggle camera controller
+			- orbital controls (default)
 			- first person
-		- <kbd>l</kbd> change level of detail algorithm
+		- `Level of Detail`: change level of detail calculation
 			- based on distance (default)
 			- equal level for all
-		- level of detail quality
-			- <kbd>r</kbd> increase
-			- <kbd>f</kbd> decrease
-		- eye dome lightning
-			- <kbd>u</kbd>/<kbd>i</kbd> increase/decrease strength
-			- <kbd>j</kbd>/<kbd>k</kbd> increase/decrease sensitivity
-		- buttons
-			- `Folder`: open other project file
-			- `Bug`: open/close debug information
-			- `Color Palette`: change visualization color palette
-			- `Invert`: toggle eye dome lightning
+		- `Level of Detail Popup Button`
+			- increase/decrease quality

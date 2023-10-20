@@ -92,7 +92,7 @@ impl Runner {
 							game.key_changed(window_id, key, input.state)
 						},
 						winit::event::WindowEvent::MouseInput { state: button_state, button, .. } => {
-							game.mouse_pressed(window_id, (*button).into(), *button_state)
+							game.mouse_button_changed(window_id, (*button).into(), *button_state)
 						},
 						winit::event::WindowEvent::MouseWheel { delta, .. } => {
 							let delta = match *delta {

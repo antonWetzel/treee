@@ -14,32 +14,15 @@ pub enum Checker {
 }
 
 impl Mode {
-	pub fn increase_detail(&mut self) {
+	pub fn change_detail(&mut self, amount: f32) {
 		match self {
-			Mode::Normal { threshold, .. } => {
-				*threshold *= 1.2;
-				println!("Threshold: {}", threshold);
-			},
+			Mode::Normal { threshold, .. } => *threshold *= 1.0 + amount / 10.0,
 			Mode::Level { target, max } => {
-				if *target < *max {
-					*target += 1;
+				if amount < 0.0 {
+					*target -= (*target > 0) as usize
+				} else {
+					*target += (*target < *max) as usize
 				}
-				println!("Target level: {}", target);
-			},
-		}
-	}
-
-	pub fn decrese_detail(&mut self) {
-		match self {
-			Mode::Normal { threshold, .. } => {
-				*threshold /= 1.2;
-				println!("Threshold: {}", threshold);
-			},
-			Mode::Level { target, .. } => {
-				if *target > 0 {
-					*target -= 1;
-				}
-				println!("Target level: {}", target);
 			},
 		}
 	}
