@@ -15,7 +15,6 @@ pub struct Interface {
 	eye_dome: Area,
 	eye_dome_expanded: bool,
 	eye_dome_strength: Area,
-	eye_dome_sensitivity: Area,
 
 	camera: Area,
 
@@ -76,7 +75,6 @@ pub enum InterfaceAction {
 	LevelOfDetailChange(f32),
 	EyeDome,
 	EyeDomeStrength(f32),
-	EyeDomeSensitivity(f32),
 }
 
 impl Interface {
@@ -84,12 +82,7 @@ impl Interface {
 		Self {
 			last_workload: 0,
 			statistics: render::UIElement::new(
-				vec![
-					"...\n".into(),
-					"...\n".into(),
-					"...\n".into(),
-					"...\n".into(),
-				],
+				vec!["...\n".into(), "...\n".into(), "...\n".into()],
 				[110.0, 10.0].into(),
 				25.0,
 			),
@@ -131,16 +124,10 @@ impl Interface {
 				[100.0, 100.0].into(),
 			),
 			eye_dome_expanded: false,
-			eye_dome_sensitivity: Area::new(
-				state,
-				include_bytes!("../assets/chevron-expand.png"),
-				[100.0, 500.0].into(),
-				[100.0, 100.0].into(),
-			),
 			eye_dome_strength: Area::new(
 				state,
 				include_bytes!("../assets/chevron-expand.png"),
-				[200.0, 500.0].into(),
+				[100.0, 500.0].into(),
 				[100.0, 100.0].into(),
 			),
 
@@ -185,9 +172,8 @@ impl Interface {
 		}
 	}
 
-	pub fn update_eye_dome_settings(&mut self, strength: f32, sensitivity: f32) {
+	pub fn update_eye_dome_settings(&mut self, strength: f32) {
 		self.statistics.text[2] = format!("Highlight Strength: {}\n", strength);
-		self.statistics.text[3] = format!("Highlight Sensitivity: {}\n", sensitivity);
 	}
 
 	pub fn clicked(&mut self, position: Vector<2, f32>) -> InterfaceAction {
@@ -217,13 +203,6 @@ impl Interface {
 			if self.eye_dome_strength.inside_bottom(position) {
 				return InterfaceAction::EyeDomeStrength(-5.0);
 			}
-
-			if self.eye_dome_sensitivity.inside_top(position) {
-				return InterfaceAction::EyeDomeSensitivity(5.0);
-			}
-			if self.eye_dome_sensitivity.inside_bottom(position) {
-				return InterfaceAction::EyeDomeSensitivity(-5.0);
-			}
 		}
 
 		if self.camera.inside(position) {
@@ -249,9 +228,6 @@ impl Interface {
 			if self.eye_dome_strength.inside(position) {
 				return InterfaceAction::EyeDomeStrength(delta);
 			}
-			if self.eye_dome_sensitivity.inside(position) {
-				return InterfaceAction::EyeDomeSensitivity(delta);
-			}
 		}
 
 		if self.level_of_detail_expanded && self.level_of_detail_quality.inside(position) {
@@ -263,10 +239,7 @@ impl Interface {
 	pub fn hover(&mut self, position: Vector<2, f32>) -> InterfaceAction {
 		let mut action = InterfaceAction::Nothing;
 		if self.eye_dome_expanded {
-			if !self.eye_dome.inside(position)
-				&& !self.eye_dome_sensitivity.inside(position)
-				&& !self.eye_dome_strength.inside(position)
-			{
+			if !self.eye_dome.inside(position) && !self.eye_dome_strength.inside(position) {
 				self.eye_dome_expanded = false;
 				action = InterfaceAction::ReDraw;
 			}
@@ -299,7 +272,6 @@ impl Interface {
 		self.eye_dome.render(&mut render_pass);
 		if self.eye_dome_expanded {
 			self.eye_dome_strength.render(&mut render_pass);
-			self.eye_dome_sensitivity.render(&mut render_pass);
 		}
 		self.camera.render(&mut render_pass);
 		self.level_of_detail.render(&mut render_pass);

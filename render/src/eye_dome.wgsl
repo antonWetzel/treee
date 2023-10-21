@@ -22,7 +22,6 @@ fn vs_main(
 
 struct Settings {
     color: vec3<f32>,
-    sensitivity: f32,
     strength: f32,
 };
 
@@ -44,9 +43,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     m = max(m, get_depth(coord + vec2<i32>(1, -1)));
     m = max(m, get_depth(coord + vec2<i32>(-1, -1)));
     m = max(m, get_depth(coord + vec2<i32>(-1, 1)));
-    m = min(m, depth + settings.sensitivity);
-    let amount = (m - depth) / settings.sensitivity;
-    return vec4<f32>(settings.color, 1.0 - exp(-amount * settings.strength));
+    m = min(m, depth + settings.strength);
+    return vec4<f32>(settings.color, (m - depth) / settings.strength);
 }
 
 

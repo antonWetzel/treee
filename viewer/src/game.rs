@@ -43,14 +43,14 @@ impl Game {
 			&project.properties[0],
 		);
 
-		let eye_dome = render::EyeDome::new(state, window.config(), window.depth_texture(), 5.0, 0.005);
+		let eye_dome = render::EyeDome::new(state, window.config(), window.depth_texture(), 0.002);
 		let ui = render::UI::new(
 			state,
 			window.config(),
 			include_bytes!("../assets/Urbanist-Bold.ttf"),
 		);
 		let mut interface = Interface::new(state);
-		interface.update_eye_dome_settings(eye_dome.strength, eye_dome.sensitivity);
+		interface.update_eye_dome_settings(eye_dome.strength);
 
 		Self {
 			ui,
@@ -159,14 +159,7 @@ impl Game {
 				self.eye_dome.strength *= 1.0 + change * 0.1;
 				self.eye_dome.update_settings(self.state);
 				self.interface
-					.update_eye_dome_settings(self.eye_dome.strength, self.eye_dome.sensitivity);
-				self.window.request_redraw();
-			},
-			InterfaceAction::EyeDomeSensitivity(change) => {
-				self.eye_dome.sensitivity *= 1.0 + change * 0.1;
-				self.eye_dome.update_settings(self.state);
-				self.interface
-					.update_eye_dome_settings(self.eye_dome.strength, self.eye_dome.sensitivity);
+					.update_eye_dome_settings(self.eye_dome.strength);
 				self.window.request_redraw();
 			},
 		}

@@ -29,7 +29,6 @@ pub struct EyeDome {
 	render_pipeline: wgpu::RenderPipeline,
 
 	pub color: Vector<3, f32>,
-	pub sensitivity: f32,
 	pub strength: f32,
 }
 
@@ -37,9 +36,7 @@ pub struct EyeDome {
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct EyeDomeUniform {
 	color: [f32; 3],
-	sensitivity: f32,
 	strength: f32,
-	pad: [f32; 3],
 }
 
 impl EyeDome {
@@ -48,7 +45,6 @@ impl EyeDome {
 		config: &wgpu::SurfaceConfiguration,
 		depth: &DepthTexture,
 		strength: f32,
-		sensitivity: f32,
 	) -> Self {
 		let state = state.get();
 		let depth_layout = state
@@ -87,7 +83,7 @@ impl EyeDome {
 
 		let color = [0.0, 0.0, 0.0].into();
 
-		let settings_bind_group = Self::get_settings_bindgroup(state, &settings_layout, color, strength, sensitivity);
+		let settings_bind_group = Self::get_settings_bindgroup(state, &settings_layout, color, strength);
 
 		let vertex_buffer = state
 			.device
@@ -160,7 +156,6 @@ impl EyeDome {
 			render_pipeline,
 
 			color,
-			sensitivity,
 			strength,
 		}
 	}
@@ -186,7 +181,6 @@ impl EyeDome {
 			&self.settings_layout,
 			self.color,
 			self.strength,
-			self.sensitivity,
 		);
 	}
 
@@ -195,13 +189,10 @@ impl EyeDome {
 		layout: &wgpu::BindGroupLayout,
 		color: Vector<3, f32>,
 		strength: f32,
-		sensitivity: f32,
 	) -> wgpu::BindGroup {
 		let uniform = EyeDomeUniform {
 			color: [color[X], color[Y], color[Z]],
-			sensitivity,
 			strength,
-			pad: [0.0, 0.0, 0.0],
 		};
 		let buffer = state
 			.device
