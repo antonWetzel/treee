@@ -1,7 +1,7 @@
 use math::{Mat, Projection, Transform};
 use wgpu::util::DeviceExt;
 
-use crate::{Has, RenderPass, State};
+use crate::{Has, State};
 
 #[derive(Clone, Copy)]
 pub struct Camera3D {
@@ -69,8 +69,8 @@ impl Camera3DGPU {
 			})
 	}
 
-	pub fn bind<'a>(&'a self, render_pass: &mut RenderPass<'a>, index: u32) {
-		render_pass.set_bind_group(index, &self.bind_group, &[]);
+	pub fn get_bind_group(&self) -> &wgpu::BindGroup {
+		&self.bind_group
 	}
 }
 

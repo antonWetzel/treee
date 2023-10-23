@@ -74,7 +74,7 @@ pub struct Runner {
 }
 
 impl Runner {
-	pub fn run<T: RenderEntry>(mut self, game: &mut T) -> i32 {
+	pub fn run<T: Entry>(mut self, game: &mut T) -> i32 {
 		self.event_loop
 			.run_return(|event, _event_loop, control_flow| {
 				*control_flow = match event {

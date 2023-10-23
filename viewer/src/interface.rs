@@ -36,10 +36,6 @@ impl Area {
 		Self { image, position, max: position + size }
 	}
 
-	pub fn render<'a>(&'a self, render_pass: &mut render::UIPass<'a>) {
-		self.image.render(render_pass);
-	}
-
 	pub fn inside(&self, position: Vector<2, f32>) -> bool {
 		self.position[X] <= position[X]
 			&& position[X] < self.max[X]
@@ -59,6 +55,12 @@ impl Area {
 			&& position[X] < self.max[X]
 			&& (self.position[Y] + self.max[Y]) * 0.5 <= position[Y]
 			&& position[Y] < self.max[Y]
+	}
+}
+
+impl render::UIRender for Area {
+	fn render<'a>(&'a self, ui_pass: &mut render::UIPass<'a>) {
+		ui_pass.render(&self.image);
 	}
 }
 
@@ -198,10 +200,10 @@ impl Interface {
 		}
 		if self.eye_dome_expanded {
 			if self.eye_dome_strength.inside_top(position) {
-				return InterfaceAction::EyeDomeStrength(5.0);
+				return InterfaceAction::EyeDomeStrength(-5.0);
 			}
 			if self.eye_dome_strength.inside_bottom(position) {
-				return InterfaceAction::EyeDomeStrength(-5.0);
+				return InterfaceAction::EyeDomeStrength(5.0);
 			}
 		}
 
@@ -224,10 +226,8 @@ impl Interface {
 	}
 
 	pub fn scrolled(&mut self, position: Vector<2, f32>, delta: f32) -> InterfaceAction {
-		if self.eye_dome_expanded {
-			if self.eye_dome_strength.inside(position) {
-				return InterfaceAction::EyeDomeStrength(delta);
-			}
+		if self.eye_dome_expanded && self.eye_dome_strength.inside(position) {
+			return InterfaceAction::EyeDomeStrength(delta);
 		}
 
 		if self.level_of_detail_expanded && self.level_of_detail_quality.inside(position) {
@@ -238,47 +238,28 @@ impl Interface {
 
 	pub fn hover(&mut self, position: Vector<2, f32>) -> InterfaceAction {
 		let mut action = InterfaceAction::Nothing;
-		if self.eye_dome_expanded {
-			if !self.eye_dome.inside(position) && !self.eye_dome_strength.inside(position) {
-				self.eye_dome_expanded = false;
-				action = InterfaceAction::ReDraw;
-			}
-		} else {
-			if self.eye_dome.inside(position) {
-				self.eye_dome_expanded = true;
-				action = InterfaceAction::ReDraw;
-			}
+		if self.eye_dome_expanded && !self.eye_dome.inside(position) && !self.eye_dome_strength.inside(position) {
+			self.eye_dome_expanded = false;
+			action = InterfaceAction::ReDraw;
 		}
-		if self.level_of_detail_expanded {
-			if !self.level_of_detail.inside(position) && !self.level_of_detail_quality.inside(position) {
-				self.level_of_detail_expanded = false;
-				action = InterfaceAction::ReDraw;
-			}
-		} else {
-			if self.level_of_detail.inside(position) {
-				self.level_of_detail_expanded = true;
-				action = InterfaceAction::ReDraw;
-			}
+		if !self.eye_dome_expanded && self.eye_dome.inside(position) {
+			self.eye_dome_expanded = true;
+			action = InterfaceAction::ReDraw;
+		}
+
+		if self.level_of_detail_expanded
+			&& !self.level_of_detail.inside(position)
+			&& !self.level_of_detail_quality.inside(position)
+		{
+			self.level_of_detail_expanded = false;
+			action = InterfaceAction::ReDraw;
+		}
+
+		if !self.level_of_detail_expanded && self.level_of_detail.inside(position) {
+			self.level_of_detail_expanded = true;
+			action = InterfaceAction::ReDraw;
 		}
 		action
-	}
-
-	pub fn render<'a>(&'a self, mut render_pass: render::UIPass<'a>) -> render::UIPass<'a> {
-		self.close.render(&mut render_pass);
-		self.open.render(&mut render_pass);
-		self.debug.render(&mut render_pass);
-		self.color_palette.render(&mut render_pass);
-		self.property.render(&mut render_pass);
-		self.eye_dome.render(&mut render_pass);
-		if self.eye_dome_expanded {
-			self.eye_dome_strength.render(&mut render_pass);
-		}
-		self.camera.render(&mut render_pass);
-		self.level_of_detail.render(&mut render_pass);
-		if self.level_of_detail_expanded {
-			self.level_of_detail_quality.render(&mut render_pass);
-		}
-		render_pass
 	}
 }
 
@@ -286,6 +267,25 @@ impl render::UICollect for Interface {
 	fn collect<'a>(&'a self, collector: &mut render::UICollector<'a>) {
 		if self.show_statistics {
 			collector.add_element(&self.statistics);
+		}
+	}
+}
+
+impl render::UIRender for Interface {
+	fn render<'a>(&'a self, ui_pass: &mut render::UIPass<'a>) {
+		self.close.render(ui_pass);
+		self.open.render(ui_pass);
+		self.debug.render(ui_pass);
+		self.color_palette.render(ui_pass);
+		self.property.render(ui_pass);
+		self.eye_dome.render(ui_pass);
+		if self.eye_dome_expanded {
+			self.eye_dome_strength.render(ui_pass);
+		}
+		self.camera.render(ui_pass);
+		self.level_of_detail.render(ui_pass);
+		if self.level_of_detail_expanded {
+			self.level_of_detail_quality.render(ui_pass);
 		}
 	}
 }

@@ -177,16 +177,6 @@ impl Tree {
 		}
 	}
 
-	pub fn render<'a>(&'a self, mut point_cloud_pass: render::PointCloudPass<'a>) -> render::PointCloudPass<'a> {
-		self.root.render(
-			&mut point_cloud_pass,
-			lod::Checker::new(&self.camera.lod),
-			&self.camera,
-			&self.loaded_manager,
-		);
-		point_cloud_pass
-	}
-
 	pub fn next_lookup(&mut self, state: &'static State) {
 		self.lookup_name = self.lookup_name.next();
 		self.lookup = render::Lookup::new_png(state, self.lookup_name.data());
@@ -199,11 +189,13 @@ impl Tree {
 	}
 }
 
-impl render::PointCloudEnvironment for Tree {
-	fn camera(&self) -> &render::Camera3DGPU {
-		&self.camera.gpu
-	}
-	fn lookup(&self) -> &render::Lookup {
-		&self.lookup
+impl render::PointCloudRender for Tree {
+	fn render<'a>(&'a self, point_cloud_pass: &mut render::PointCloudPass<'a>) {
+		self.root.render(
+			point_cloud_pass,
+			lod::Checker::new(&self.camera.lod),
+			&self.camera,
+			&self.loaded_manager,
+		);
 	}
 }

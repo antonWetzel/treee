@@ -22,7 +22,7 @@ pub enum ImporterError {
 	NoOutputFolder,
 
 	#[error(transparent)]
-	InvalidFile(#[from] las::Error),
+	InvalidFile(#[from] Box<las::Error>),
 
 	#[error("Output folder is file")]
 	OutputFolderIsFile,
@@ -150,7 +150,7 @@ pub trait SimpleCalculator: Send + Sync {
 
 impl<T: SimpleCalculator> Calculator for T {
 	fn name(&self) -> &str {
-		<Self as SimpleCalculator>::name(&self)
+		<Self as SimpleCalculator>::name(self)
 	}
 	fn calculate(&self, points: &[render::Point]) -> Vec<u32> {
 		let mut values = Vec::with_capacity(points.len());

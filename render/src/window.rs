@@ -82,7 +82,7 @@ impl Window {
 		self.depth_texture = DepthTexture::new(&state.device, &self.config, "depth");
 	}
 
-	pub fn render(&self, state: &'static impl Has<State>, renderable: &impl Renderable) {
+	pub fn render(&self, state: &'static impl Has<State>, renderable: &impl RenderEntry) {
 		let render_state: &State = state.get();
 		let output = self.surface.get_current_texture().unwrap();
 		let view = output
@@ -93,7 +93,7 @@ impl Window {
 			.device
 			.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("Render Encoder") });
 
-		let render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+		let mut render_pass = RenderPass::new(encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
 			label: Some("Render Pass"),
 			color_attachments: &[Some(wgpu::RenderPassColorAttachment {
 				view: &view,
@@ -111,14 +111,15 @@ impl Window {
 				}),
 				stencil_ops: None,
 			}),
-		});
-		let render_pass = renderable.render(render_pass);
+		}));
+
+		renderable.render(&mut render_pass);
 		drop(render_pass);
 
 		let view = output
 			.texture
 			.create_view(&wgpu::TextureViewDescriptor::default());
-		let render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+		let mut render_pass = RenderPass::new(encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
 			label: Some("eye dome"),
 			color_attachments: &[Some(wgpu::RenderPassColorAttachment {
 				view: &view,
@@ -126,8 +127,8 @@ impl Window {
 				ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: true },
 			})],
 			depth_stencil_attachment: None,
-		});
-		let render_pass = renderable.post_process(render_pass);
+		}));
+		renderable.post_process(&mut render_pass);
 		drop(render_pass);
 
 		render_state.queue.submit(Some(encoder.finish()));

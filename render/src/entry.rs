@@ -3,7 +3,7 @@ use math::Vector;
 use super::*;
 
 // todo: pass window_target to allow the creation of the windows
-pub trait RenderEntry {
+pub trait Entry {
 	fn close_window(&mut self, window_id: WindowId) -> ControlFlow;
 	fn resize_window(&mut self, window_id: WindowId, size: Vector<2, u32>) -> ControlFlow;
 	fn key_changed(&mut self, window_id: WindowId, key: input::KeyCode, key_state: input::State) -> ControlFlow;
@@ -21,5 +21,3 @@ pub trait RenderEntry {
 }
 
 pub type ControlFlow = winit::event_loop::ControlFlow;
-
-pub type RenderPass<'a> = wgpu::RenderPass<'a>;

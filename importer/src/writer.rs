@@ -129,6 +129,6 @@ impl Writer {
 
 impl Drop for Writer {
 	fn drop(&mut self) {
-		std::fs::remove_dir_all(&self.temp_path.parent().unwrap()).unwrap();
+		std::fs::remove_dir_all(self.temp_path.parent().unwrap()).unwrap();
 	}
 }

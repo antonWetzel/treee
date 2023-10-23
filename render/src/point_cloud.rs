@@ -2,7 +2,7 @@ use common::MAX_LEAF_SIZE;
 use math::Vector;
 use wgpu::util::DeviceExt;
 
-use crate::{depth_texture::DepthTexture, Camera3DGPU, Has, Lookup, Point, RenderPass, State};
+use crate::{depth_texture::DepthTexture, Camera3DGPU, Has, Lookup, Point, Render, RenderPass, State};
 
 pub struct PointCloudState {
 	quad: wgpu::Buffer,
@@ -92,30 +92,26 @@ impl PointCloudState {
 	}
 }
 
+#[repr(transparent)]
 pub struct PointCloudPass<'a>(wgpu::RenderPass<'a>);
 
-impl<'a> PointCloudPass<'a> {
-	pub fn start(
-		mut render_pass: RenderPass<'a>,
-		state: &'a impl Has<PointCloudState>,
-		environment: &'a impl PointCloudEnvironment,
-	) -> Self {
-		let state = state.get();
-		render_pass.set_pipeline(&state.pipeline);
-		environment.camera().bind(&mut render_pass, 0);
-		render_pass.set_vertex_buffer(0, state.get().quad.slice(..));
-		render_pass.set_bind_group(1, environment.lookup().get_bind_group(), &[]);
-		Self(render_pass)
-	}
-
-	pub fn end(self) -> RenderPass<'a> {
-		self.0
-	}
+pub trait PointCloudRender {
+	fn render<'a>(&'a self, point_cloud_pass: &mut PointCloudPass<'a>);
 }
 
-pub trait PointCloudEnvironment {
-	fn camera(&self) -> &Camera3DGPU;
-	fn lookup(&self) -> &Lookup;
+impl<'a, T, S: Has<PointCloudState>> Render<'a, (&'a S, &'a Camera3DGPU, &'a Lookup)> for T
+where
+	T: PointCloudRender,
+{
+	fn render(&'a self, render_pass: &mut RenderPass<'a>, data: (&'a S, &'a Camera3DGPU, &'a Lookup)) {
+		let (state, camera, lookup) = (data.0.get(), data.1, data.2);
+		render_pass.set_pipeline(&state.pipeline);
+		render_pass.set_bind_group(0, camera.get_bind_group(), &[]);
+		render_pass.set_vertex_buffer(0, state.get().quad.slice(..));
+		render_pass.set_bind_group(1, lookup.get_bind_group(), &[]);
+		let point_cloud_pass = unsafe { std::mem::transmute::<_, &mut PointCloudPass<'a>>(render_pass) };
+		self.render(point_cloud_pass);
+	}
 }
 
 #[derive(Debug)]

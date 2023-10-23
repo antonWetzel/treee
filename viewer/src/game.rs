@@ -2,7 +2,6 @@ use std::path::PathBuf;
 
 use common::Project;
 use math::{Vector, X, Y};
-use render::{ChainExtension, RenderEntry};
 
 use crate::{
 	interface::{Interface, InterfaceAction},
@@ -117,14 +116,6 @@ impl Game {
 		self.request_redraw();
 	}
 
-	fn render_eye_dome<'a>(&'a self, render_pass: render::RenderPass<'a>) -> render::RenderPass<'a> {
-		if self.eye_dome_active {
-			self.eye_dome.render(render_pass)
-		} else {
-			render_pass
-		}
-	}
-
 	fn handle_interface_action(&mut self, action: InterfaceAction) -> render::ControlFlow {
 		match action {
 			InterfaceAction::Close => return render::ControlFlow::Exit,
@@ -167,7 +158,7 @@ impl Game {
 	}
 }
 
-impl RenderEntry for Game {
+impl render::Entry for Game {
 	fn render(&mut self, _window_id: render::WindowId) {
 		if self.paused {
 			return;
@@ -302,20 +293,19 @@ impl RenderEntry for Game {
 	}
 }
 
-impl render::Renderable for Game {
-	fn render<'a>(&'a self, render_pass: render::RenderPass<'a>) -> render::RenderPass<'a> {
-		render_pass
-			.next(|render_pass| render::PointCloudPass::start(render_pass, self.state, &self.tree))
-			.next(|point_cloud_pass| self.tree.render(point_cloud_pass))
-			.next(|point_cloud_pass| point_cloud_pass.end())
+impl render::RenderEntry for Game {
+	fn render<'a>(&'a self, render_pass: &mut render::RenderPass<'a>) {
+		render_pass.render(
+			&self.tree,
+			(self.state, &self.tree.camera.gpu, &self.tree.lookup),
+		);
 	}
 
-	fn post_process<'a>(&'a self, render_pass: render::RenderPass<'a>) -> render::RenderPass<'a> {
-		render_pass
-			.next(|render_pass| self.render_eye_dome(render_pass))
-			.next(|render_pass| render::UIPass::start(render_pass, &self.ui, self.state))
-			.next(|ui_pass| self.interface.render(ui_pass))
-			.next(|ui_pass| ui_pass.end())
+	fn post_process<'a>(&'a self, render_pass: &mut render::RenderPass<'a>) {
+		if self.eye_dome_active {
+			render_pass.render(&self.eye_dome, ());
+		}
+		render_pass.render(&self.interface, (&self.ui, self.state));
 	}
 }
 

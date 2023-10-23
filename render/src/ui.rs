@@ -79,7 +79,7 @@ impl UIState {
 	}
 }
 
-use crate::{Has, RenderPass, State, Texture, Vertex2D};
+use crate::{Has, Render, RenderPass, State, Texture, Vertex2D};
 
 pub struct UI<'a> {
 	brush: TextBrush<FontRef<'a>>,
@@ -323,30 +323,39 @@ impl UIImage {
 				label: Some("lookup layout"),
 			})
 	}
+}
 
-	pub fn render<'a>(&'a self, render_pass: &mut UIPass<'a>) {
-		render_pass.0.set_vertex_buffer(0, self.buffer.slice(..));
-		render_pass.0.set_bind_group(1, &self.bind_group, &[]);
-		render_pass.0.draw(0..6, 0..1);
+impl UIRender for UIImage {
+	fn render<'a>(&'a self, ui_pass: &mut UIPass<'a>) {
+		ui_pass.0.set_vertex_buffer(0, self.buffer.slice(..));
+		ui_pass.0.set_bind_group(1, &self.bind_group, &[]);
+		ui_pass.0.draw(0..6, 0..1);
 	}
 }
 
+#[repr(transparent)]
 pub struct UIPass<'a>(RenderPass<'a>);
 
 impl<'a> UIPass<'a> {
-	pub fn start(mut render_pass: RenderPass<'a>, ui: &'a UI, state: &'a impl Has<UIState>) -> Self {
-		let state = state.get();
-		ui.brush.draw(&mut render_pass);
-		render_pass.set_pipeline(&state.pipeline);
-		render_pass.set_bind_group(0, &ui.projection, &[]);
-		Self(render_pass)
-	}
-
-	pub fn end(self) -> RenderPass<'a> {
-		self.0
+	pub fn render(&mut self, value: &'a impl UIRender) {
+		value.render(self);
 	}
 }
 
-pub trait RenderableUI<State> {
-	fn render<'a>(&'a self, render_pass: UIPass<'a>, state: &'a State) -> UIPass<'a>;
+pub trait UIRender {
+	fn render<'a>(&'a self, ui_pass: &mut UIPass<'a>);
+}
+
+impl<'a, T, S: Has<UIState>> Render<'a, (&'a UI<'a>, &'a S)> for T
+where
+	T: UIRender,
+{
+	fn render(&'a self, render_pass: &mut RenderPass<'a>, data: (&'a UI<'a>, &'a S)) {
+		let (ui, state) = (data.0, data.1.get());
+		ui.brush.draw(render_pass);
+		render_pass.set_pipeline(&state.pipeline);
+		render_pass.set_bind_group(0, &ui.projection, &[]);
+		let ui_pass = unsafe { std::mem::transmute::<_, &mut UIPass<'a>>(render_pass) };
+		self.render(ui_pass);
+	}
 }
