@@ -6,7 +6,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-	requirements::{Identity, Sqrt, Zero},
+	requirements::{Sqrt, Zero},
 	Dimension, Dimensions, X, Y, Z,
 };
 
@@ -188,7 +188,6 @@ impl<const N: usize, T> Vector<N, T> {
 
 	pub fn normalized(&self) -> Self
 	where
-		T: Identity,
 		T: Zero,
 		T: Copy,
 		T: Add<T, Output = T>,
@@ -196,8 +195,7 @@ impl<const N: usize, T> Vector<N, T> {
 		T: Div<T, Output = T>,
 		T: Sqrt,
 	{
-		let scale = T::IDENTITY / self.length();
-		*self * scale
+		*self / self.length()
 	}
 
 	pub fn map<U: Zero>(self, f: impl Fn(T) -> U) -> Vector<N, U> {

@@ -21,19 +21,33 @@ pub struct Interface {
 	level_of_detail: Area,
 	level_of_detail_expanded: bool,
 	level_of_detail_quality: Area,
+
+	slice: Area,
+	slice_expanded: bool,
+	slice_background: Area,
+	slice_left: Area,
+	slice_right: Area,
+	pub slice_min: u32,
+	pub slice_max: u32,
 }
 
 struct Area {
 	image: render::UIImage,
 	position: Vector<2, f32>,
 	max: Vector<2, f32>,
+	texture: render::Texture,
 }
 
 impl Area {
 	pub fn new(state: &State, data: &[u8], position: Vector<2, f32>, size: Vector<2, f32>) -> Self {
 		let texture = render::Texture::new(state, data, render::TextureDimension::D2);
 		let image = render::UIImage::new(state, &texture, position, size);
-		Self { image, position, max: position + size }
+		Self {
+			image,
+			position,
+			max: position + size,
+			texture,
+		}
 	}
 
 	pub fn inside(&self, position: Vector<2, f32>) -> bool {
@@ -56,6 +70,13 @@ impl Area {
 			&& (self.position[Y] + self.max[Y]) * 0.5 <= position[Y]
 			&& position[Y] < self.max[Y]
 	}
+
+	pub fn change_position(&mut self, state: &State, position: Vector<2, f32>) {
+		let size = self.max - self.position;
+		self.position = position;
+		self.max = position + size;
+		self.image = render::UIImage::new(state, &self.texture, position, size);
+	}
 }
 
 impl render::UIRender for Area {
@@ -77,6 +98,7 @@ pub enum InterfaceAction {
 	LevelOfDetailChange(f32),
 	EyeDome,
 	EyeDomeStrength(f32),
+	SliceChange,
 }
 
 impl Interface {
@@ -152,6 +174,34 @@ impl Interface {
 				[100.0, 700.0].into(),
 				[100.0, 100.0].into(),
 			),
+
+			slice: Area::new(
+				state,
+				include_bytes!("../assets/sliders.png"),
+				[000.0, 800.0].into(),
+				[100.0, 100.0].into(),
+			),
+			slice_expanded: false,
+			slice_background: Area::new(
+				state,
+				include_bytes!("../assets/line.png"),
+				[100.0, 800.0].into(),
+				[300.0, 100.0].into(),
+			),
+			slice_left: Area::new(
+				state,
+				include_bytes!("../assets/dot.png"),
+				[125.0, 825.0].into(),
+				[50.0, 50.0].into(),
+			),
+			slice_right: Area::new(
+				state,
+				include_bytes!("../assets/dot.png"),
+				[325.0, 825.0].into(),
+				[50.0, 50.0].into(),
+			),
+			slice_min: u32::MIN,
+			slice_max: u32::MAX,
 		}
 	}
 
@@ -259,7 +309,48 @@ impl Interface {
 			self.level_of_detail_expanded = true;
 			action = InterfaceAction::ReDraw;
 		}
+
+		if self.slice_expanded && !self.slice.inside(position) && !self.slice_background.inside(position) {
+			self.slice_expanded = false;
+			action = InterfaceAction::ReDraw;
+		}
+
+		if !self.slice_expanded && self.slice.inside(position) {
+			self.slice_expanded = true;
+			action = InterfaceAction::ReDraw;
+		}
+
 		action
+	}
+
+	pub fn drag(&mut self, position: Vector<2, f32>, state: &State) -> InterfaceAction {
+		let mut action = InterfaceAction::Nothing;
+		if self.slice_expanded && self.slice_background.inside(position) {
+			let value = (position[X] - self.slice_background.position[X] - 50.0) / 200.0;
+			let value_percent = value.clamp(0.0, 1.0);
+			let value = (value_percent * u32::MAX as f32) as u32;
+			if value.abs_diff(self.slice_min) < value.abs_diff(self.slice_max) {
+				self.slice_min = value;
+				self.slice_left.change_position(
+					state,
+					self.slice_background.position + [25.0 + value_percent * 200.0, 25.0].into(),
+				);
+			} else {
+				self.slice_max = value;
+				self.slice_right.change_position(
+					state,
+					self.slice_background.position + [25.0 + value_percent * 200.0, 25.0].into(),
+				);
+			}
+
+			action = InterfaceAction::SliceChange;
+		}
+
+		action
+	}
+
+	pub fn should_drag(&self, _position: Vector<2, f32>) -> bool {
+		self.slice_expanded
 	}
 }
 
@@ -286,6 +377,13 @@ impl render::UIRender for Interface {
 		self.level_of_detail.render(ui_pass);
 		if self.level_of_detail_expanded {
 			self.level_of_detail_quality.render(ui_pass);
+		}
+
+		self.slice.render(ui_pass);
+		if self.slice_expanded {
+			self.slice_background.render(ui_pass);
+			self.slice_left.render(ui_pass);
+			self.slice_right.render(ui_pass);
 		}
 	}
 }

@@ -35,6 +35,7 @@ pub struct Tree {
 	pub camera: camera::Camera,
 	pub loaded_manager: LoadedManager,
 	pub lookup: render::Lookup,
+	pub environment: render::PointCloudEnvironment,
 	lookup_name: LookupName,
 
 	property_index: usize,
@@ -174,6 +175,7 @@ impl Tree {
 			lookup_name,
 			lookup: render::Lookup::new_png(state, lookup_name.data()),
 			property_index: 0,
+			environment: render::PointCloudEnvironment::new(state, u32::MIN, u32::MAX),
 		}
 	}
 

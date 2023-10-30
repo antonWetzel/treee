@@ -1,4 +1,5 @@
 mod calculations;
+mod level_of_detail;
 mod tree;
 mod writer;
 
@@ -118,20 +119,20 @@ fn import() -> Result<(), ImporterError> {
 	spinner.tick();
 	spinner.enable_steady_tick(Duration::from_millis(100));
 
-	let heigt_calculator = HeightCalculator::new((min[Y] - pos[Y]) as f32, (max[Y] - pos[Y]) as f32);
-	let inverse_calculator = InverseHeightCalculator::new((min[Y] - pos[Y]) as f32, (max[Y] - pos[Y]) as f32);
-	let calculators = [&heigt_calculator as &dyn Calculator, &inverse_calculator];
-	for calculator in calculators {
-		writer.setup_property(calculator.name());
+	let properties = ["height", "curve"];
+	let environment = Environment::new((min[Y] - pos[Y]) as f32, (max[Y] - pos[Y]) as f32);
+
+	for property in properties {
+		writer.setup_property(property);
 	}
 
-	let (tree, project) = tree.flatten(&calculators);
+	let (tree, project) = tree.flatten(&properties);
 	writer.save_project(&project);
 	spinner.disable_steady_tick();
 	spinner.finish();
 	println!();
 
-	tree.calculate(&writer, &project, progress, &calculators);
+	tree.calculate(&writer, &project, &environment, progress);
 
 	Ok(())
 }
@@ -143,70 +144,13 @@ fn main() {
 	}
 }
 
-pub trait SimpleCalculator: Send + Sync {
-	fn name(&self) -> &str;
-	fn calculate(&self, index: usize, points: &[render::Point]) -> u32;
+pub struct Environment {
+	pub min: f32,
+	pub diff: f32,
 }
 
-impl<T: SimpleCalculator> Calculator for T {
-	fn name(&self) -> &str {
-		<Self as SimpleCalculator>::name(self)
-	}
-	fn calculate(&self, points: &[render::Point]) -> Vec<u32> {
-		let mut values = Vec::with_capacity(points.len());
-		for i in 0..points.len() {
-			values.push(self.calculate(i, points));
-		}
-		values
-	}
-}
-pub trait Calculator: Send + Sync {
-	fn name(&self) -> &str;
-	fn calculate(&self, points: &[render::Point]) -> Vec<u32>;
-}
-
-pub struct HeightCalculator {
-	min: f32,
-	diff: f32,
-}
-
-impl HeightCalculator {
+impl Environment {
 	pub fn new(min: f32, max: f32) -> Self {
 		Self { min, diff: max - min }
-	}
-}
-
-impl SimpleCalculator for HeightCalculator {
-	fn name(&self) -> &str {
-		"height"
-	}
-
-	fn calculate(&self, index: usize, points: &[render::Point]) -> u32 {
-		let height = points[index].position[Y];
-		let b = (height - self.min) / self.diff;
-		(b * (u32::MAX - 1) as f32) as u32
-	}
-}
-
-pub struct InverseHeightCalculator {
-	min: f32,
-	diff: f32,
-}
-
-impl InverseHeightCalculator {
-	pub fn new(min: f32, max: f32) -> Self {
-		Self { min, diff: max - min }
-	}
-}
-
-impl SimpleCalculator for InverseHeightCalculator {
-	fn name(&self) -> &str {
-		"inverse_height"
-	}
-
-	fn calculate(&self, index: usize, points: &[render::Point]) -> u32 {
-		let height = points[index].position[Y];
-		let b = (height - self.min) / self.diff;
-		u32::MAX - (b * (u32::MAX - 1) as f32) as u32
 	}
 }

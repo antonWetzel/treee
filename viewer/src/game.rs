@@ -153,6 +153,14 @@ impl Game {
 					.update_eye_dome_settings(self.eye_dome.strength);
 				self.window.request_redraw();
 			},
+			InterfaceAction::SliceChange => {
+				self.tree.environment = render::PointCloudEnvironment::new(
+					self.state,
+					self.interface.slice_min,
+					self.interface.slice_max,
+				);
+				self.window.request_redraw();
+			},
 		}
 		render::ControlFlow::Wait
 	}
@@ -282,12 +290,18 @@ impl render::Entry for Game {
 
 	fn mouse_moved(&mut self, _window_id: render::WindowId, position: Vector<2, f32>) -> render::ControlFlow {
 		let delta = self.mouse.delta(position);
+		let ui_position = position / self.ui.get_scale();
 		if self.mouse.pressed(input::MouseButton::Left) {
-			self.tree.camera.rotate(delta, self.state);
-			self.request_redraw();
-			render::ControlFlow::Wait
+			if self.interface.should_drag(ui_position) {
+				let action = self.interface.drag(ui_position, self.state);
+				self.handle_interface_action(action)
+			} else {
+				self.tree.camera.rotate(delta, self.state);
+				self.request_redraw();
+				render::ControlFlow::Wait
+			}
 		} else {
-			let action = self.interface.hover(position / self.ui.get_scale());
+			let action = self.interface.hover(ui_position);
 			self.handle_interface_action(action)
 		}
 	}
@@ -297,7 +311,12 @@ impl render::RenderEntry for Game {
 	fn render<'a>(&'a self, render_pass: &mut render::RenderPass<'a>) {
 		render_pass.render(
 			&self.tree,
-			(self.state, &self.tree.camera.gpu, &self.tree.lookup),
+			(
+				self.state,
+				&self.tree.camera.gpu,
+				&self.tree.lookup,
+				&self.tree.environment,
+			),
 		);
 	}
 

@@ -7,8 +7,8 @@ use indicatif::ProgressBar;
 use math::Vector;
 use math::{Dimension, Dimensions, X, Z};
 
-use crate::calculations::{level_of_detail, normal, size};
-use crate::{Calculator, Writer};
+use crate::calculations::{self};
+use crate::{level_of_detail, Environment, Writer};
 
 pub const MAX_NEIGHBORS: usize = 32 - 1;
 pub const MAX_NEIGHBOR_DISTANCE_SCALE: f32 = 32.0;
@@ -236,7 +236,7 @@ impl Tree {
 		self.root.insert_position(point, writer);
 	}
 
-	pub fn flatten(mut self, calculators: &[&dyn Calculator]) -> (FlatTree, Project) {
+	pub fn flatten(mut self, calculators: &[&str]) -> (FlatTree, Project) {
 		let (tree, depth, node_count) = self.root.create_index_node();
 		let mut nodes = Vec::with_capacity(node_count);
 		let root = self.root.flatten_root();
@@ -267,13 +267,7 @@ pub struct FlatTree {
 }
 
 impl FlatTree {
-	pub fn genereate_project(
-		&self,
-		level: usize,
-		root: IndexNode,
-		node_count: usize,
-		calculators: &[&dyn Calculator],
-	) -> Project {
+	pub fn genereate_project(&self, level: usize, root: IndexNode, node_count: usize, calculators: &[&str]) -> Project {
 		let density = self.get_density();
 		let density = density.sqrt();
 		Project {
@@ -284,7 +278,7 @@ impl FlatTree {
 			level: level as u32,
 			root,
 			node_count: node_count as u32,
-			properties: calculators.iter().map(|c| c.name().to_owned()).collect(),
+			properties: calculators.iter().map(|&c| String::from(c)).collect(),
 		}
 	}
 
@@ -307,7 +301,7 @@ impl FlatTree {
 		density
 	}
 
-	pub fn calculate(self, writer: &Writer, project: &Project, progress: ProgressBar, calculators: &[&dyn Calculator]) {
+	pub fn calculate(self, writer: &Writer, project: &Project, environment: &Environment, progress: ProgressBar) {
 		progress.reset();
 		progress.set_length(project.node_count as u64);
 		progress.set_prefix("Calculate:");
@@ -320,7 +314,7 @@ impl FlatTree {
 				let reciever = reciever.clone();
 				scope.spawn(|| {
 					for (i, node) in reciever {
-						let res = node.calculate(&data, writer, &project.statistics, calculators);
+						let res = node.calculate(&data, writer, &project.statistics, environment);
 						let mut data = data.lock().unwrap();
 						data.insert(i, res);
 						drop(data);
@@ -347,7 +341,7 @@ impl FLatNode {
 		data: &std::sync::Mutex<HashMap<usize, Vec<render::Point>>>,
 		writer: &Writer,
 		statistics: &Statistics,
-		calculators: &[&dyn Calculator],
+		environment: &Environment,
 	) -> Vec<render::Point> {
 		match &mut self.data {
 			FlatData::Branch { children } => {
@@ -364,28 +358,22 @@ impl FLatNode {
 					points.push(lod);
 				}
 
-				let points = level_of_detail::calculate(points, self.corner, self.size);
+				let mut points = level_of_detail::grid(points, self.corner, self.size);
 				writer.save(self.index, &points);
 
-				// let kd_tree =
-				// 	k_nearest::KDTree::<3, f32, render::Point, Adapter, k_nearest::EuclideanDistanceSquared>::new(
-				// 		&points,
-				// 	);
-				// let mut neighbors = Vec::<(usize, [(f32, usize); MAX_NEIGHBORS])>::new();
-				// neighbors.reserve_exact(points.len());
-				// unsafe { neighbors.set_len(points.len()) };
-				// for (i, point) in points.iter().enumerate() {
-				// 	let neighbor = &mut neighbors[i];
-				// 	neighbor.0 = kd_tree.k_nearest(point, &mut neighbor.1, statistics.max_neighbor_distance);
-				// }
+				let neighbors = Neighbors::new(&points, statistics);
 
-				for calculator in calculators {
-					let values = calculator.calculate(&points);
-					writer.save_property(self.index, calculator.name(), &values);
-				}
-
+				calculations::calculate(
+					&mut points,
+					false,
+					&neighbors,
+					environment,
+					self.index,
+					writer,
+				);
 				points
 			},
+
 			FlatData::Leaf { size } => {
 				let positions = writer.load_temp_file(self.index, *size);
 				let mut points = unsafe {
@@ -397,30 +385,42 @@ impl FLatNode {
 					}
 					points
 				};
-				let kd_tree =
-					k_nearest::KDTree::<3, f32, render::Point, Adapter, k_nearest::EuclideanDistanceSquared>::new(
-						&points,
-					);
-				let mut neighbors = Vec::<(usize, [(f32, usize); MAX_NEIGHBORS])>::new();
-				neighbors.reserve_exact(points.len());
-				unsafe { neighbors.set_len(points.len()) };
-				for (i, point) in points.iter().enumerate() {
-					let neighbor = &mut neighbors[i];
-					neighbor.0 = kd_tree.k_nearest(point, &mut neighbor.1, statistics.max_neighbor_distance);
-				}
-				for i in 0..points.len() {
-					let neighbors = &neighbors[i];
-					let neighbors = &neighbors.1[0..neighbors.0];
-					points[i].normal = normal::calculate(neighbors, &points);
-					points[i].size = size::calculate(neighbors, &points);
-				}
+
+				let neighbors = Neighbors::new(&points, statistics);
+
+				calculations::calculate(
+					&mut points,
+					true,
+					&neighbors,
+					environment,
+					self.index,
+					writer,
+				);
+
 				writer.save(self.index, &points);
-				for calculator in calculators {
-					let values = calculator.calculate(&points);
-					writer.save_property(self.index, calculator.name(), &values);
-				}
 				points
 			},
 		}
+	}
+}
+
+pub struct Neighbors(Vec<(usize, [(f32, usize); MAX_NEIGHBORS])>);
+
+impl Neighbors {
+	pub fn new(points: &[render::Point], statistics: &Statistics) -> Self {
+		let kd_tree =
+			k_nearest::KDTree::<3, f32, render::Point, Adapter, k_nearest::EuclideanDistanceSquared>::new(points);
+		let mut neighbors = Vec::<(usize, [(f32, usize); MAX_NEIGHBORS])>::new();
+		neighbors.reserve_exact(points.len());
+		unsafe { neighbors.set_len(points.len()) };
+		for (i, point) in points.iter().enumerate() {
+			let neighbor = &mut neighbors[i];
+			neighbor.0 = kd_tree.k_nearest(point, &mut neighbor.1, statistics.max_neighbor_distance);
+		}
+		Self(neighbors)
+	}
+
+	pub fn get(&self, index: usize) -> &[(f32, usize)] {
+		&self.0[index].1[0..self.0[index].0]
 	}
 }

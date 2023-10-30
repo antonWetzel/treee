@@ -28,7 +28,11 @@ impl PointCloudState {
 			.device
 			.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
 				label: Some("Render Pipeline Layout"),
-				bind_group_layouts: &[&Camera3DGPU::get_layout(state), &Lookup::get_layout(state)],
+				bind_group_layouts: &[
+					&Camera3DGPU::get_layout(state),
+					&PointCloudEnvironment::get_layout(state),
+					&Lookup::get_layout(state),
+				],
 				push_constant_ranges: &[],
 			});
 
@@ -99,16 +103,35 @@ pub trait PointCloudRender {
 	fn render<'a>(&'a self, point_cloud_pass: &mut PointCloudPass<'a>);
 }
 
-impl<'a, T, S: Has<PointCloudState>> Render<'a, (&'a S, &'a Camera3DGPU, &'a Lookup)> for T
+impl<'a, T, S: Has<PointCloudState>>
+	Render<
+		'a,
+		(
+			&'a S,
+			&'a Camera3DGPU,
+			&'a Lookup,
+			&'a PointCloudEnvironment,
+		),
+	> for T
 where
 	T: PointCloudRender,
 {
-	fn render(&'a self, render_pass: &mut RenderPass<'a>, data: (&'a S, &'a Camera3DGPU, &'a Lookup)) {
-		let (state, camera, lookup) = (data.0.get(), data.1, data.2);
+	fn render(
+		&'a self,
+		render_pass: &mut RenderPass<'a>,
+		data: (
+			&'a S,
+			&'a Camera3DGPU,
+			&'a Lookup,
+			&'a PointCloudEnvironment,
+		),
+	) {
+		let (state, camera, lookup, environment) = (data.0.get(), data.1, data.2, data.3);
 		render_pass.set_pipeline(&state.pipeline);
 		render_pass.set_bind_group(0, camera.get_bind_group(), &[]);
+		render_pass.set_bind_group(1, &environment.bind_group, &[]);
+		render_pass.set_bind_group(2, lookup.get_bind_group(), &[]);
 		render_pass.set_vertex_buffer(0, state.get().quad.slice(..));
-		render_pass.set_bind_group(1, lookup.get_bind_group(), &[]);
 		let point_cloud_pass = unsafe { std::mem::transmute::<_, &mut PointCloudPass<'a>>(render_pass) };
 		self.render(point_cloud_pass);
 	}
@@ -184,5 +207,63 @@ impl PointCloudProperty {
 			mapped_at_creation: false,
 		});
 		Self { buffer, length: 0 }
+	}
+}
+
+pub struct PointCloudEnvironment {
+	bind_group: wgpu::BindGroup,
+}
+
+impl PointCloudEnvironment {
+	pub fn new(state: &impl Has<State>, min: u32, max: u32) -> Self {
+		#[repr(C)]
+		#[derive(Debug, Copy, Clone, bytemuck::Zeroable, bytemuck::Pod)]
+		struct Uniform {
+			min: u32,
+			max: u32,
+			pad: [u32; 2],
+		}
+
+		let uniform = Uniform { min, max, pad: [0, 0] };
+		let buffer = state
+			.get()
+			.device
+			.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+				label: Some("point cloud environment buffer"),
+				contents: bytemuck::cast_slice(&[uniform]),
+				usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+			});
+
+		let bind_group = state
+			.get()
+			.device
+			.create_bind_group(&wgpu::BindGroupDescriptor {
+				layout: &Self::get_layout(state),
+				entries: &[wgpu::BindGroupEntry {
+					binding: 0,
+					resource: buffer.as_entire_binding(),
+				}],
+				label: Some("point cloud environment bindgroup"),
+			});
+		Self { bind_group }
+	}
+
+	pub fn get_layout(state: &impl Has<State>) -> wgpu::BindGroupLayout {
+		state
+			.get()
+			.device
+			.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+				entries: &[wgpu::BindGroupLayoutEntry {
+					binding: 0,
+					visibility: wgpu::ShaderStages::VERTEX,
+					ty: wgpu::BindingType::Buffer {
+						ty: wgpu::BufferBindingType::Uniform,
+						has_dynamic_offset: false,
+						min_binding_size: None,
+					},
+					count: None,
+				}],
+				label: Some("point cloud environment layout"),
+			})
 	}
 }

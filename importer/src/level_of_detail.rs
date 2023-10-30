@@ -12,7 +12,7 @@ struct Cell {
 	total_area: f32,
 }
 
-pub fn calculate(children: Vec<Vec<render::Point>>, corner: Vector<3, f32>, size: f32) -> Vec<render::Point> {
+pub fn grid(children: Vec<Vec<render::Point>>, corner: Vector<3, f32>, size: f32) -> Vec<render::Point> {
 	let mut grid = Vec::<Cell>::new();
 	grid.resize(GRID_SIZE_3, Default::default());
 	let grid_scale = GRID_SIZE as f32 / size;

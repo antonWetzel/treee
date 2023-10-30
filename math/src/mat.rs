@@ -1,4 +1,4 @@
-use std::ops::{Add, Div, Mul, MulAssign, Neg, Sub};
+use std::ops::{Add, AddAssign, Div, Mul, MulAssign, Neg, Sub};
 
 use crate::{
 	angle::Angle,
@@ -230,17 +230,47 @@ impl<T> Mat<3, T> {
 		T: Sub<T, Output = T>,
 		T: Mul<T, Output = T>,
 		T: Div<T, Output = T>,
+		T: AddAssign<T>,
 		T: PartialEq,
 		T: Sqrt,
 	{
 		let mut eigen_vector = Vector::<3, T>::default();
 		for j in X.to(Z) {
 			for k in X.to(Z) {
-				eigen_vector[j] = eigen_vector[j]
-					+ (self[k + j] - if k == j { eigen_values[X] } else { T::ZERO })
-						* (self[Z + k] - if Z == k { eigen_values[Y] } else { T::ZERO });
+				eigen_vector[j] += (self[k + j] - if k == j { eigen_values[X] } else { T::ZERO })
+					* (self[Z + k] - if Z == k { eigen_values[Y] } else { T::ZERO });
 			}
 		}
 		eigen_vector / eigen_vector.length()
+	}
+
+	pub fn calculate_eigenvectors(&self, eigen_values: Vector<3, T>) -> Mat<3, T>
+	where
+		T: Zero,
+		T: Copy,
+		T: Add<T, Output = T>,
+		T: Sub<T, Output = T>,
+		T: Mul<T, Output = T>,
+		T: Div<T, Output = T>,
+		T: AddAssign<T>,
+		T: PartialEq,
+		T: Sqrt,
+	{
+		let mut eigen_vectors = Mat::default();
+		for i in X.to(Z) {
+			let next = i.next(Z);
+			let prev = i.previous(Z);
+			for j in X.to(Z) {
+				for k in X.to(Z) {
+					let l = self[k + j] - if k == j { eigen_values[next] } else { T::ZERO };
+					let r = self[i + k] - if i == k { eigen_values[prev] } else { T::ZERO };
+					eigen_vectors[i + j] += l * r;
+				}
+			}
+		}
+		for i in X.to(Z) {
+			eigen_vectors[i] = eigen_vectors[i].normalized();
+		}
+		eigen_vectors
 	}
 }

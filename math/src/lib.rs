@@ -62,4 +62,12 @@ impl Dimension {
 	pub fn to(self, to: Dimension) -> Dimensions {
 		Dimensions(self.0..(to.0 + 1))
 	}
+
+	pub fn next(self, max: Dimension) -> Dimension {
+		Self((self.0 + 1) % (max.0 + 1))
+	}
+
+	pub fn previous(self, max: Dimension) -> Dimension {
+		Self((self.0 + max.0) % (max.0 + 1))
+	}
 }
