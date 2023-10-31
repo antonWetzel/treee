@@ -39,10 +39,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         return vec4<f32>(0.0, 0.0, 0.0, 0.0);
     }
     var m = depth;
-    m = max(m, get_depth(coord + vec2<i32>(1, 1)));
-    m = max(m, get_depth(coord + vec2<i32>(1, -1)));
-    m = max(m, get_depth(coord + vec2<i32>(-1, -1)));
-    m = max(m, get_depth(coord + vec2<i32>(-1, 1)));
+    m = max(m, get_depth(coord + vec2<i32>(-1, 0)));
+    m = max(m, get_depth(coord + vec2<i32>(1, 0)));
+    m = max(m, get_depth(coord + vec2<i32>(0, -1)));
+    m = max(m, get_depth(coord + vec2<i32>(0, 1)));
     m = min(m, depth + settings.strength);
     return vec4<f32>(settings.color, (m - depth) / settings.strength);
 }

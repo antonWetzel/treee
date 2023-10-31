@@ -27,6 +27,7 @@ pub struct IndexNode {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Project {
+	pub name: String,
 	pub statistics: Statistics,
 	pub level: u32,
 	pub root: IndexNode,

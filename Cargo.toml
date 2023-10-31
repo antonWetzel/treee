@@ -31,7 +31,7 @@ crossbeam-channel = "0.5"
 env_logger = "0.10"
 image = { version = "0.24", default-features = false, features = ["png"] }
 log = "0.4"
-wgpu = "0.17"
+wgpu = "0.18"
 winit = "0.28"
 wgpu_text = "0.8"
 bytemuck = { version = "1.14", features = ["derive"] }
@@ -43,3 +43,4 @@ crossbeam = "0.8"
 las = { version = "0.8", features = ["laz"] }
 thiserror = "1.0"
 indicatif = "0.17"
+tempfile = "3.8.1"

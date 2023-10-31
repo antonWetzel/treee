@@ -1,4 +1,5 @@
 mod calculations;
+mod cashe;
 mod level_of_detail;
 mod tree;
 mod writer;
@@ -12,6 +13,8 @@ use thiserror::Error;
 use writer::Writer;
 
 use tree::Tree;
+
+use crate::cashe::Cashe;
 
 const IMPORT_PROGRESS_SCALE: u64 = 10_000;
 
@@ -100,6 +103,8 @@ fn import() -> Result<(), ImporterError> {
 		}
 	});
 
+	let mut cashe = Cashe::new();
+
 	for point in reciever {
 		tree.insert(
 			[
@@ -109,6 +114,7 @@ fn import() -> Result<(), ImporterError> {
 			]
 			.into(),
 			&mut writer,
+			&mut cashe,
 		);
 	}
 	progress.finish();
@@ -119,20 +125,20 @@ fn import() -> Result<(), ImporterError> {
 	spinner.tick();
 	spinner.enable_steady_tick(Duration::from_millis(100));
 
-	let properties = ["height", "curve"];
-	let environment = Environment::new((min[Y] - pos[Y]) as f32, (max[Y] - pos[Y]) as f32);
+	let properties = ["height", "curve", "slice"];
+	let environment = Environment::new((min[Y] - pos[Y]) as f32, (max[Y] - pos[Y]) as f32, 0.05);
 
 	for property in properties {
 		writer.setup_property(property);
 	}
 
-	let (tree, project) = tree.flatten(&properties);
+	let (tree, project) = tree.flatten(&properties, input.display().to_string());
 	writer.save_project(&project);
 	spinner.disable_steady_tick();
 	spinner.finish();
 	println!();
 
-	tree.calculate(&writer, &project, &environment, progress);
+	tree.calculate(&writer, cashe, &project, &environment, progress);
 
 	Ok(())
 }
@@ -147,10 +153,11 @@ fn main() {
 pub struct Environment {
 	pub min: f32,
 	pub diff: f32,
+	pub slice_width: f32,
 }
 
 impl Environment {
-	pub fn new(min: f32, max: f32) -> Self {
-		Self { min, diff: max - min }
+	pub fn new(min: f32, max: f32, slice_width: f32) -> Self {
+		Self { min, diff: max - min, slice_width }
 	}
 }

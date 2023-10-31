@@ -175,6 +175,17 @@ impl<const N: usize, T> Vector<N, T> {
 		res
 	}
 
+	pub fn length_squared(self) -> T
+	where
+		T: Zero,
+		T: Copy,
+		T: Add<T, Output = T>,
+		T: Mul<T, Output = T>,
+		T: Sqrt,
+	{
+		self.dot(self)
+	}
+
 	pub fn length(self) -> T
 	where
 		T: Zero,
@@ -183,7 +194,7 @@ impl<const N: usize, T> Vector<N, T> {
 		T: Mul<T, Output = T>,
 		T: Sqrt,
 	{
-		self.dot(self).sqrt()
+		self.length_squared().sqrt()
 	}
 
 	pub fn normalized(&self) -> Self

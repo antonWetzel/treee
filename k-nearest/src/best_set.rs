@@ -21,6 +21,7 @@ where
 	}
 
 	pub fn insert(&mut self, value: (Value, usize)) {
+		// the tree is always full, so we replace the largest element, which may be invalid
 		self.values[0] = value;
 		self.fix_down(0, self.values.len());
 	}

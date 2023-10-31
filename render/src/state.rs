@@ -23,7 +23,9 @@ impl State {
 
 		let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
 			backends: wgpu::Backends::PRIMARY,
-			dx12_shader_compiler: Default::default(),
+			dx12_shader_compiler: wgpu::Dx12Compiler::default(),
+			flags: wgpu::InstanceFlags::default(),
+			gles_minor_version: wgpu::Gles3MinorVersion::default(),
 		});
 
 		let surface = unsafe { instance.create_surface(&window) }.unwrap();

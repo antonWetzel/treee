@@ -41,7 +41,7 @@ pub fn calculate(
 	point_properties: bool,
 	neighbors: &Neighbors,
 	environment: &Environment,
-	node_index: usize,
+	node: (usize, Vector<3, f32>, f32),
 	writer: &Writer,
 ) {
 	let mut heights = Vec::with_capacity(points.len());
@@ -89,18 +89,42 @@ pub fn calculate(
 			heights.push(map_to_u32(value))
 		}
 
-		{
-			let value = (3.0 * eigen_values[Z]) / (eigen_values[X] + eigen_values[Y] + eigen_values[Z]);
-			if neighbors.len() < MAX_NEIGHBORS {
-				curve.push(u32::MAX);
-			} else {
-				curve.push(map_to_u32(value));
-			}
+		let value = (3.0 * eigen_values[Z]) / (eigen_values[X] + eigen_values[Y] + eigen_values[Z]);
+		if neighbors.len() < MAX_NEIGHBORS {
+			curve.push(u32::MAX);
+		} else {
+			curve.push(map_to_u32(value));
 		}
 	}
+	writer.save_property(node.0, "height", &heights);
+	writer.save_property(node.0, "curve", &curve);
 
-	writer.save_property(node_index, "height", &heights);
-	writer.save_property(node_index, "curve", &curve);
+	{
+		let slices = (node.2 / environment.slice_width).ceil() as usize;
+		let mut means = vec![(Vector::new([0.0, 0.0]), 0); slices];
+		for point in points.iter() {
+			let pos = point.position;
+			let idx = ((pos[Y] - node.1[Y]) / environment.slice_width) as usize;
+			means[idx].0 += [pos[X], pos[Z]].into();
+			means[idx].1 += 1;
+		}
+		for mean in means.iter_mut() {
+			mean.0 /= mean.1 as f32;
+		}
+		let mut variance = vec![0.0f32; slices];
+		for point in points.iter() {
+			let pos = point.position;
+			let idx = ((pos[Y] - node.1[Y]) / environment.slice_width) as usize;
+			variance[idx] += (means[idx].0 - [pos[X], pos[Z]].into()).length_squared();
+		}
+		let mut slice = Vec::with_capacity(points.len());
+		for point in points.iter() {
+			let pos = point.position;
+			let idx = ((pos[Y] - node.1[Y]) / environment.slice_width) as usize;
+			slice.push(map_to_u32((-variance[idx]).exp()))
+		}
+		writer.save_property(node.0, "slice", &slice);
+	}
 }
 
 pub fn map_to_u32(value: f32) -> u32 {

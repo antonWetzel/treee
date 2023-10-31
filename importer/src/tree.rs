@@ -1,6 +1,4 @@
 use std::collections::HashMap;
-use std::io::{BufWriter, Read, Seek, Write};
-use std::mem::MaybeUninit;
 
 use common::{IndexData, IndexNode, Project, Statistics, MAX_LEAF_SIZE};
 use indicatif::ProgressBar;
@@ -8,57 +6,15 @@ use math::Vector;
 use math::{Dimension, Dimensions, X, Z};
 
 use crate::calculations::{self};
+use crate::cashe::Cashe;
 use crate::{level_of_detail, Environment, Writer};
 
 pub const MAX_NEIGHBORS: usize = 32 - 1;
 pub const MAX_NEIGHBOR_DISTANCE_SCALE: f32 = 32.0;
 
 #[derive(Debug)]
-pub struct Leaf {
-	file: BufWriter<std::fs::File>,
-	size: usize,
-}
-
-impl Leaf {
-	pub fn new(writer: &mut Writer, index: usize) -> Self {
-		let file = writer.new_temp_file(index);
-		file.set_len((MAX_LEAF_SIZE * std::mem::size_of::<Vector<3, f32>>()) as u64)
-			.unwrap();
-		Self { file: BufWriter::new(file), size: 0 }
-	}
-
-	pub fn add_position(&mut self, position: Vector<3, f32>) {
-		let view = unsafe {
-			std::slice::from_raw_parts(
-				&position as *const _ as *const u8,
-				std::mem::size_of::<Vector<3, f32>>(),
-			)
-		};
-		self.file.write_all(view).unwrap();
-		self.size += 1;
-	}
-
-	pub fn get_points(self) -> Vec<Vector<3, f32>> {
-		let mut file = self.file.into_inner().unwrap();
-		file.seek(std::io::SeekFrom::Start(0)).unwrap();
-
-		unsafe {
-			let mut data = Vec::<MaybeUninit<Vector<3, f32>>>::new();
-			data.reserve_exact(self.size);
-			data.set_len(self.size);
-			let view = std::slice::from_raw_parts_mut(
-				data.as_mut_ptr() as *mut u8,
-				std::mem::size_of::<Vector<3, f32>>() * self.size,
-			);
-			file.read_exact(view).unwrap();
-			std::mem::transmute(data)
-		}
-	}
-}
-
-#[derive(Debug)]
 pub enum Data {
-	Leaf(Leaf),
+	Leaf(usize),
 	Branch { children: Box<[Option<Node>; 8]> },
 }
 
@@ -87,13 +43,13 @@ impl Node {
 		Node {
 			corner,
 			size,
-			data: Data::Leaf(Leaf::new(writer, index)),
+			data: Data::Leaf(0),
 			total_points: 0,
 			index,
 		}
 	}
 
-	fn insert_position(&mut self, position: Vector<3, f32>, writer: &mut Writer) {
+	fn insert_position(&mut self, position: Vector<3, f32>, writer: &mut Writer, cashe: &mut Cashe) {
 		self.total_points += 1;
 		match &mut self.data {
 			Data::Branch { children, .. } => {
@@ -107,26 +63,27 @@ impl Node {
 				}
 
 				match &mut children[index] {
-					Some(v) => v.insert_position(position, writer),
+					Some(v) => v.insert_position(position, writer, cashe),
 					None => {
 						let mut node = Node::new(corner, self.size / 2.0, writer);
-						node.insert_position(position, writer);
+						node.insert_position(position, writer, cashe);
 						children[index] = Some(node);
 					},
 				}
 			},
 			Data::Leaf(leaf) => {
-				if leaf.size < MAX_LEAF_SIZE {
-					leaf.add_position(position);
+				if *leaf < MAX_LEAF_SIZE {
+					cashe.add_point(self.index, position);
+					*leaf += 1;
 					return;
 				}
-				let leaf = match std::mem::replace(&mut self.data, Data::Branch { children: Box::default() }) {
-					Data::Leaf(leaf) => leaf,
-					_ => unreachable!(),
-				};
+				// let leaf = match std::mem::replace(&mut self.data, Data::Branch { children: Box::default() }) {
+				// 	Data::Leaf(leaf) => leaf,
+				// 	_ => unreachable!(),
+				// };
 
 				let mut children: [Option<Self>; 8] = Default::default();
-				let points = leaf.get_points();
+				let points = cashe.read(self.index);
 				for position in points {
 					let mut index = 0;
 					for dim in X.to(Z) {
@@ -135,7 +92,7 @@ impl Node {
 						}
 					}
 					match &mut children[index] {
-						Some(v) => v.insert_position(position, writer),
+						Some(v) => v.insert_position(position, writer, cashe),
 						None => {
 							let mut corner = self.corner;
 							for dim in X.to(Z) {
@@ -144,13 +101,13 @@ impl Node {
 								}
 							}
 							let mut node = Node::new(corner, self.size / 2.0, writer);
-							node.insert_position(position, writer);
+							node.insert_position(position, writer, cashe);
 							children[index] = Some(node);
 						},
 					}
 				}
 				self.data = Data::Branch { children: Box::new(children) };
-				self.insert_position(position, writer);
+				self.insert_position(position, writer, cashe);
 			},
 		}
 	}
@@ -209,7 +166,7 @@ impl Node {
 				}
 				FlatData::Branch { children: indices }
 			},
-			Data::Leaf(leaf) => FlatData::Leaf { size: leaf.size },
+			Data::Leaf(leaf) => FlatData::Leaf { size: leaf },
 		};
 
 		let index = nodes.len();
@@ -232,17 +189,17 @@ impl Tree {
 		Self { root: Node::new(corner, size, writer) }
 	}
 
-	pub fn insert(&mut self, point: Vector<3, f32>, writer: &mut Writer) {
-		self.root.insert_position(point, writer);
+	pub fn insert(&mut self, point: Vector<3, f32>, writer: &mut Writer, cashe: &mut Cashe) {
+		self.root.insert_position(point, writer, cashe);
 	}
 
-	pub fn flatten(mut self, calculators: &[&str]) -> (FlatTree, Project) {
+	pub fn flatten(mut self, calculators: &[&str], name: String) -> (FlatTree, Project) {
 		let (tree, depth, node_count) = self.root.create_index_node();
 		let mut nodes = Vec::with_capacity(node_count);
 		let root = self.root.flatten_root();
 		root.flatten(&mut nodes);
 		let flat = FlatTree { nodes };
-		let project = flat.genereate_project(depth, tree, node_count, calculators);
+		let project = flat.genereate_project(depth, name, tree, node_count, calculators);
 		(flat, project)
 	}
 }
@@ -267,10 +224,18 @@ pub struct FlatTree {
 }
 
 impl FlatTree {
-	pub fn genereate_project(&self, level: usize, root: IndexNode, node_count: usize, calculators: &[&str]) -> Project {
+	pub fn genereate_project(
+		&self,
+		level: usize,
+		name: String,
+		root: IndexNode,
+		node_count: usize,
+		calculators: &[&str],
+	) -> Project {
 		let density = self.get_density();
 		let density = density.sqrt();
 		Project {
+			name,
 			statistics: Statistics {
 				density,
 				max_neighbor_distance: density * MAX_NEIGHBOR_DISTANCE_SCALE,
@@ -288,7 +253,7 @@ impl FlatTree {
 		for node in &self.nodes {
 			match &node.data {
 				FlatData::Branch { .. } => {},
-				&FlatData::Leaf { size } => {
+				&FlatData::Leaf { size, .. } => {
 					let area: f32 = node.size * node.size;
 					let dens = area / size as f32;
 					let new_size = total_size + size as f32;
@@ -301,7 +266,14 @@ impl FlatTree {
 		density
 	}
 
-	pub fn calculate(self, writer: &Writer, project: &Project, environment: &Environment, progress: ProgressBar) {
+	pub fn calculate(
+		self,
+		writer: &Writer,
+		cashe: Cashe,
+		project: &Project,
+		environment: &Environment,
+		progress: ProgressBar,
+	) {
 		progress.reset();
 		progress.set_length(project.node_count as u64);
 		progress.set_prefix("Calculate:");
@@ -309,12 +281,14 @@ impl FlatTree {
 		let data = std::sync::Mutex::new(HashMap::new());
 		let (sender, reciever) = crossbeam::channel::bounded::<(usize, FLatNode)>(4);
 
+		let cashe = std::sync::Mutex::new(cashe);
+
 		std::thread::scope(|scope| {
 			for _ in 0..num_cpus::get() {
 				let reciever = reciever.clone();
 				scope.spawn(|| {
 					for (i, node) in reciever {
-						let res = node.calculate(&data, writer, &project.statistics, environment);
+						let res = node.calculate(&data, writer, &cashe, &project.statistics, environment);
 						let mut data = data.lock().unwrap();
 						data.insert(i, res);
 						drop(data);
@@ -337,14 +311,15 @@ impl FlatTree {
 
 impl FLatNode {
 	fn calculate(
-		mut self,
+		self,
 		data: &std::sync::Mutex<HashMap<usize, Vec<render::Point>>>,
 		writer: &Writer,
+		cashe: &std::sync::Mutex<Cashe>,
 		statistics: &Statistics,
 		environment: &Environment,
 	) -> Vec<render::Point> {
-		match &mut self.data {
-			FlatData::Branch { children } => {
+		match self.data {
+			FlatData::Branch { mut children } => {
 				let mut points = Vec::with_capacity(8);
 				for child in children.iter_mut().filter_map(|child| *child) {
 					let lod = loop {
@@ -368,14 +343,14 @@ impl FLatNode {
 					false,
 					&neighbors,
 					environment,
-					self.index,
+					(self.index, self.corner, self.size),
 					writer,
 				);
 				points
 			},
 
-			FlatData::Leaf { size } => {
-				let positions = writer.load_temp_file(self.index, *size);
+			FlatData::Leaf { .. } => {
+				let positions = cashe.lock().unwrap().read(self.index);
 				let mut points = unsafe {
 					let mut points = Vec::<render::Point>::new();
 					points.reserve_exact(positions.len());
@@ -393,7 +368,7 @@ impl FLatNode {
 					true,
 					&neighbors,
 					environment,
-					self.index,
+					(self.index, self.corner, self.size),
 					writer,
 				);
 

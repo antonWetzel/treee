@@ -1,17 +1,11 @@
 use common::Project;
-use math::Vector;
-use std::{
-	io::{Read, Write},
-	mem::MaybeUninit,
-	path::PathBuf,
-};
+use std::{io::Write, path::PathBuf};
 
 use crate::ImporterError;
 
 pub struct Writer {
 	project_path: PathBuf,
 	data_path: PathBuf,
-	temp_path: PathBuf,
 	index: usize,
 }
 
@@ -33,18 +27,8 @@ impl Writer {
 		std::fs::create_dir_all(&data_path).unwrap();
 		data_path.push("0.data");
 
-		let mut temp_path = path.clone();
-		temp_path.push("temp");
-		std::fs::create_dir_all(&temp_path).unwrap();
-		temp_path.push("0.data");
-
 		path.push("project.epc");
-		Ok(Self {
-			project_path: path,
-			data_path,
-			temp_path,
-			index: 1,
-		})
+		Ok(Self { project_path: path, data_path, index: 1 })
 	}
 
 	pub fn save_project(&self, project: &Project) {
@@ -97,38 +81,5 @@ impl Writer {
 			.unwrap();
 		file.set_len(view.len() as u64).unwrap();
 		file.write_all(view).unwrap();
-	}
-
-	pub fn new_temp_file(&self, index: usize) -> std::fs::File {
-		let path = self.temp_path.with_file_name(format!("{}.data", index));
-		let file = std::fs::OpenOptions::new()
-			.write(true)
-			.read(true)
-			.create(true)
-			.open(path)
-			.unwrap();
-		file
-	}
-
-	pub fn load_temp_file(&self, index: usize, size: usize) -> Vec<Vector<3, f32>> {
-		let path = self.temp_path.with_file_name(format!("{}.data", index));
-		let mut file = std::fs::File::open(path).unwrap();
-		unsafe {
-			let mut data = Vec::<MaybeUninit<Vector<3, f32>>>::new();
-			data.reserve_exact(size);
-			data.set_len(size);
-			let view = std::slice::from_raw_parts_mut(
-				data.as_mut_ptr() as *mut u8,
-				std::mem::size_of::<Vector<3, f32>>() * size,
-			);
-			file.read_exact(view).unwrap();
-			std::mem::transmute(data)
-		}
-	}
-}
-
-impl Drop for Writer {
-	fn drop(&mut self) {
-		std::fs::remove_dir_all(self.temp_path.parent().unwrap()).unwrap();
 	}
 }

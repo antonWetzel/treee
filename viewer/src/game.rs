@@ -33,7 +33,7 @@ impl Game {
 	pub fn new(state: &'static State, path: PathBuf, runner: &render::Runner) -> Self {
 		let project = Project::from_file(&path);
 
-		let window = render::Window::new(state, &runner.event_loop, "test");
+		let window = render::Window::new(state, &runner.event_loop, &project.name);
 		let tree = Tree::new(
 			state,
 			&project,
@@ -113,6 +113,7 @@ impl Game {
 			self.window.get_aspect(),
 			&self.project.properties[0],
 		);
+		self.window.set_title(&self.project.name);
 		self.request_redraw();
 	}
 

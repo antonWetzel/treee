@@ -54,8 +54,8 @@ impl Window {
 		[self.config.width, self.config.height].into()
 	}
 
-	pub fn set_title(&self, title: String) {
-		self.window.set_title(title.as_str())
+	pub fn set_title(&self, title: &str) {
+		self.window.set_title(title)
 	}
 
 	pub fn id(&self) -> WindowId {
@@ -100,17 +100,19 @@ impl Window {
 				resolve_target: None,
 				ops: wgpu::Operations {
 					load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.1, g: 0.2, b: 0.3, a: 1.0 }),
-					store: true,
+					store: wgpu::StoreOp::Store,
 				},
 			})],
 			depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
 				view: &self.depth_texture.view,
 				depth_ops: Some(wgpu::Operations {
 					load: wgpu::LoadOp::Clear(1.0),
-					store: true,
+					store: wgpu::StoreOp::Store,
 				}),
 				stencil_ops: None,
 			}),
+			occlusion_query_set: None,
+			timestamp_writes: None,
 		}));
 
 		renderable.render(&mut render_pass);
@@ -124,9 +126,14 @@ impl Window {
 			color_attachments: &[Some(wgpu::RenderPassColorAttachment {
 				view: &view,
 				resolve_target: None,
-				ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: true },
+				ops: wgpu::Operations {
+					load: wgpu::LoadOp::Load,
+					store: wgpu::StoreOp::Store,
+				},
 			})],
 			depth_stencil_attachment: None,
+			occlusion_query_set: None,
+			timestamp_writes: None,
 		}));
 		renderable.post_process(&mut render_pass);
 		drop(render_pass);
