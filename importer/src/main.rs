@@ -1,5 +1,5 @@
+mod cache;
 mod calculations;
-mod cashe;
 mod level_of_detail;
 mod tree;
 mod writer;
@@ -14,7 +14,7 @@ use writer::Writer;
 
 use tree::Tree;
 
-use crate::cashe::Cashe;
+use crate::cache::Cache;
 
 const IMPORT_PROGRESS_SCALE: u64 = 10_000;
 
@@ -87,7 +87,7 @@ fn import() -> Result<(), ImporterError> {
 	progress.set_prefix("Import:");
 	progress.inc(0);
 
-	let (sender, reciever) = crossbeam::channel::bounded(512);
+	let (sender, reciever) = crossbeam::channel::bounded(2048);
 	//parallel over files?
 	let reader_progress = progress.clone();
 	std::thread::spawn(move || {
@@ -103,7 +103,7 @@ fn import() -> Result<(), ImporterError> {
 		}
 	});
 
-	let mut cashe = Cashe::new();
+	let mut cashe = Cache::new();
 
 	for point in reciever {
 		tree.insert(
@@ -132,13 +132,13 @@ fn import() -> Result<(), ImporterError> {
 		writer.setup_property(property);
 	}
 
-	let (tree, project) = tree.flatten(&properties, input.display().to_string());
+	let (tree, project) = tree.flatten(&properties, input.display().to_string(), cashe);
 	writer.save_project(&project);
 	spinner.disable_steady_tick();
 	spinner.finish();
 	println!();
 
-	tree.calculate(&writer, cashe, &project, &environment, progress);
+	tree.calculate(&writer, &project, &environment, progress);
 
 	Ok(())
 }

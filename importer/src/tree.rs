@@ -1,12 +1,11 @@
-use std::collections::HashMap;
-
 use common::{IndexData, IndexNode, Project, Statistics, MAX_LEAF_SIZE};
+use crossbeam::atomic::AtomicCell;
 use indicatif::ProgressBar;
 use math::Vector;
 use math::{Dimension, Dimensions, X, Z};
 
+use crate::cache::{Cache, CacheEntry};
 use crate::calculations::{self};
-use crate::cashe::Cashe;
 use crate::{level_of_detail, Environment, Writer};
 
 pub const MAX_NEIGHBORS: usize = 32 - 1;
@@ -28,6 +27,7 @@ pub struct Node {
 }
 
 struct Adapter;
+
 impl k_nearest::Adapter<3, f32, render::Point> for Adapter {
 	fn get(point: &render::Point, dimension: Dimension) -> f32 {
 		point.position[dimension]
@@ -49,7 +49,7 @@ impl Node {
 		}
 	}
 
-	fn insert_position(&mut self, position: Vector<3, f32>, writer: &mut Writer, cashe: &mut Cashe) {
+	fn insert_position(&mut self, position: Vector<3, f32>, writer: &mut Writer, cache: &mut Cache) {
 		self.total_points += 1;
 		match &mut self.data {
 			Data::Branch { children, .. } => {
@@ -63,27 +63,22 @@ impl Node {
 				}
 
 				match &mut children[index] {
-					Some(v) => v.insert_position(position, writer, cashe),
+					Some(v) => v.insert_position(position, writer, cache),
 					None => {
 						let mut node = Node::new(corner, self.size / 2.0, writer);
-						node.insert_position(position, writer, cashe);
+						node.insert_position(position, writer, cache);
 						children[index] = Some(node);
 					},
 				}
 			},
 			Data::Leaf(leaf) => {
 				if *leaf < MAX_LEAF_SIZE {
-					cashe.add_point(self.index, position);
+					cache.add_point(self.index, position);
 					*leaf += 1;
 					return;
 				}
-				// let leaf = match std::mem::replace(&mut self.data, Data::Branch { children: Box::default() }) {
-				// 	Data::Leaf(leaf) => leaf,
-				// 	_ => unreachable!(),
-				// };
-
 				let mut children: [Option<Self>; 8] = Default::default();
-				let points = cashe.read(self.index);
+				let points = cache.read(self.index).read();
 				for position in points {
 					let mut index = 0;
 					for dim in X.to(Z) {
@@ -92,7 +87,7 @@ impl Node {
 						}
 					}
 					match &mut children[index] {
-						Some(v) => v.insert_position(position, writer, cashe),
+						Some(v) => v.insert_position(position, writer, cache),
 						None => {
 							let mut corner = self.corner;
 							for dim in X.to(Z) {
@@ -101,13 +96,13 @@ impl Node {
 								}
 							}
 							let mut node = Node::new(corner, self.size / 2.0, writer);
-							node.insert_position(position, writer, cashe);
+							node.insert_position(position, writer, cache);
 							children[index] = Some(node);
 						},
 					}
 				}
 				self.data = Data::Branch { children: Box::new(children) };
-				self.insert_position(position, writer, cashe);
+				self.insert_position(position, writer, cache);
 			},
 		}
 	}
@@ -157,16 +152,16 @@ impl Node {
 		}
 	}
 
-	fn flatten(self, nodes: &mut Vec<FLatNode>) -> usize {
+	fn flatten(self, nodes: &mut Vec<FLatNode>, cache: &mut Cache) -> usize {
 		let data = match self.data {
 			Data::Branch { children } => {
 				let mut indices = [None; 8];
 				for (i, child) in children.into_iter().enumerate() {
-					indices[i] = child.map(|node| node.flatten(nodes))
+					indices[i] = child.map(|node| node.flatten(nodes, cache))
 				}
 				FlatData::Branch { children: indices }
 			},
-			Data::Leaf(leaf) => FlatData::Leaf { size: leaf },
+			Data::Leaf(leaf) => FlatData::Leaf { size: leaf, data: cache.read(self.index) },
 		};
 
 		let index = nodes.len();
@@ -189,15 +184,15 @@ impl Tree {
 		Self { root: Node::new(corner, size, writer) }
 	}
 
-	pub fn insert(&mut self, point: Vector<3, f32>, writer: &mut Writer, cashe: &mut Cashe) {
+	pub fn insert(&mut self, point: Vector<3, f32>, writer: &mut Writer, cashe: &mut Cache) {
 		self.root.insert_position(point, writer, cashe);
 	}
 
-	pub fn flatten(mut self, calculators: &[&str], name: String) -> (FlatTree, Project) {
+	pub fn flatten(mut self, calculators: &[&str], name: String, mut cashe: Cache) -> (FlatTree, Project) {
 		let (tree, depth, node_count) = self.root.create_index_node();
 		let mut nodes = Vec::with_capacity(node_count);
 		let root = self.root.flatten_root();
-		root.flatten(&mut nodes);
+		root.flatten(&mut nodes, &mut cashe);
 		let flat = FlatTree { nodes };
 		let project = flat.genereate_project(depth, name, tree, node_count, calculators);
 		(flat, project)
@@ -206,7 +201,7 @@ impl Tree {
 
 #[derive(Debug)]
 pub enum FlatData {
-	Leaf { size: usize },
+	Leaf { size: usize, data: CacheEntry },
 	Branch { children: [Option<usize>; 8] },
 }
 
@@ -266,32 +261,25 @@ impl FlatTree {
 		density
 	}
 
-	pub fn calculate(
-		self,
-		writer: &Writer,
-		cashe: Cashe,
-		project: &Project,
-		environment: &Environment,
-		progress: ProgressBar,
-	) {
+	pub fn calculate(self, writer: &Writer, project: &Project, environment: &Environment, progress: ProgressBar) {
 		progress.reset();
 		progress.set_length(project.node_count as u64);
 		progress.set_prefix("Calculate:");
 
-		let data = std::sync::Mutex::new(HashMap::new());
-		let (sender, reciever) = crossbeam::channel::bounded::<(usize, FLatNode)>(4);
+		let mut data = Vec::with_capacity(self.nodes.len());
+		for _ in 0..self.nodes.len() {
+			data.push(AtomicCell::new(None));
+		}
 
-		let cashe = std::sync::Mutex::new(cashe);
+		let (sender, reciever) = crossbeam::channel::bounded::<(usize, FLatNode)>(4);
 
 		std::thread::scope(|scope| {
 			for _ in 0..num_cpus::get() {
 				let reciever = reciever.clone();
 				scope.spawn(|| {
 					for (i, node) in reciever {
-						let res = node.calculate(&data, writer, &cashe, &project.statistics, environment);
-						let mut data = data.lock().unwrap();
-						data.insert(i, res);
-						drop(data);
+						let res = node.calculate(&data, writer, &project.statistics, environment);
+						data[i].store(Some(res));
 						progress.inc(1);
 					}
 				});
@@ -312,9 +300,8 @@ impl FlatTree {
 impl FLatNode {
 	fn calculate(
 		self,
-		data: &std::sync::Mutex<HashMap<usize, Vec<render::Point>>>,
+		data: &[AtomicCell<Option<Vec<render::Point>>>],
 		writer: &Writer,
-		cashe: &std::sync::Mutex<Cashe>,
 		statistics: &Statistics,
 		environment: &Environment,
 	) -> Vec<render::Point> {
@@ -323,11 +310,9 @@ impl FLatNode {
 				let mut points = Vec::with_capacity(8);
 				for child in children.iter_mut().filter_map(|child| *child) {
 					let lod = loop {
-						let mut data = data.lock().unwrap();
-						if let Some(v) = data.remove(&child) {
+						if let Some(v) = data[child].take() {
 							break v;
 						}
-						drop(data);
 						std::thread::yield_now();
 					};
 					points.push(lod);
@@ -349,8 +334,8 @@ impl FLatNode {
 				points
 			},
 
-			FlatData::Leaf { .. } => {
-				let positions = cashe.lock().unwrap().read(self.index);
+			FlatData::Leaf { data, .. } => {
+				let positions = data.read();
 				let mut points = unsafe {
 					let mut points = Vec::<render::Point>::new();
 					points.reserve_exact(positions.len());

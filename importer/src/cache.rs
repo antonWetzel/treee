@@ -7,13 +7,19 @@ use std::{
 
 use math::Vector;
 
-pub struct Cashe {
+pub struct Cache {
 	active: HashMap<usize, (Vec<Vector<3, f32>>, usize)>,
 	stored: HashMap<usize, File>,
 	current: usize,
 }
 
-impl Cashe {
+#[derive(Debug)]
+pub struct CacheEntry {
+	file: Option<File>,
+	active: Vec<Vector<3, f32>>,
+}
+
+impl Cache {
 	const MAX: usize = 64;
 
 	pub fn new() -> Self {
@@ -71,27 +77,34 @@ impl Cashe {
 		}
 	}
 
-	pub fn read(&mut self, index: usize) -> Vec<Vector<3, f32>> {
-		let mut data = Vec::<MaybeUninit<Vector<3, f32>>>::new();
-		if let Some(mut file) = self.stored.remove(&index) {
+	pub fn read(&mut self, index: usize) -> CacheEntry {
+		CacheEntry {
+			file: self.stored.remove(&index),
+			active: self.active.remove(&index).map(|v| v.0).unwrap_or_default(),
+		}
+	}
+}
+
+impl CacheEntry {
+	pub fn read(mut self) -> Vec<Vector<3, f32>> {
+		if let Some(mut file) = self.file {
 			unsafe {
+				let mut data = Vec::<MaybeUninit<Vector<3, f32>>>::new();
 				let l = file.metadata().unwrap().len() as usize / std::mem::size_of::<Vector<3, f32>>();
-				data.reserve(l);
-				data.set_len(data.len() + l);
+				data.reserve(l + self.active.len());
+				data.set_len(l);
 				let view = std::slice::from_raw_parts_mut(
 					data.as_mut_ptr() as *mut u8,
 					std::mem::size_of::<Vector<3, f32>>() * l,
 				);
 				file.seek(std::io::SeekFrom::Start(0)).unwrap();
 				file.read_exact(view).unwrap();
+				let mut data = std::mem::transmute::<_, Vec<Vector<3, f32>>>(data);
+				data.append(&mut self.active);
+				data
 			}
+		} else {
+			self.active
 		}
-		let mut data = unsafe { std::mem::transmute::<_, Vec<Vector<3, f32>>>(data) };
-
-		if let Some(mut value) = self.active.remove(&index) {
-			data.append(&mut value.0);
-		}
-
-		data
 	}
 }
