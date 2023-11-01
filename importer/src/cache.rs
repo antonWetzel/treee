@@ -5,21 +5,19 @@ use std::{
 	mem::MaybeUninit,
 };
 
-use math::Vector;
-
-pub struct Cache {
-	active: HashMap<usize, (Vec<Vector<3, f32>>, usize)>,
+pub struct Cache<T> {
+	active: HashMap<usize, (Vec<T>, usize)>,
 	stored: HashMap<usize, File>,
 	current: usize,
 }
 
 #[derive(Debug)]
-pub struct CacheEntry {
+pub struct CacheEntry<T> {
 	file: Option<File>,
-	active: Vec<Vector<3, f32>>,
+	active: Vec<T>,
 }
 
-impl Cache {
+impl<T> Cache<T> {
 	const MAX: usize = 64;
 
 	pub fn new() -> Self {
@@ -30,7 +28,7 @@ impl Cache {
 		}
 	}
 
-	pub fn add_point(&mut self, index: usize, point: Vector<3, f32>) {
+	pub fn add_point(&mut self, index: usize, point: T) {
 		self.current += 1;
 		match self.active.get_mut(&index) {
 			None => {},
@@ -57,11 +55,11 @@ impl Cache {
 			}
 		}
 
-		fn write_to(file: &mut File, data: Vec<Vector<3, f32>>) {
+		fn write_to<T>(file: &mut File, data: Vec<T>) {
 			unsafe {
 				let view = std::slice::from_raw_parts(
 					data.as_ptr() as *const u8,
-					std::mem::size_of::<Vector<3, f32>>() * data.len(),
+					std::mem::size_of::<T>() * data.len(),
 				);
 				file.write_all(view).unwrap();
 			}
@@ -77,7 +75,7 @@ impl Cache {
 		}
 	}
 
-	pub fn read(&mut self, index: usize) -> CacheEntry {
+	pub fn read(&mut self, index: usize) -> CacheEntry<T> {
 		CacheEntry {
 			file: self.stored.remove(&index),
 			active: self.active.remove(&index).map(|v| v.0).unwrap_or_default(),
@@ -85,21 +83,18 @@ impl Cache {
 	}
 }
 
-impl CacheEntry {
-	pub fn read(mut self) -> Vec<Vector<3, f32>> {
+impl<T> CacheEntry<T> {
+	pub fn read(mut self) -> Vec<T> {
 		if let Some(mut file) = self.file {
 			unsafe {
-				let mut data = Vec::<MaybeUninit<Vector<3, f32>>>::new();
-				let l = file.metadata().unwrap().len() as usize / std::mem::size_of::<Vector<3, f32>>();
+				let mut data = Vec::<MaybeUninit<T>>::new();
+				let l = file.metadata().unwrap().len() as usize / std::mem::size_of::<T>();
 				data.reserve(l + self.active.len());
 				data.set_len(l);
-				let view = std::slice::from_raw_parts_mut(
-					data.as_mut_ptr() as *mut u8,
-					std::mem::size_of::<Vector<3, f32>>() * l,
-				);
+				let view = std::slice::from_raw_parts_mut(data.as_mut_ptr() as *mut u8, std::mem::size_of::<T>() * l);
 				file.seek(std::io::SeekFrom::Start(0)).unwrap();
 				file.read_exact(view).unwrap();
-				let mut data = std::mem::transmute::<_, Vec<Vector<3, f32>>>(data);
+				let mut data = std::mem::transmute::<_, Vec<T>>(data);
 				data.append(&mut self.active);
 				data
 			}

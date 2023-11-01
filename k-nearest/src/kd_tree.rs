@@ -8,19 +8,19 @@ where
 	Ada: Adapter<N, Value, Point>,
 	Met: Metric<N, Value>,
 {
-	tree: Vec<Option<([Value; N], usize)>>,
+	tree: Vec<([Value; N], usize)>,
 	phantom: std::marker::PhantomData<(Point, Ada, Met)>,
 }
 
 impl<const N: usize, Value, Point, Ada, Met> KDTree<N, Value, Point, Ada, Met>
 where
 	Value: Copy + Default + PartialOrd,
+	[Value; N]: Default,
 	Ada: Adapter<N, Value, Point>,
 	Met: Metric<N, Value>,
 {
 	pub fn new(data: &[Point]) -> Self {
-		let next_power_2 = 1usize << (usize::BITS - (data.len() - 1).leading_zeros());
-		let mut tree = vec![None; next_power_2];
+		let mut tree = vec![(<[Value; N]>::default(), 0); data.len().next_power_of_two()];
 		let mut positions = Vec::with_capacity(data.len());
 		for (i, p) in data.iter().enumerate() {
 			positions.push((Ada::get_all(p), i));
@@ -32,7 +32,7 @@ where
 	fn create_tree(
 		index: usize,
 		dim: usize,
-		tree: &mut [Option<([Value; N], usize)>],
+		tree: &mut [([Value; N], usize)],
 		lower: usize,
 		upper: usize,
 		positions: &mut [([Value; N], usize)],
@@ -41,7 +41,7 @@ where
 		//   bias direction must match median finding scheme
 		let middle = (upper - lower + 1) / 2 + lower;
 		Self::partition(middle, dim, lower, upper, positions);
-		tree[index] = Some((positions[middle].0, positions[middle].1));
+		tree[index] = (positions[middle].0, positions[middle].1);
 		let next_dim = (dim + 1) % N;
 		if lower < middle {
 			Self::create_tree(index * 2 + 1, next_dim, tree, lower, middle - 1, positions);
@@ -92,10 +92,7 @@ where
 		if index >= self.tree.len() {
 			return;
 		}
-		let (point, point_index) = match self.tree[index] {
-			Some(v) => v,
-			None => return,
-		};
+		let (point, point_index) = self.tree[index];
 		let diff = Met::distance(&point, position);
 		if diff < best_set.distance() {
 			best_set.insert((diff, point_index));

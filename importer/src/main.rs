@@ -1,6 +1,8 @@
 mod cache;
 mod calculations;
 mod level_of_detail;
+mod point;
+mod segment;
 mod tree;
 mod writer;
 
@@ -14,7 +16,7 @@ use writer::Writer;
 
 use tree::Tree;
 
-use crate::cache::Cache;
+use crate::{cache::Cache, segment::Segmenter};
 
 const IMPORT_PROGRESS_SCALE: u64 = 10_000;
 
@@ -70,20 +72,14 @@ fn import() -> Result<(), ImporterError> {
 	let max = Vector::new([header_max.x, header_max.z, -header_min.y]);
 	let diff = max - min;
 	let pos = min + diff / 2.0;
-
-	let mut writer = Writer::new(output)?;
-	let mut tree = Tree::new(
-		&mut writer,
-		(min - pos).map(|v| v as f32),
-		diff[X].max(diff[Y]).max(diff[Z]) as f32,
-	);
+	let progress_points = reader.header().number_of_points() / IMPORT_PROGRESS_SCALE;
 
 	spinner.disable_steady_tick();
 	spinner.finish();
 	println!();
 
 	progress.reset();
-	progress.set_length(reader.header().number_of_points() / IMPORT_PROGRESS_SCALE);
+	progress.set_length(progress_points);
 	progress.set_prefix("Import:");
 	progress.inc(0);
 
@@ -94,7 +90,9 @@ fn import() -> Result<(), ImporterError> {
 		let mut counter = 0;
 		//skips invalid points without error or warning
 		for point in reader.points().flatten() {
-			sender.send(point).unwrap();
+			sender
+				.send(Vector::new([point.x, point.z, -point.y]))
+				.unwrap();
 			counter += 1;
 			if counter >= IMPORT_PROGRESS_SCALE {
 				reader_progress.inc(1);
@@ -103,20 +101,54 @@ fn import() -> Result<(), ImporterError> {
 		}
 	});
 
-	let mut cashe = Cache::new();
-
+	let mut segmenter = Segmenter::new();
 	for point in reciever {
-		tree.insert(
+		segmenter.add_point(
 			[
-				(point.x - pos[X]) as f32,
-				(point.z - pos[Y]) as f32,
-				(-point.y - pos[Z]) as f32,
+				(point[X] - pos[X]) as f32,
+				(point[Y] - pos[Y]) as f32,
+				(point[Z] - pos[Z]) as f32,
 			]
 			.into(),
-			&mut writer,
-			&mut cashe,
 		);
 	}
+
+	let segments = segmenter.result();
+	progress.finish();
+	println!();
+
+	progress.reset();
+	progress.set_length(progress_points);
+	progress.set_prefix("Calculate:");
+	progress.enable_steady_tick(Duration::from_micros(100));
+
+	let (sender, reciever) = crossbeam::channel::bounded(2048);
+	std::thread::spawn(move || {
+		for segment in segments {
+			let points = calculations::calculate(segment.points());
+			for point in points {
+				sender.send(point).unwrap();
+			}
+		}
+	});
+
+	let mut writer = Writer::new(output)?;
+	let mut tree = Tree::new(
+		&mut writer,
+		(min - pos).map(|v| v as f32),
+		diff[X].max(diff[Y]).max(diff[Z]) as f32,
+	);
+	let mut counter = 0;
+	let mut cache = Cache::new();
+	for point in reciever {
+		tree.insert(point, &mut writer, &mut cache);
+		counter += 1;
+		if counter >= IMPORT_PROGRESS_SCALE {
+			progress.inc(1);
+			counter -= IMPORT_PROGRESS_SCALE;
+		}
+	}
+
 	progress.finish();
 	println!();
 
@@ -125,20 +157,19 @@ fn import() -> Result<(), ImporterError> {
 	spinner.tick();
 	spinner.enable_steady_tick(Duration::from_millis(100));
 
-	let properties = ["height", "curve", "slice"];
-	let environment = Environment::new((min[Y] - pos[Y]) as f32, (max[Y] - pos[Y]) as f32, 0.05);
+	let properties = ["slice"];
 
 	for property in properties {
 		writer.setup_property(property);
 	}
 
-	let (tree, project) = tree.flatten(&properties, input.display().to_string(), cashe);
+	let (tree, project) = tree.flatten(&properties, input.display().to_string(), cache);
 	writer.save_project(&project);
 	spinner.disable_steady_tick();
 	spinner.finish();
 	println!();
 
-	tree.calculate(&writer, &project, &environment, progress);
+	tree.save(&writer, &project, progress);
 
 	Ok(())
 }
@@ -147,17 +178,5 @@ fn main() {
 	match import() {
 		Ok(()) => {},
 		Err(err) => eprintln!("Error: {}", err),
-	}
-}
-
-pub struct Environment {
-	pub min: f32,
-	pub diff: f32,
-	pub slice_width: f32,
-}
-
-impl Environment {
-	pub fn new(min: f32, max: f32, slice_width: f32) -> Self {
-		Self { min, diff: max - min, slice_width }
 	}
 }

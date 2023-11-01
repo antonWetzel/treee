@@ -3,7 +3,7 @@ use wgpu::util::DeviceExt;
 
 use crate::{depth_texture::DepthTexture, Has, Render, RenderPass, State, Vertex2D};
 
-const FULL_SCREEN_VERTICES: &[Vertex2D] = &[
+const FULL_SCREEN_VERTICES: [Vertex2D; 3] = [
 	Vertex2D {
 		position: [-1.0, -1.0],
 		tex_coords: [0.0, 1.0],
@@ -89,7 +89,7 @@ impl EyeDome {
 			.device
 			.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 				label: Some("eye dome vertex buffer"),
-				contents: bytemuck::cast_slice(FULL_SCREEN_VERTICES),
+				contents: bytemuck::cast_slice(&FULL_SCREEN_VERTICES),
 				usage: wgpu::BufferUsages::VERTEX,
 			});
 

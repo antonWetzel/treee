@@ -1,15 +1,15 @@
-use common::{IndexData, IndexNode, Project, Statistics, MAX_LEAF_SIZE};
+use common::{IndexData, IndexNode, Project, MAX_LEAF_SIZE};
 use crossbeam::atomic::AtomicCell;
 use indicatif::ProgressBar;
 use math::Vector;
-use math::{Dimension, Dimensions, X, Z};
+use math::{Dimensions, X, Z};
 
 use crate::cache::{Cache, CacheEntry};
-use crate::calculations::{self};
-use crate::{level_of_detail, Environment, Writer};
+use crate::point::Point;
+use crate::{level_of_detail, Writer};
 
 pub const MAX_NEIGHBORS: usize = 32 - 1;
-pub const MAX_NEIGHBOR_DISTANCE_SCALE: f32 = 32.0;
+// pub const MAX_NEIGHBOR_DISTANCE_SCALE: f32 = 32.0;
 
 #[derive(Debug)]
 pub enum Data {
@@ -26,17 +26,6 @@ pub struct Node {
 	total_points: usize,
 }
 
-struct Adapter;
-
-impl k_nearest::Adapter<3, f32, render::Point> for Adapter {
-	fn get(point: &render::Point, dimension: Dimension) -> f32 {
-		point.position[dimension]
-	}
-	fn get_all(point: &render::Point) -> [f32; 3] {
-		point.position.data()
-	}
-}
-
 impl Node {
 	fn new(corner: Vector<3, f32>, size: f32, writer: &mut Writer) -> Self {
 		let index = writer.next_index();
@@ -49,60 +38,60 @@ impl Node {
 		}
 	}
 
-	fn insert_position(&mut self, position: Vector<3, f32>, writer: &mut Writer, cache: &mut Cache) {
+	fn insert_position(&mut self, point: Point, writer: &mut Writer, cache: &mut Cache<Point>) {
 		self.total_points += 1;
 		match &mut self.data {
 			Data::Branch { children, .. } => {
 				let mut index = 0;
 				let mut corner = self.corner;
 				for dim in Dimensions(0..3) {
-					if position[dim] >= self.corner[dim] + self.size / 2.0 {
+					if point.render.position[dim] >= self.corner[dim] + self.size / 2.0 {
 						index += 1 << dim.0;
 						corner[dim] += self.size / 2.0;
 					}
 				}
 
 				match &mut children[index] {
-					Some(v) => v.insert_position(position, writer, cache),
+					Some(v) => v.insert_position(point, writer, cache),
 					None => {
 						let mut node = Node::new(corner, self.size / 2.0, writer);
-						node.insert_position(position, writer, cache);
+						node.insert_position(point, writer, cache);
 						children[index] = Some(node);
 					},
 				}
 			},
 			Data::Leaf(leaf) => {
 				if *leaf < MAX_LEAF_SIZE {
-					cache.add_point(self.index, position);
+					cache.add_point(self.index, point);
 					*leaf += 1;
 					return;
 				}
 				let mut children: [Option<Self>; 8] = Default::default();
 				let points = cache.read(self.index).read();
-				for position in points {
+				for point in points {
 					let mut index = 0;
 					for dim in X.to(Z) {
-						if position[dim] >= self.corner[dim] + self.size / 2.0 {
+						if point.render.position[dim] >= self.corner[dim] + self.size / 2.0 {
 							index += 1 << dim.0;
 						}
 					}
 					match &mut children[index] {
-						Some(v) => v.insert_position(position, writer, cache),
+						Some(v) => v.insert_position(point, writer, cache),
 						None => {
 							let mut corner = self.corner;
 							for dim in X.to(Z) {
-								if position[dim] >= self.corner[dim] + self.size / 2.0 {
+								if point.render.position[dim] >= self.corner[dim] + self.size / 2.0 {
 									corner[dim] += self.size / 2.0;
 								}
 							}
 							let mut node = Node::new(corner, self.size / 2.0, writer);
-							node.insert_position(position, writer, cache);
+							node.insert_position(point, writer, cache);
 							children[index] = Some(node);
 						},
 					}
 				}
 				self.data = Data::Branch { children: Box::new(children) };
-				self.insert_position(position, writer, cache);
+				self.insert_position(point, writer, cache);
 			},
 		}
 	}
@@ -152,7 +141,7 @@ impl Node {
 		}
 	}
 
-	fn flatten(self, nodes: &mut Vec<FLatNode>, cache: &mut Cache) -> usize {
+	fn flatten(self, nodes: &mut Vec<FLatNode>, cache: &mut Cache<Point>) -> usize {
 		let data = match self.data {
 			Data::Branch { children } => {
 				let mut indices = [None; 8];
@@ -184,15 +173,15 @@ impl Tree {
 		Self { root: Node::new(corner, size, writer) }
 	}
 
-	pub fn insert(&mut self, point: Vector<3, f32>, writer: &mut Writer, cashe: &mut Cache) {
-		self.root.insert_position(point, writer, cashe);
+	pub fn insert(&mut self, point: Point, writer: &mut Writer, cache: &mut Cache<Point>) {
+		self.root.insert_position(point, writer, cache);
 	}
 
-	pub fn flatten(mut self, calculators: &[&str], name: String, mut cashe: Cache) -> (FlatTree, Project) {
+	pub fn flatten(mut self, calculators: &[&str], name: String, mut cache: Cache<Point>) -> (FlatTree, Project) {
 		let (tree, depth, node_count) = self.root.create_index_node();
 		let mut nodes = Vec::with_capacity(node_count);
 		let root = self.root.flatten_root();
-		root.flatten(&mut nodes, &mut cashe);
+		root.flatten(&mut nodes, &mut cache);
 		let flat = FlatTree { nodes };
 		let project = flat.genereate_project(depth, name, tree, node_count, calculators);
 		(flat, project)
@@ -201,8 +190,13 @@ impl Tree {
 
 #[derive(Debug)]
 pub enum FlatData {
-	Leaf { size: usize, data: CacheEntry },
-	Branch { children: [Option<usize>; 8] },
+	Leaf {
+		size: usize,
+		data: CacheEntry<Point>,
+	},
+	Branch {
+		children: [Option<usize>; 8],
+	},
 }
 
 #[derive(Debug)]
@@ -227,14 +221,8 @@ impl FlatTree {
 		node_count: usize,
 		calculators: &[&str],
 	) -> Project {
-		let density = self.get_density();
-		let density = density.sqrt();
 		Project {
 			name,
-			statistics: Statistics {
-				density,
-				max_neighbor_distance: density * MAX_NEIGHBOR_DISTANCE_SCALE,
-			},
 			level: level as u32,
 			root,
 			node_count: node_count as u32,
@@ -242,29 +230,10 @@ impl FlatTree {
 		}
 	}
 
-	fn get_density(&self) -> f32 {
-		let mut total_size = 0.0;
-		let mut density = 0.0;
-		for node in &self.nodes {
-			match &node.data {
-				FlatData::Branch { .. } => {},
-				&FlatData::Leaf { size, .. } => {
-					let area: f32 = node.size * node.size;
-					let dens = area / size as f32;
-					let new_size = total_size + size as f32;
-					let weight = size as f32 / new_size;
-					density = density * (1.0 - weight) + dens * weight;
-					total_size = new_size;
-				},
-			}
-		}
-		density
-	}
-
-	pub fn calculate(self, writer: &Writer, project: &Project, environment: &Environment, progress: ProgressBar) {
+	pub fn save(self, writer: &Writer, project: &Project, progress: ProgressBar) {
 		progress.reset();
 		progress.set_length(project.node_count as u64);
-		progress.set_prefix("Calculate:");
+		progress.set_prefix("Save Data:");
 
 		let mut data = Vec::with_capacity(self.nodes.len());
 		for _ in 0..self.nodes.len() {
@@ -278,7 +247,7 @@ impl FlatTree {
 				let reciever = reciever.clone();
 				scope.spawn(|| {
 					for (i, node) in reciever {
-						let res = node.calculate(&data, writer, &project.statistics, environment);
+						let res = node.save(&data, writer);
 						data[i].store(Some(res));
 						progress.inc(1);
 					}
@@ -298,13 +267,7 @@ impl FlatTree {
 }
 
 impl FLatNode {
-	fn calculate(
-		self,
-		data: &[AtomicCell<Option<Vec<render::Point>>>],
-		writer: &Writer,
-		statistics: &Statistics,
-		environment: &Environment,
-	) -> Vec<render::Point> {
+	fn save(self, data: &[AtomicCell<Option<Vec<render::Point>>>], writer: &Writer) -> Vec<render::Point> {
 		match self.data {
 			FlatData::Branch { mut children } => {
 				let mut points = Vec::with_capacity(8);
@@ -318,69 +281,34 @@ impl FLatNode {
 					points.push(lod);
 				}
 
-				let mut points = level_of_detail::grid(points, self.corner, self.size);
+				let points = level_of_detail::grid(points, self.corner, self.size);
 				writer.save(self.index, &points);
 
-				let neighbors = Neighbors::new(&points, statistics);
-
-				calculations::calculate(
-					&mut points,
-					false,
-					&neighbors,
-					environment,
-					(self.index, self.corner, self.size),
-					writer,
-				);
 				points
 			},
 
 			FlatData::Leaf { data, .. } => {
-				let positions = data.read();
-				let mut points = unsafe {
+				let data = data.read();
+				let points = unsafe {
 					let mut points = Vec::<render::Point>::new();
-					points.reserve_exact(positions.len());
-					points.set_len(positions.len());
-					for (i, position) in positions.into_iter().enumerate() {
-						points[i].position = position;
+					points.reserve_exact(data.len());
+					points.set_len(data.len());
+					for (i, d) in data.iter().enumerate() {
+						points[i] = d.render;
 					}
 					points
 				};
-
-				let neighbors = Neighbors::new(&points, statistics);
-
-				calculations::calculate(
-					&mut points,
-					true,
-					&neighbors,
-					environment,
-					(self.index, self.corner, self.size),
-					writer,
-				);
-
 				writer.save(self.index, &points);
+
+				let mut slices = Vec::with_capacity(data.len());
+				for p in data {
+					slices.push(p.slice);
+				}
+				writer.save_property(self.index, "slice", &slices);
+
+				// todo: save other properties form the data
 				points
 			},
 		}
-	}
-}
-
-pub struct Neighbors(Vec<(usize, [(f32, usize); MAX_NEIGHBORS])>);
-
-impl Neighbors {
-	pub fn new(points: &[render::Point], statistics: &Statistics) -> Self {
-		let kd_tree =
-			k_nearest::KDTree::<3, f32, render::Point, Adapter, k_nearest::EuclideanDistanceSquared>::new(points);
-		let mut neighbors = Vec::<(usize, [(f32, usize); MAX_NEIGHBORS])>::new();
-		neighbors.reserve_exact(points.len());
-		unsafe { neighbors.set_len(points.len()) };
-		for (i, point) in points.iter().enumerate() {
-			let neighbor = &mut neighbors[i];
-			neighbor.0 = kd_tree.k_nearest(point, &mut neighbor.1, statistics.max_neighbor_distance);
-		}
-		Self(neighbors)
-	}
-
-	pub fn get(&self, index: usize) -> &[(f32, usize)] {
-		&self.0[index].1[0..self.0[index].0]
 	}
 }

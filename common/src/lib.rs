@@ -5,12 +5,6 @@ use serde::{Deserialize, Serialize};
 
 pub const MAX_LEAF_SIZE: usize = 1 << 15;
 
-#[derive(Debug, Default, Clone, Copy, Deserialize, Serialize)]
-pub struct Statistics {
-	pub density: f32,
-	pub max_neighbor_distance: f32,
-}
-
 #[derive(Debug, Deserialize, Serialize)]
 pub enum IndexData {
 	Branch(Box<[Option<IndexNode>; 8]>),
@@ -28,7 +22,6 @@ pub struct IndexNode {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Project {
 	pub name: String,
-	pub statistics: Statistics,
 	pub level: u32,
 	pub root: IndexNode,
 	pub node_count: u32,
