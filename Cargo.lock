@@ -971,6 +971,7 @@ dependencies = [
  "math",
  "num_cpus",
  "rand",
+ "rayon",
  "render",
  "rfd",
  "serde",

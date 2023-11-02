@@ -3,9 +3,10 @@ use crossbeam::atomic::AtomicCell;
 use indicatif::ProgressBar;
 use math::Vector;
 use math::{Dimensions, X, Z};
+use rayon::prelude::*;
 
 use crate::cache::{Cache, CacheEntry};
-use crate::point::Point;
+use crate::point::{Point, PointsCollection};
 use crate::{level_of_detail, Writer};
 
 pub const MAX_NEIGHBORS: usize = 32 - 1;
@@ -240,26 +241,14 @@ impl FlatTree {
 			data.push(AtomicCell::new(None));
 		}
 
-		let (sender, reciever) = crossbeam::channel::bounded::<(usize, FLatNode)>(4);
-
-		std::thread::scope(|scope| {
-			for _ in 0..num_cpus::get() {
-				let reciever = reciever.clone();
-				scope.spawn(|| {
-					for (i, node) in reciever {
-						let res = node.save(&data, writer);
-						data[i].store(Some(res));
-						progress.inc(1);
-					}
-				});
-			}
-			drop(reciever);
-
-			for (i, node) in self.nodes.into_iter().enumerate() {
-				sender.send((i, node)).unwrap();
-			}
-			drop(sender);
-		});
+		self.nodes
+			.into_par_iter()
+			.enumerate()
+			.for_each(|(i, node)| {
+				let res = node.save(&data, writer);
+				data[i].store(Some(res));
+				progress.inc(1);
+			});
 
 		progress.finish();
 		println!();
@@ -267,7 +256,7 @@ impl FlatTree {
 }
 
 impl FLatNode {
-	fn save(self, data: &[AtomicCell<Option<Vec<render::Point>>>], writer: &Writer) -> Vec<render::Point> {
+	fn save(self, data: &[AtomicCell<Option<PointsCollection>>], writer: &Writer) -> PointsCollection {
 		match self.data {
 			FlatData::Branch { mut children } => {
 				let mut points = Vec::with_capacity(8);
@@ -282,7 +271,9 @@ impl FLatNode {
 				}
 
 				let points = level_of_detail::grid(points, self.corner, self.size);
-				writer.save(self.index, &points);
+				writer.save(self.index, &points.render);
+
+				writer.save_property(self.index, "slice", &points.slice);
 
 				points
 			},
@@ -300,14 +291,13 @@ impl FLatNode {
 				};
 				writer.save(self.index, &points);
 
-				let mut slices = Vec::with_capacity(data.len());
+				let mut slice = Vec::with_capacity(data.len());
 				for p in data {
-					slices.push(p.slice);
+					slice.push(p.slice);
 				}
-				writer.save_property(self.index, "slice", &slices);
+				writer.save_property(self.index, "slice", &slice);
 
-				// todo: save other properties form the data
-				points
+				PointsCollection { render: points, slice }
 			},
 		}
 	}

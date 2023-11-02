@@ -83,35 +83,38 @@ fn import() -> Result<(), ImporterError> {
 	progress.set_prefix("Import:");
 	progress.inc(0);
 
-	let (sender, reciever) = crossbeam::channel::bounded(2048);
-	//parallel over files?
-	let reader_progress = progress.clone();
-	std::thread::spawn(move || {
-		let mut counter = 0;
-		//skips invalid points without error or warning
-		for point in reader.points().flatten() {
-			sender
-				.send(Vector::new([point.x, point.z, -point.y]))
-				.unwrap();
-			counter += 1;
-			if counter >= IMPORT_PROGRESS_SCALE {
-				reader_progress.inc(1);
-				counter -= IMPORT_PROGRESS_SCALE;
-			}
-		}
-	});
-
 	let mut segmenter = Segmenter::new();
-	for point in reciever {
-		segmenter.add_point(
-			[
-				(point[X] - pos[X]) as f32,
-				(point[Y] - pos[Y]) as f32,
-				(point[Z] - pos[Z]) as f32,
-			]
-			.into(),
-		);
-	}
+
+	let (sender, reciever) = crossbeam::channel::bounded(2048);
+	rayon::join(
+		|| {
+			let mut counter = 0;
+			//skips invalid points without error or warning
+			for point in reader.points().flatten() {
+				sender
+					.send(Vector::new([point.x, point.z, -point.y]))
+					.unwrap();
+				counter += 1;
+				if counter >= IMPORT_PROGRESS_SCALE {
+					progress.inc(1);
+					counter -= IMPORT_PROGRESS_SCALE;
+				}
+			}
+			drop(sender);
+		},
+		|| {
+			for point in reciever {
+				segmenter.add_point(
+					[
+						(point[X] - pos[X]) as f32,
+						(point[Y] - pos[Y]) as f32,
+						(point[Z] - pos[Z]) as f32,
+					]
+					.into(),
+				);
+			}
+		},
+	);
 
 	let segments = segmenter.result();
 	progress.finish();
@@ -122,32 +125,37 @@ fn import() -> Result<(), ImporterError> {
 	progress.set_prefix("Calculate:");
 	progress.enable_steady_tick(Duration::from_micros(100));
 
-	let (sender, reciever) = crossbeam::channel::bounded(2048);
-	std::thread::spawn(move || {
-		for segment in segments {
-			let points = calculations::calculate(segment.points());
-			for point in points {
-				sender.send(point).unwrap();
-			}
-		}
-	});
-
+	let mut cache = Cache::new();
 	let mut writer = Writer::new(output)?;
 	let mut tree = Tree::new(
 		&mut writer,
 		(min - pos).map(|v| v as f32),
 		diff[X].max(diff[Y]).max(diff[Z]) as f32,
 	);
-	let mut counter = 0;
-	let mut cache = Cache::new();
-	for point in reciever {
-		tree.insert(point, &mut writer, &mut cache);
-		counter += 1;
-		if counter >= IMPORT_PROGRESS_SCALE {
-			progress.inc(1);
-			counter -= IMPORT_PROGRESS_SCALE;
-		}
-	}
+
+	let (sender, reciever) = crossbeam::channel::bounded(2048);
+	rayon::join(
+		|| {
+			for segment in segments {
+				let points = calculations::calculate(segment.points());
+				for point in points {
+					sender.send(point).unwrap();
+				}
+			}
+			drop(sender);
+		},
+		|| {
+			let mut counter = 0;
+			for point in reciever {
+				tree.insert(point, &mut writer, &mut cache);
+				counter += 1;
+				if counter >= IMPORT_PROGRESS_SCALE {
+					progress.inc(1);
+					counter -= IMPORT_PROGRESS_SCALE;
+				}
+			}
+		},
+	);
 
 	progress.finish();
 	println!();

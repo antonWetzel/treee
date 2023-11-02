@@ -44,3 +44,4 @@ las = { version = "0.8", features = ["laz"] }
 thiserror = "1.0"
 indicatif = "0.17"
 tempfile = "3.8.1"
+rayon = "1.8.0"

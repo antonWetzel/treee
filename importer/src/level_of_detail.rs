@@ -1,5 +1,7 @@
 use math::{Vector, X, Y, Z};
 
+use crate::point::PointsCollection;
+
 const GRID_SIZE: usize = 64;
 const GRID_SIZE_3: usize = GRID_SIZE * GRID_SIZE * GRID_SIZE;
 const POINT_SCALE: f32 = 0.95;
@@ -10,14 +12,16 @@ struct Cell {
 	position: Vector<3, f32>,
 	normal: Vector<3, f32>,
 	total_area: f32,
+
+	slice: u32,
 }
 
-pub fn grid(children: Vec<Vec<render::Point>>, corner: Vector<3, f32>, size: f32) -> Vec<render::Point> {
+pub fn grid(children: Vec<PointsCollection>, corner: Vector<3, f32>, size: f32) -> PointsCollection {
 	let mut grid = Vec::<Cell>::new();
 	grid.resize(GRID_SIZE_3, Default::default());
 	let grid_scale = GRID_SIZE as f32 / size;
 	for points in children {
-		for point in points {
+		for (point, slice) in points.render.iter().zip(points.slice) {
 			let diff = (point.position - corner) * grid_scale;
 			let grid_x = (diff[X] as usize).min(GRID_SIZE - 1);
 			let grid_y = (diff[Y] as usize).min(GRID_SIZE - 1);
@@ -33,20 +37,24 @@ pub fn grid(children: Vec<Vec<render::Point>>, corner: Vector<3, f32>, size: f32
 			cell.normal = fast_spherical_linear_interpolation(cell.normal, point.normal, weight);
 			cell.total_area += area;
 			cell.count += 1;
+
+			cell.slice = slice;
 		}
 	}
 
-	let mut res = Vec::new();
+	let mut res = PointsCollection::new();
 	for cell in grid {
 		if cell.count == 0 {
 			continue;
 		}
-
-		res.push(render::Point {
-			position: cell.position / cell.count as f32,
-			normal: cell.normal,
-			size: POINT_SCALE * cell.total_area.sqrt(),
-		});
+		res.add(
+			render::Point {
+				position: cell.position / cell.count as f32,
+				normal: cell.normal,
+				size: POINT_SCALE * cell.total_area.sqrt(),
+			},
+			cell.slice,
+		);
 	}
 	res
 }

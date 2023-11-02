@@ -1,4 +1,5 @@
 use math::{Dimension, Mat, Vector, X, Y, Z};
+use rayon::prelude::*;
 
 use crate::{point::Point, tree::MAX_NEIGHBORS};
 
@@ -33,7 +34,7 @@ fn size(neighbors: &[(f32, usize)], points: &[Vector<3, f32>]) -> f32 {
 }
 
 pub fn calculate(data: Vec<Vector<3, f32>>) -> Vec<Point> {
-	let mut neighbors = Neighbors::new(&data);
+	let neighbors = Neighbors::new(&data);
 
 	let (min, max) = {
 		let mut min = data[0][Y];
@@ -80,52 +81,49 @@ pub fn calculate(data: Vec<Vector<3, f32>>) -> Vec<Point> {
 		(mapped, slice_width)
 	};
 
-	let mut res = Vec::with_capacity(data.len());
-	for i in 0..data.len() {
-		let neighbors = neighbors.get(data[i]);
+	(0..data.len())
+		.into_par_iter()
+		.map(|i| {
+			let neighbors = neighbors.get(i);
 
-		let mean = {
-			let mut mean = Vector::<3, f32>::new([0.0, 0.0, 0.0]);
-			for (_, neighbor) in neighbors {
-				mean += data[*neighbor];
-			}
-			mean / neighbors.len() as f32
-		};
-		let variance = {
-			let mut variance = Mat::<3, f32>::default();
-			for (_, neigbhor) in neighbors {
-				let difference = data[*neigbhor] - mean;
-				for x in X.to(Z) {
-					for y in X.to(Z) {
-						variance[x + y] += difference[x] * difference[y];
+			let mean = {
+				let mut mean = Vector::<3, f32>::new([0.0, 0.0, 0.0]);
+				for (_, neighbor) in neighbors {
+					mean += data[*neighbor];
+				}
+				mean / neighbors.len() as f32
+			};
+			let variance = {
+				let mut variance = Mat::<3, f32>::default();
+				for (_, neigbhor) in neighbors {
+					let difference = data[*neigbhor] - mean;
+					for x in X.to(Z) {
+						for y in X.to(Z) {
+							variance[x + y] += difference[x] * difference[y];
+						}
 					}
 				}
-			}
-			for x in X.to(Z) {
-				for y in X.to(Z) {
-					variance[x + y] /= neighbors.len() as f32;
+				for x in X.to(Z) {
+					for y in X.to(Z) {
+						variance[x + y] /= neighbors.len() as f32;
+					}
 				}
+				variance
+			};
+
+			let eigen_values = variance.fast_eigenvalues();
+			let eigen_vectors = variance.calculate_eigenvectors(eigen_values);
+
+			Point {
+				render: render::Point {
+					position: data[i],
+					normal: eigen_vectors[Z],
+					size: size(neighbors, &data),
+				},
+				slice: slices[((data[i][Y] - min) / slice_width) as usize],
 			}
-			variance
-		};
-
-		let eigen_values = variance.fast_eigenvalues();
-		let eigen_vectors = variance.calculate_eigenvectors(eigen_values);
-
-		res.push(Point {
-			render: render::Point {
-				position: data[i],
-				normal: eigen_vectors[Z],
-				size: size(neighbors, &data),
-			},
-			id: 0,
-			curve: 0,
-			height: 0,
-			slice: slices[((data[i][Y] - min) / slice_width) as usize],
 		})
-	}
-
-	res
+		.collect()
 }
 
 struct Adapter;
@@ -139,31 +137,27 @@ impl k_nearest::Adapter<3, f32, Vector<3, f32>> for Adapter {
 }
 
 //todo: check if precalculated is better
-// pub struct Neighbors(Vec<(usize, [(f32, usize); MAX_NEIGHBORS])>);
-pub struct Neighbors(
-	k_nearest::KDTree<3, f32, Vector<3, f32>, Adapter, k_nearest::EuclideanDistanceSquared>,
-	[(f32, usize); MAX_NEIGHBORS],
-);
+pub struct Neighbors(Vec<(usize, [(f32, usize); MAX_NEIGHBORS])>);
 
 impl Neighbors {
 	pub fn new(points: &[Vector<3, f32>]) -> Self {
 		let kd_tree =
 			k_nearest::KDTree::<3, f32, Vector<3, f32>, Adapter, k_nearest::EuclideanDistanceSquared>::new(points);
-		Self(kd_tree, [(0.0, 0); MAX_NEIGHBORS])
 
-		// let mut neighbors = Vec::<(usize, [(f32, usize); MAX_NEIGHBORS])>::new();
-		// neighbors.reserve_exact(points.len());
-		// unsafe { neighbors.set_len(points.len()) };
-		// for (i, point) in points.iter().enumerate() {
-		// 	let neighbor = &mut neighbors[i];
-		// 	neighbor.0 = kd_tree.k_nearest(point, &mut neighbor.1, 1000.0);
-		// }
-		// Self(neighbors)
+		let mut neighbors = Vec::<(usize, [(f32, usize); MAX_NEIGHBORS])>::new();
+		neighbors.reserve_exact(points.len());
+		unsafe { neighbors.set_len(points.len()) };
+		neighbors
+			.par_iter_mut()
+			.zip(points)
+			.for_each(|(neighbor, point)| {
+				neighbor.0 = kd_tree.k_nearest(point, &mut neighbor.1, 1.0);
+			});
+		Self(neighbors)
 	}
 
-	pub fn get(&mut self, point: Vector<3, f32>) -> &[(f32, usize)] {
-		let size = self.0.k_nearest(&point, &mut self.1, 1000.0);
-		&self.1[0..size]
+	pub fn get(&self, index: usize) -> &[(f32, usize)] {
+		&self.0[index].1[0..self.0[index].0]
 	}
 }
 

@@ -20,3 +20,4 @@ rfd.workspace = true
 thiserror.workspace = true
 indicatif.workspace = true
 tempfile.workspace = true
+rayon.workspace = true

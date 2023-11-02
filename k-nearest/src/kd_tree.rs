@@ -20,38 +20,31 @@ where
 	Met: Metric<N, Value>,
 {
 	pub fn new(data: &[Point]) -> Self {
-		let mut tree = vec![(<[Value; N]>::default(), 0); data.len().next_power_of_two()];
-		let mut positions = Vec::with_capacity(data.len());
+		let mut tree = Vec::with_capacity(data.len());
 		for (i, p) in data.iter().enumerate() {
-			positions.push((Ada::get_all(p), i));
+			tree.push((Ada::get_all(p), i));
 		}
-		Self::create_tree(0, 0, &mut tree, 0, positions.len() - 1, &mut positions);
+		Self::create_tree(0, &mut tree);
 		KDTree { tree, phantom: std::marker::PhantomData }
 	}
 
-	fn create_tree(
-		index: usize,
-		dim: usize,
-		tree: &mut [([Value; N], usize)],
-		lower: usize,
-		upper: usize,
-		positions: &mut [([Value; N], usize)],
-	) {
+	fn create_tree(dim: usize, tree: &mut [([Value; N], usize)]) {
 		// choose middle with bias to the right, so recursion is deeper on the left
 		//   bias direction must match median finding scheme
-		let middle = (upper - lower + 1) / 2 + lower;
-		Self::partition(middle, dim, lower, upper, positions);
-		tree[index] = (positions[middle].0, positions[middle].1);
+		let middle = tree.len() / 2;
+		Self::partition(middle, dim, tree);
 		let next_dim = (dim + 1) % N;
-		if lower < middle {
-			Self::create_tree(index * 2 + 1, next_dim, tree, lower, middle - 1, positions);
+		if 0 < middle {
+			Self::create_tree(next_dim, &mut tree[..middle]);
 		}
-		if middle < upper {
-			Self::create_tree(index * 2 + 2, next_dim, tree, middle + 1, upper, positions);
+		if middle < tree.len() - 1 {
+			Self::create_tree(next_dim, &mut tree[(middle + 1)..]);
 		}
 	}
 
-	fn partition(target: usize, dim: usize, mut lower: usize, mut upper: usize, positions: &mut [([Value; N], usize)]) {
+	fn partition(target: usize, dim: usize, positions: &mut [([Value; N], usize)]) {
+		let mut lower = 0;
+		let mut upper = positions.len() - 1;
 		loop {
 			// maybe: use 2 pointer variant
 			let pivot_index = (upper - lower) / 2 + lower;
@@ -84,31 +77,45 @@ where
 		max_distance: Value,
 	) -> usize {
 		let mut best_set = BestSet::new(max_distance, data);
-		self.search_nearest(0, position, 0, &mut best_set);
+		Self::search_nearest(&self.tree, position, 0, &mut best_set);
 		best_set.result()
 	}
 
-	fn search_nearest(&self, index: usize, position: &[Value; N], dim: usize, best_set: &mut BestSet<Value>) {
-		if index >= self.tree.len() {
+	fn search_nearest(tree: &[([Value; N], usize)], position: &[Value; N], dim: usize, best_set: &mut BestSet<Value>) {
+		//linear search small sections
+		if tree.len() < 32 {
+			for &(point, point_index) in tree {
+				let diff = Met::distance(&point, position);
+				if diff < best_set.distance() {
+					best_set.insert((diff, point_index));
+				}
+			}
 			return;
 		}
-		let (point, point_index) = self.tree[index];
+
+		//check median point
+		let middle = tree.len() / 2;
+		let (point, point_index) = tree[middle];
 		let diff = Met::distance(&point, position);
 		if diff < best_set.distance() {
 			best_set.insert((diff, point_index));
 		}
+
+		//always recurse into the section with the point
 		let next_dim = (dim + 1) % N;
 		let is_left = position[dim] < point[dim];
 		if is_left {
-			self.search_nearest(index * 2 + 1, position, next_dim, best_set);
+			Self::search_nearest(&tree[..middle], position, next_dim, best_set);
 		} else {
-			self.search_nearest(index * 2 + 2, position, next_dim, best_set);
+			Self::search_nearest(&tree[(middle + 1)..], position, next_dim, best_set);
 		}
+
+		//only recurve into the section without the point if the distance is less then to the current worst point found
 		if Met::distance_plane(position, point[dim], dim) < best_set.distance() {
 			if is_left {
-				self.search_nearest(index * 2 + 2, position, next_dim, best_set);
+				Self::search_nearest(&tree[(middle + 1)..], position, next_dim, best_set);
 			} else {
-				self.search_nearest(index * 2 + 1, position, next_dim, best_set);
+				Self::search_nearest(&tree[..middle], position, next_dim, best_set);
 			}
 		}
 	}
