@@ -9,9 +9,6 @@ use crate::cache::{Cache, CacheEntry};
 use crate::point::{Point, PointsCollection};
 use crate::{level_of_detail, Writer};
 
-pub const MAX_NEIGHBORS: usize = 32 - 1;
-// pub const MAX_NEIGHBOR_DISTANCE_SCALE: f32 = 32.0;
-
 #[derive(Debug)]
 pub enum Data {
 	Leaf(usize),
@@ -274,6 +271,8 @@ impl FLatNode {
 				writer.save(self.index, &points.render);
 
 				writer.save_property(self.index, "slice", &points.slice);
+				writer.save_property(self.index, "sub_index", &points.sub_index);
+				writer.save_property(self.index, "curve", &points.curve);
 
 				points
 			},
@@ -291,13 +290,16 @@ impl FLatNode {
 				};
 				writer.save(self.index, &points);
 
-				let mut slice = Vec::with_capacity(data.len());
-				for p in data {
-					slice.push(p.slice);
-				}
+				let slice = data.iter().map(|p| p.slice).collect::<Vec<_>>();
 				writer.save_property(self.index, "slice", &slice);
 
-				PointsCollection { render: points, slice }
+				let sub_index = data.iter().map(|p| p.sub_index).collect::<Vec<_>>();
+				writer.save_property(self.index, "sub_index", &sub_index);
+
+				let curve = data.iter().map(|p| p.curve).collect::<Vec<_>>();
+				writer.save_property(self.index, "curve", &curve);
+
+				PointsCollection { render: points, slice, sub_index, curve }
 			},
 		}
 	}

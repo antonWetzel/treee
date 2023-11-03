@@ -45,6 +45,8 @@ fn import() -> Result<(), ImporterError> {
 		)
 		.unwrap(),
 	);
+	let spinner = ProgressBar::new(0);
+	spinner.set_style(ProgressStyle::with_template("{prefix:15} [{elapsed_precise}] {spinner:.blue}").unwrap());
 
 	let input = rfd::FileDialog::new()
 		.set_title("Select Input File")
@@ -56,9 +58,6 @@ fn import() -> Result<(), ImporterError> {
 		.set_title("Select Output Folder")
 		.pick_folder()
 		.ok_or(ImporterError::NoOutputFolder)?;
-
-	let spinner = ProgressBar::new(0);
-	spinner.set_style(ProgressStyle::with_template("{prefix:15} [{elapsed_precise}] {spinner:.blue}").unwrap());
 
 	spinner.reset();
 	spinner.tick();
@@ -165,7 +164,7 @@ fn import() -> Result<(), ImporterError> {
 	spinner.tick();
 	spinner.enable_steady_tick(Duration::from_millis(100));
 
-	let properties = ["slice"];
+	let properties = ["slice", "sub_index", "curve"];
 
 	for property in properties {
 		writer.setup_property(property);

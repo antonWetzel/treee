@@ -1,7 +1,9 @@
 use math::{Dimension, Mat, Vector, X, Y, Z};
 use rayon::prelude::*;
 
-use crate::{point::Point, tree::MAX_NEIGHBORS};
+use crate::point::Point;
+
+pub const MAX_NEIGHBORS: usize = 64 - 1;
 
 fn edge_adjust_factor(direction: f32) -> f32 {
 	// approximate in the range [0, 1] the inverse function of sin(pi*x^2) / (pi*x^2)
@@ -81,7 +83,9 @@ pub fn calculate(data: Vec<Vector<3, f32>>) -> Vec<Point> {
 		(mapped, slice_width)
 	};
 
-	(0..data.len())
+	let sub_step = u32::MAX / data.len() as u32;
+
+	let mut res = (0..data.len())
 		.into_par_iter()
 		.map(|i| {
 			let neighbors = neighbors.get(i);
@@ -121,9 +125,23 @@ pub fn calculate(data: Vec<Vector<3, f32>>) -> Vec<Point> {
 					size: size(neighbors, &data),
 				},
 				slice: slices[((data[i][Y] - min) / slice_width) as usize],
+				sub_index: i as u32 * sub_step,
+				curve: map_to_u32((3.0 * eigen_values[Z]) / (eigen_values[X] + eigen_values[Y] + eigen_values[Z])),
 			}
 		})
-		.collect()
+		.collect::<Vec<Point>>();
+
+	for _ in 0..3 {
+		for i in 0..data.len() {
+			let neighbors = neighbors.get(i);
+			res[i].curve = neighbors
+				.iter()
+				.map(|n| res[n.1].curve / neighbors.len() as u32)
+				.sum()
+		}
+	}
+
+	res
 }
 
 struct Adapter;

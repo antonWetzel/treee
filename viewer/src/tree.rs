@@ -12,13 +12,15 @@ use math::Vector;
 enum LookupName {
 	Warm,
 	Cold,
+	Wood,
 }
 
 impl LookupName {
 	pub fn next(self) -> Self {
 		match self {
 			LookupName::Warm => LookupName::Cold,
-			LookupName::Cold => LookupName::Warm,
+			LookupName::Cold => LookupName::Wood,
+			LookupName::Wood => LookupName::Warm,
 		}
 	}
 
@@ -26,6 +28,7 @@ impl LookupName {
 		match self {
 			LookupName::Warm => include_bytes!("../assets/grad_warm.png"),
 			LookupName::Cold => include_bytes!("../assets/grad_cold.png"),
+			LookupName::Wood => include_bytes!("../assets/grad_wood.png"),
 		}
 	}
 }

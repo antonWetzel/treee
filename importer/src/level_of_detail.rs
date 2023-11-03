@@ -14,6 +14,8 @@ struct Cell {
 	total_area: f32,
 
 	slice: u32,
+	sub_index: u32,
+	curve: u32,
 }
 
 pub fn grid(children: Vec<PointsCollection>, corner: Vector<3, f32>, size: f32) -> PointsCollection {
@@ -21,7 +23,7 @@ pub fn grid(children: Vec<PointsCollection>, corner: Vector<3, f32>, size: f32) 
 	grid.resize(GRID_SIZE_3, Default::default());
 	let grid_scale = GRID_SIZE as f32 / size;
 	for points in children {
-		for (point, slice) in points.render.iter().zip(points.slice) {
+		for (i, point) in points.render.iter().enumerate() {
 			let diff = (point.position - corner) * grid_scale;
 			let grid_x = (diff[X] as usize).min(GRID_SIZE - 1);
 			let grid_y = (diff[Y] as usize).min(GRID_SIZE - 1);
@@ -38,7 +40,9 @@ pub fn grid(children: Vec<PointsCollection>, corner: Vector<3, f32>, size: f32) 
 			cell.total_area += area;
 			cell.count += 1;
 
-			cell.slice = slice;
+			cell.slice = points.slice[i];
+			cell.sub_index = points.sub_index[i];
+			cell.curve = points.curve[i];
 		}
 	}
 
@@ -54,6 +58,8 @@ pub fn grid(children: Vec<PointsCollection>, corner: Vector<3, f32>, size: f32) 
 				size: POINT_SCALE * cell.total_area.sqrt(),
 			},
 			cell.slice,
+			cell.sub_index,
+			cell.curve,
 		);
 	}
 	res
