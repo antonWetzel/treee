@@ -6,7 +6,7 @@ mod segment;
 mod tree;
 mod writer;
 
-use std::time::Duration;
+use std::{num::NonZeroU32, time::Duration};
 
 use indicatif::{ProgressBar, ProgressStyle};
 use las::Read;
@@ -82,7 +82,7 @@ fn import() -> Result<(), ImporterError> {
 	progress.set_prefix("Import:");
 	progress.inc(0);
 
-	let mut segmenter = Segmenter::new();
+	let mut segmenter = Segmenter::new(0.0);
 
 	let (sender, reciever) = crossbeam::channel::bounded(2048);
 	rayon::join(
@@ -135,8 +135,8 @@ fn import() -> Result<(), ImporterError> {
 	let (sender, reciever) = crossbeam::channel::bounded(2048);
 	rayon::join(
 		|| {
-			for segment in segments {
-				let points = calculations::calculate(segment.points());
+			for (index, segment) in segments.into_iter().enumerate() {
+				let points = calculations::calculate(segment.points(), NonZeroU32::new(index as u32 + 1).unwrap());
 				for point in points {
 					sender.send(point).unwrap();
 				}

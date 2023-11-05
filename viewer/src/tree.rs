@@ -178,7 +178,7 @@ impl Tree {
 			lookup_name,
 			lookup: render::Lookup::new_png(state, lookup_name.data()),
 			property_index: 0,
-			environment: render::PointCloudEnvironment::new(state, u32::MIN, u32::MAX),
+			environment: render::PointCloudEnvironment::new(state, u32::MIN, u32::MAX, None),
 		}
 	}
 

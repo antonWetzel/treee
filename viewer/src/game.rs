@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{num::NonZeroU32, path::PathBuf};
 
 use common::Project;
 use math::{Vector, X, Y};
@@ -159,6 +159,17 @@ impl Game {
 					self.state,
 					self.interface.slice_min,
 					self.interface.slice_max,
+					Some(NonZeroU32::new(1).unwrap()),
+				);
+				self.window.request_redraw();
+			},
+
+			InterfaceAction::SegmentReset => {
+				self.tree.environment = render::PointCloudEnvironment::new(
+					self.state,
+					self.interface.slice_min,
+					self.interface.slice_max,
+					None,
 				);
 				self.window.request_redraw();
 			},

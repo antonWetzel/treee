@@ -1,3 +1,5 @@
+use std::num::NonZeroU32;
+
 use math::{Vector, X, Y, Z};
 
 use crate::point::PointsCollection;
@@ -6,12 +8,14 @@ const GRID_SIZE: usize = 64;
 const GRID_SIZE_3: usize = GRID_SIZE * GRID_SIZE * GRID_SIZE;
 const POINT_SCALE: f32 = 0.95;
 
-#[derive(Default, Clone, Copy)]
+#[derive(Clone, Copy)]
 struct Cell {
 	count: usize,
 	position: Vector<3, f32>,
 	normal: Vector<3, f32>,
 	total_area: f32,
+
+	segment: NonZeroU32,
 
 	slice: u32,
 	sub_index: u32,
@@ -20,7 +24,20 @@ struct Cell {
 
 pub fn grid(children: Vec<PointsCollection>, corner: Vector<3, f32>, size: f32) -> PointsCollection {
 	let mut grid = Vec::<Cell>::new();
-	grid.resize(GRID_SIZE_3, Default::default());
+	grid.resize(
+		GRID_SIZE_3,
+		Cell {
+			count: 0,
+			position: Vector::default(),
+			normal: Vector::default(),
+			total_area: 0.0,
+
+			segment: NonZeroU32::new(1).unwrap(),
+			slice: 0,
+			sub_index: 0,
+			curve: 0,
+		},
+	);
 	let grid_scale = GRID_SIZE as f32 / size;
 	for points in children {
 		for (i, point) in points.render.iter().enumerate() {
@@ -40,6 +57,8 @@ pub fn grid(children: Vec<PointsCollection>, corner: Vector<3, f32>, size: f32) 
 			cell.total_area += area;
 			cell.count += 1;
 
+			cell.segment = point.segment;
+
 			cell.slice = points.slice[i];
 			cell.sub_index = points.sub_index[i];
 			cell.curve = points.curve[i];
@@ -56,6 +75,7 @@ pub fn grid(children: Vec<PointsCollection>, corner: Vector<3, f32>, size: f32) 
 				position: cell.position / cell.count as f32,
 				normal: cell.normal,
 				size: POINT_SCALE * cell.total_area.sqrt(),
+				segment: cell.segment,
 			},
 			cell.slice,
 			cell.sub_index,

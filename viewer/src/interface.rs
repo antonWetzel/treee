@@ -29,6 +29,8 @@ pub struct Interface {
 	slice_right: Area,
 	pub slice_min: u32,
 	pub slice_max: u32,
+
+	segment: Area,
 }
 
 struct Area {
@@ -99,6 +101,7 @@ pub enum InterfaceAction {
 	EyeDome,
 	EyeDomeStrength(f32),
 	SliceChange,
+	SegmentReset,
 }
 
 impl Interface {
@@ -202,6 +205,13 @@ impl Interface {
 			),
 			slice_min: u32::MIN,
 			slice_max: u32::MAX,
+
+			segment: Area::new(
+				state,
+				include_bytes!("../assets/cube.png"),
+				[0.0, 900.0].into(),
+				[100.0, 100.0].into(),
+			),
 		}
 	}
 
@@ -270,6 +280,10 @@ impl Interface {
 			if self.level_of_detail_quality.inside_bottom(position) {
 				return InterfaceAction::LevelOfDetailChange(-5.0);
 			}
+		}
+
+		if self.segment.inside(position) {
+			return InterfaceAction::SegmentReset;
 		}
 
 		InterfaceAction::Nothing
@@ -385,5 +399,7 @@ impl render::UIRender for Interface {
 			self.slice_left.render(ui_pass);
 			self.slice_right.render(ui_pass);
 		}
+
+		self.segment.render(ui_pass);
 	}
 }

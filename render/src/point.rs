@@ -1,12 +1,15 @@
+use std::num::NonZeroU32;
+
 use math::Vector;
 use wgpu::vertex_attr_array;
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug)]
 pub struct Point {
 	pub position: Vector<3, f32>,
 	pub normal: Vector<3, f32>,
 	pub size: f32,
+	pub segment: NonZeroU32,
 }
 
 unsafe impl bytemuck::Zeroable for Point {}
@@ -23,8 +26,9 @@ unsafe impl bytemuck::Pod for PointEdge {}
 
 impl Point {
 	const QUAD_ATTRIBUTES: [wgpu::VertexAttribute; 1] = vertex_attr_array![0 => Float32x2];
-	const ATTRIBUTES: [wgpu::VertexAttribute; 3] = vertex_attr_array![1 => Float32x3, 2 => Float32x3, 3 => Float32];
-	const PROPERTY_ATTRIBUTES: [wgpu::VertexAttribute; 1] = vertex_attr_array![4 => Uint32];
+	const ATTRIBUTES: [wgpu::VertexAttribute; 4] =
+		vertex_attr_array![1 => Float32x3, 2 => Float32x3, 3 => Float32, 4 => Uint32];
+	const PROPERTY_ATTRIBUTES: [wgpu::VertexAttribute; 1] = vertex_attr_array![5 => Uint32];
 
 	pub fn quad_description<'a>() -> wgpu::VertexBufferLayout<'a> {
 		wgpu::VertexBufferLayout {

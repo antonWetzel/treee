@@ -1,4 +1,4 @@
-use math::Vector;
+use math::{Vector, Y};
 
 // only stub at the moment
 // todo:
@@ -20,15 +20,23 @@ impl Segment {
 
 pub struct Segmenter {
 	items: Vec<Segment>,
+	split: f32,
 }
 
 impl Segmenter {
-	pub fn new() -> Self {
-		Self { items: vec![Segment::new()] }
+	pub fn new(split: f32) -> Self {
+		Self {
+			items: vec![Segment::new(), Segment::new()],
+			split,
+		}
 	}
 
 	pub fn add_point(&mut self, point: Vector<3, f32>) {
-		self.items[0].data.push(point);
+		if point[Y] < self.split {
+			self.items[0].data.push(point);
+		} else {
+			self.items[1].data.push(point);
+		}
 	}
 
 	pub fn result(self) -> Vec<Segment> {
