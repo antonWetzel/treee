@@ -1,5 +1,3 @@
-use std::num::NonZeroU32;
-
 use math::{Vector, X, Y, Z};
 
 use crate::point::PointsCollection;
@@ -14,8 +12,6 @@ struct Cell {
 	position: Vector<3, f32>,
 	normal: Vector<3, f32>,
 	total_area: f32,
-
-	segment: NonZeroU32,
 
 	slice: u32,
 	sub_index: u32,
@@ -32,7 +28,6 @@ pub fn grid(children: Vec<PointsCollection>, corner: Vector<3, f32>, size: f32) 
 			normal: Vector::default(),
 			total_area: 0.0,
 
-			segment: NonZeroU32::new(1).unwrap(),
 			slice: 0,
 			sub_index: 0,
 			curve: 0,
@@ -57,8 +52,6 @@ pub fn grid(children: Vec<PointsCollection>, corner: Vector<3, f32>, size: f32) 
 			cell.total_area += area;
 			cell.count += 1;
 
-			cell.segment = point.segment;
-
 			cell.slice = points.slice[i];
 			cell.sub_index = points.sub_index[i];
 			cell.curve = points.curve[i];
@@ -75,7 +68,6 @@ pub fn grid(children: Vec<PointsCollection>, corner: Vector<3, f32>, size: f32) 
 				position: cell.position / cell.count as f32,
 				normal: cell.normal,
 				size: POINT_SCALE * cell.total_area.sqrt(),
-				segment: cell.segment,
 			},
 			cell.slice,
 			cell.sub_index,

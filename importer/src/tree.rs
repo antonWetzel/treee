@@ -1,3 +1,5 @@
+use std::num::NonZeroU32;
+
 use common::{IndexData, IndexNode, Project, MAX_LEAF_SIZE};
 use crossbeam::atomic::AtomicCell;
 use indicatif::ProgressBar;
@@ -11,7 +13,7 @@ use crate::{level_of_detail, Writer};
 
 #[derive(Debug)]
 pub enum Data {
-	Leaf(usize),
+	Leaf { size: usize, segment: NonZeroU32 },
 	Branch { children: Box<[Option<Node>; 8]> },
 }
 
@@ -21,23 +23,30 @@ pub struct Node {
 	size: f32,
 	data: Data,
 	index: usize,
-	total_points: usize,
 }
 
 impl Node {
-	fn new(corner: Vector<3, f32>, size: f32, writer: &mut Writer) -> Self {
+	fn new_branch(corner: Vector<3, f32>, size: f32, writer: &mut Writer) -> Self {
 		let index = writer.next_index();
 		Node {
 			corner,
 			size,
-			data: Data::Leaf(0),
-			total_points: 0,
+			data: Data::Branch { children: Box::default() },
 			index,
 		}
 	}
 
-	fn insert_position(&mut self, point: Point, writer: &mut Writer, cache: &mut Cache<Point>) {
-		self.total_points += 1;
+	fn new_leaf(corner: Vector<3, f32>, size: f32, segment: NonZeroU32, writer: &mut Writer) -> Self {
+		let index = writer.next_index();
+		Node {
+			corner,
+			size,
+			data: Data::Leaf { size: 0, segment },
+			index,
+		}
+	}
+
+	fn insert_position(&mut self, point: Point, segment: NonZeroU32, writer: &mut Writer, cache: &mut Cache<Point>) {
 		match &mut self.data {
 			Data::Branch { children, .. } => {
 				let mut index = 0;
@@ -50,18 +59,18 @@ impl Node {
 				}
 
 				match &mut children[index] {
-					Some(v) => v.insert_position(point, writer, cache),
+					Some(v) => v.insert_position(point, segment, writer, cache),
 					None => {
-						let mut node = Node::new(corner, self.size / 2.0, writer);
-						node.insert_position(point, writer, cache);
+						let mut node = Node::new_leaf(corner, self.size / 2.0, segment, writer);
+						node.insert_position(point, segment, writer, cache);
 						children[index] = Some(node);
 					},
 				}
 			},
-			Data::Leaf(leaf) => {
-				if *leaf < MAX_LEAF_SIZE {
+			Data::Leaf { size, segment: leaf_segment } => {
+				if *size < MAX_LEAF_SIZE && *leaf_segment == segment {
 					cache.add_point(self.index, point);
-					*leaf += 1;
+					*size += 1;
 					return;
 				}
 				let mut children: [Option<Self>; 8] = Default::default();
@@ -74,7 +83,7 @@ impl Node {
 						}
 					}
 					match &mut children[index] {
-						Some(v) => v.insert_position(point, writer, cache),
+						Some(v) => v.insert_position(point, *leaf_segment, writer, cache),
 						None => {
 							let mut corner = self.corner;
 							for dim in X.to(Z) {
@@ -82,14 +91,14 @@ impl Node {
 									corner[dim] += self.size / 2.0;
 								}
 							}
-							let mut node = Node::new(corner, self.size / 2.0, writer);
-							node.insert_position(point, writer, cache);
+							let mut node = Node::new_leaf(corner, self.size / 2.0, *leaf_segment, writer);
+							node.insert_position(point, *leaf_segment, writer, cache);
 							children[index] = Some(node);
 						},
 					}
 				}
 				self.data = Data::Branch { children: Box::new(children) };
-				self.insert_position(point, writer, cache);
+				self.insert_position(point, segment, writer, cache);
 			},
 		}
 	}
@@ -108,9 +117,12 @@ impl Node {
 						node_count += child_node_count;
 					}
 				}
-				(IndexData::Branch(Box::new(index_children)), max_depth + 1)
+				(
+					IndexData::Branch { children: Box::new(index_children) },
+					max_depth + 1,
+				)
 			},
-			Data::Leaf(..) => (IndexData::Leaf(), 1),
+			Data::Leaf { segment, size: _ } => (IndexData::Leaf { segment: *segment }, 1),
 		};
 		(
 			IndexNode {
@@ -135,7 +147,7 @@ impl Node {
 					self
 				}
 			},
-			Data::Leaf(_) => self,
+			Data::Leaf { .. } => self,
 		}
 	}
 
@@ -148,7 +160,7 @@ impl Node {
 				}
 				FlatData::Branch { children: indices }
 			},
-			Data::Leaf(leaf) => FlatData::Leaf { size: leaf, data: cache.read(self.index) },
+			Data::Leaf { size, segment: _ } => FlatData::Leaf { size, data: cache.read(self.index) },
 		};
 
 		let index = nodes.len();
@@ -168,11 +180,13 @@ pub struct Tree {
 
 impl Tree {
 	pub fn new(writer: &mut Writer, corner: Vector<3, f32>, size: f32) -> Self {
-		Self { root: Node::new(corner, size, writer) }
+		Self {
+			root: Node::new_branch(corner, size, writer),
+		}
 	}
 
-	pub fn insert(&mut self, point: Point, writer: &mut Writer, cache: &mut Cache<Point>) {
-		self.root.insert_position(point, writer, cache);
+	pub fn insert(&mut self, point: Point, segment: NonZeroU32, writer: &mut Writer, cache: &mut Cache<Point>) {
+		self.root.insert_position(point, segment, writer, cache);
 	}
 
 	pub fn flatten(mut self, calculators: &[&str], name: String, mut cache: Cache<Point>) -> (FlatTree, Project) {

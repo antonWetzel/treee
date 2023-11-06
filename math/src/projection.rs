@@ -22,7 +22,7 @@ impl Projection {
 		T: Mul<T, Output = T>,
 		T: Div<T, Output = T>,
 	{
-		let fov_rad = vertical_fov * T::from_f64(2.0 * std::f64::consts::PI / 360.0);
+		let fov_rad = vertical_fov * T::from_f64(std::f64::consts::TAU / 360.0);
 		let focal_length = T::IDENTITY / T::tan(fov_rad * T::from_f64(0.5));
 
 		let x: T = focal_length / aspect_ratio;

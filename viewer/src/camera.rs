@@ -8,6 +8,7 @@ use crate::State;
 
 const BASE_MOVE_SPEED: f32 = 0.1;
 const BASE_ROTATE_SPEED: f32 = 0.002;
+const FIELD_OF_VIEW: f32 = 45.0;
 
 pub struct Camera {
 	pub gpu: render::Camera3DGPU,
@@ -19,7 +20,7 @@ pub struct Camera {
 
 impl Camera {
 	pub fn new(state: &State, aspect: f32) -> Self {
-		let camera = render::Camera3D::new(aspect, 45.0, 0.1, 10_000.0);
+		let camera = render::Camera3D::new(aspect, FIELD_OF_VIEW, 0.1, 10_000.0);
 		let controller = Controller::Orbital { offset: 100.0 };
 		let position = [0.0, 0.0, 100.0].into();
 		let transform = Transform::translation(position);
@@ -73,6 +74,15 @@ impl Camera {
 	pub fn inside_moved_frustrum(&self, corner: Vector<3, f32>, size: f32, difference: f32) -> bool {
 		let center = self.position() - self.transform.basis[Z] * difference;
 		self.inside_frustrum_center(corner, size, center)
+	}
+
+	pub fn ray_direction(&self, position: Vector<2, f32>, window_size: Vector<2, f32>) -> Vector<3, f32> {
+		let dist = window_size[Y] / (2.0 * Angle::degree(FIELD_OF_VIEW / 2.0).as_radians().tan());
+		let position = position - window_size / 2.0;
+		let intersection = -self.transform.basis[Z] * dist
+			+ self.transform.basis[X] * position[X]
+			+ -self.transform.basis[Y] * position[Y];
+		intersection.normalized()
 	}
 
 	fn inside_frustrum_center(&self, corner: Vector<3, f32>, size: f32, center: Vector<3, f32>) -> bool {

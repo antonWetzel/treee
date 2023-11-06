@@ -1,5 +1,3 @@
-use std::num::NonZeroU32;
-
 use math::{Dimension, Mat, Vector, X, Y, Z};
 use rayon::prelude::*;
 
@@ -37,7 +35,7 @@ fn size(neighbors: &[(f32, usize)], points: &[Vector<3, f32>]) -> f32 {
 	(1.0 / 3.0) * mean * edge_adjust_factor(direction_value)
 }
 
-pub fn calculate(data: Vec<Vector<3, f32>>, index: NonZeroU32) -> Vec<Point> {
+pub fn calculate(data: Vec<Vector<3, f32>>) -> Vec<Point> {
 	let neighbors = Neighbors::new(&data);
 
 	let (min, max) = {
@@ -73,7 +71,7 @@ pub fn calculate(data: Vec<Vector<3, f32>>, index: NonZeroU32) -> Vec<Point> {
 		}
 		let mut max_var = 0.0;
 		for i in 0..variance.len() {
-			variance[i] /= means[i].1 as f32;
+			variance[i] /= (means[i].1 as f32).sqrt();
 			if variance[i] > max_var {
 				max_var = variance[i];
 			}
@@ -125,7 +123,6 @@ pub fn calculate(data: Vec<Vector<3, f32>>, index: NonZeroU32) -> Vec<Point> {
 					position: data[i],
 					normal: eigen_vectors[Z],
 					size: size(neighbors, &data),
-					segment: index,
 				},
 				slice: slices[((data[i][Y] - min) / slice_width) as usize],
 				sub_index: i as u32 * sub_step,

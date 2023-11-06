@@ -18,7 +18,7 @@ pub use vector::*;
 
 use std::ops::Range;
 
-#[derive(Clone, Copy, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, PartialEq, PartialOrd, Debug)]
 pub struct Dimension(pub usize);
 
 impl From<Dimension> for usize {
@@ -59,15 +59,15 @@ impl Iterator for Dimensions {
 }
 
 impl Dimension {
-	pub fn to(self, to: Dimension) -> Dimensions {
+	pub const fn to(self, to: Dimension) -> Dimensions {
 		Dimensions(self.0..(to.0 + 1))
 	}
 
-	pub fn next(self, max: Dimension) -> Dimension {
+	pub const fn next(self, max: Dimension) -> Dimension {
 		Self((self.0 + 1) % (max.0 + 1))
 	}
 
-	pub fn previous(self, max: Dimension) -> Dimension {
+	pub const fn previous(self, max: Dimension) -> Dimension {
 		Self((self.0 + max.0) % (max.0 + 1))
 	}
 }

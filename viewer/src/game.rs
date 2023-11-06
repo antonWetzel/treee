@@ -19,6 +19,8 @@ pub struct Game {
 
 	state: &'static State,
 	mouse: input::Mouse,
+	mouse_start: Option<Vector<2, f32>>,
+
 	keyboard: input::Keyboard,
 	time: Time,
 	paused: bool,
@@ -66,6 +68,7 @@ impl Game {
 
 			state,
 			mouse: input::Mouse::new(),
+			mouse_start: None,
 			keyboard: input::Keyboard::new(),
 			time: Time::new(),
 		}
@@ -98,7 +101,8 @@ impl Game {
 	}
 
 	fn current_poject_time(&self) -> std::time::SystemTime {
-		std::fs::metadata(&self.path)
+		self.path
+			.metadata()
 			.map(|meta| meta.modified().unwrap_or(self.project_time))
 			.unwrap_or(self.project_time)
 	}
@@ -159,22 +163,31 @@ impl Game {
 					self.state,
 					self.interface.slice_min,
 					self.interface.slice_max,
-					Some(NonZeroU32::new(1).unwrap()),
 				);
+
+				self.tree.segment = Some(NonZeroU32::new(1).unwrap()); // debug
+
 				self.window.request_redraw();
 			},
 
 			InterfaceAction::SegmentReset => {
-				self.tree.environment = render::PointCloudEnvironment::new(
-					self.state,
-					self.interface.slice_min,
-					self.interface.slice_max,
-					None,
-				);
+				self.tree.segment = None;
 				self.window.request_redraw();
 			},
 		}
 		render::ControlFlow::Wait
+	}
+
+	fn raycast(&mut self) {
+		let start = self.tree.camera.position();
+		let direction = self
+			.tree
+			.camera
+			.ray_direction(self.mouse.position(), self.window.get_size());
+		if let Some(segment) = self.tree.raycast(start, direction) {
+			self.tree.segment = Some(segment);
+			self.request_redraw();
+		}
 	}
 }
 
@@ -188,6 +201,7 @@ impl render::Entry for Game {
 			lod::Checker::new(&self.tree.camera.lod),
 			&self.tree.camera,
 			&mut self.tree.loaded_manager,
+			self.tree.segment,
 		);
 
 		self.ui.queue(self.state, &self.interface);
@@ -294,7 +308,21 @@ impl render::Entry for Game {
 				let action = self
 					.interface
 					.clicked(self.mouse.position() / self.ui.get_scale());
+				if action == InterfaceAction::Nothing {
+					self.mouse_start = Some(self.mouse.position());
+				} else {
+					self.mouse_start = None;
+				}
 				self.handle_interface_action(action)
+			},
+			(input::MouseButton::Left, input::State::Released) => {
+				if let Some(start) = self.mouse_start {
+					let dist = (start - self.mouse.position()).length();
+					if dist < 2.0 {
+						self.raycast();
+					}
+				}
+				render::ControlFlow::Wait
 			},
 			_ => render::ControlFlow::Wait,
 		}

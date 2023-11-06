@@ -136,17 +136,18 @@ fn import() -> Result<(), ImporterError> {
 	rayon::join(
 		|| {
 			for (index, segment) in segments.into_iter().enumerate() {
-				let points = calculations::calculate(segment.points(), NonZeroU32::new(index as u32 + 1).unwrap());
+				let points = calculations::calculate(segment.points());
+				let segment = NonZeroU32::new(index as u32 + 1).unwrap();
 				for point in points {
-					sender.send(point).unwrap();
+					sender.send((point, segment)).unwrap();
 				}
 			}
 			drop(sender);
 		},
 		|| {
 			let mut counter = 0;
-			for point in reciever {
-				tree.insert(point, &mut writer, &mut cache);
+			for (point, segment) in reciever {
+				tree.insert(point, segment, &mut writer, &mut cache);
 				counter += 1;
 				if counter >= IMPORT_PROGRESS_SCALE {
 					progress.inc(1);

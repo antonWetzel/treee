@@ -50,8 +50,8 @@ impl Window {
 	pub fn get_aspect(&self) -> f32 {
 		self.config.width as f32 / self.config.height as f32
 	}
-	pub fn get_size(&self) -> Vector<2, u32> {
-		[self.config.width, self.config.height].into()
+	pub fn get_size(&self) -> Vector<2, f32> {
+		[self.config.width as f32, self.config.height as f32].into()
 	}
 
 	pub fn set_title(&self, title: &str) {

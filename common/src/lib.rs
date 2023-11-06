@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{num::NonZeroU32, path::Path};
 
 use math::Vector;
 use serde::{Deserialize, Serialize};
@@ -7,8 +7,12 @@ pub const MAX_LEAF_SIZE: usize = 1 << 15;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub enum IndexData {
-	Branch(Box<[Option<IndexNode>; 8]>),
-	Leaf(),
+	Branch {
+		children: Box<[Option<IndexNode>; 8]>,
+	},
+	Leaf {
+		segment: NonZeroU32,
+	},
 }
 
 #[derive(Debug, Deserialize, Serialize)]

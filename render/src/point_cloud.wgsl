@@ -5,7 +5,6 @@ struct CameraUniform {
 struct Environment {
     min: u32,
     max: u32,
-    segment: u32,
 }
 
 @group(0) @binding(0)
@@ -21,11 +20,10 @@ struct InstanceInput {
     @location(1) position: vec3<f32>,
     @location(2) normal: vec3<f32>,
     @location(3) size: f32,
-    @location(4) segment: u32,
 }
 
 struct PropertyInput {
-    @location(5) value: u32,
+    @location(4) value: u32,
 }
 
 struct VertexOutput {
@@ -42,10 +40,7 @@ fn vs_main(
     property_in: PropertyInput,
 ) -> VertexOutput {
     var out: VertexOutput;
-    if (
-        (environment.segment != 0u && environment.segment != instance_in.segment) ||
-        property_in.value < environment.min || environment.max < property_in.value
-    ) {
+    if  property_in.value < environment.min || environment.max < property_in.value {
         out.clip_position = vec4<f32>(0.0, 0.0, 0.0, 0.0);
         out.value = 0u;
         out.pos = vec2<f32>(0.0, 0.0);

@@ -1,5 +1,3 @@
-use std::num::NonZeroU32;
-
 use common::MAX_LEAF_SIZE;
 use math::Vector;
 use wgpu::util::DeviceExt;
@@ -217,22 +215,16 @@ pub struct PointCloudEnvironment {
 }
 
 impl PointCloudEnvironment {
-	pub fn new(state: &impl Has<State>, min: u32, max: u32, segment: Option<NonZeroU32>) -> Self {
+	pub fn new(state: &impl Has<State>, min: u32, max: u32) -> Self {
 		#[repr(C)]
 		#[derive(Debug, Copy, Clone, bytemuck::Zeroable, bytemuck::Pod)]
 		struct Uniform {
 			min: u32,
 			max: u32,
-			segment: u32,
-			pad: [u32; 1],
+			pad: [u32; 2],
 		}
 
-		let uniform = Uniform {
-			min,
-			max,
-			segment: segment.map(|v| v.get()).unwrap_or_default(),
-			pad: [0],
-		};
+		let uniform = Uniform { min, max, pad: [0, 0] };
 		let buffer = state
 			.get()
 			.device
