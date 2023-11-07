@@ -17,9 +17,9 @@ Point cloud importer and viewer with focus on forest scans.
 	- phases
 		1. open input file
 		1. import points
+		1. calculate data from the points
 		1. crate project file
-			- viewer can open the project after the file is created before all calculations are done
-		1. calculate data
+		1. save data and level of detail
 
 ## Viewer
 
@@ -54,3 +54,10 @@ Point cloud importer and viewer with focus on forest scans.
 			- equal level for all
 		- `Level of Detail Popup Button`
 			- increase/decrease quality
+		- `Slice`
+			- hover for sliders
+		- `Slice Popup Sliders`
+			- change min and max value for property
+			- points outside the range are hidden
+		- `Box`
+			- reset selected Segment
