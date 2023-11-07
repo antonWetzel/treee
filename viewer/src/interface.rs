@@ -3,8 +3,8 @@ use math::{Vector, X, Y};
 use crate::state::State;
 
 pub struct Interface {
-	pub last_workload: usize,
-	pub statistics: render::UIElement,
+	last_workload: usize,
+	statistics: render::UIElement,
 	show_statistics: bool,
 	close: Area,
 	open: Area,
@@ -27,10 +27,13 @@ pub struct Interface {
 	slice_background: Area,
 	slice_left: Area,
 	slice_right: Area,
-	pub slice_min: u32,
-	pub slice_max: u32,
+	slice_min: u32,
+	slice_max: u32,
 
 	segment: Area,
+
+	segment_info_active: bool,
+	segment_info: render::UIElement,
 }
 
 struct Area {
@@ -212,12 +215,17 @@ impl Interface {
 				[0.0, 900.0].into(),
 				[100.0, 100.0].into(),
 			),
+
+			segment_info: render::UIElement::new(Vec::new(), Vector::default(), 25.0),
+			segment_info_active: false,
 		}
 	}
 
-	pub fn set_scale(&mut self, scale: f32) {
+	pub fn resize(&mut self, scale: f32, size: Vector<2, f32>) {
 		self.statistics.position[X] = 110.0 * scale;
 		self.statistics.font_size = 25.0 * scale;
+		self.segment_info.font_size = 25.0 * scale;
+		self.segment_info.position[X] = size[X] - 200.0 * scale;
 	}
 
 	pub fn update_fps(&mut self, fps: f64) {
@@ -366,12 +374,32 @@ impl Interface {
 	pub fn should_drag(&self, _position: Vector<2, f32>) -> bool {
 		self.slice_expanded
 	}
+
+	pub fn slice_bounds(&self) -> (u32, u32) {
+		(self.slice_min, self.slice_max)
+	}
+
+	pub fn enable_segment_info(&mut self, names: &[String], values: &[common::Value]) {
+		self.segment_info_active = true;
+		self.segment_info.text = names
+			.iter()
+			.zip(values)
+			.map(|(name, value)| format!("{}: {}\n", name, value))
+			.collect();
+	}
+
+	pub fn disable_segment_info(&mut self) {
+		self.segment_info_active = false;
+	}
 }
 
 impl render::UICollect for Interface {
 	fn collect<'a>(&'a self, collector: &mut render::UICollector<'a>) {
 		if self.show_statistics {
 			collector.add_element(&self.statistics);
+		}
+		if self.segment_info_active {
+			collector.add_element(&self.segment_info);
 		}
 	}
 }

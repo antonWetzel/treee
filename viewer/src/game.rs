@@ -144,7 +144,7 @@ impl Game {
 				self.window.request_redraw();
 			},
 			InterfaceAction::LevelOfDetail => {
-				self.tree.camera.change_lod(self.project.level as usize);
+				self.tree.camera.change_lod(self.project.depth as usize);
 				self.window.request_redraw();
 			},
 			InterfaceAction::LevelOfDetailChange(change) => {
@@ -159,19 +159,14 @@ impl Game {
 				self.window.request_redraw();
 			},
 			InterfaceAction::SliceChange => {
-				self.tree.environment = render::PointCloudEnvironment::new(
-					self.state,
-					self.interface.slice_min,
-					self.interface.slice_max,
-				);
-
-				self.tree.segment = Some(NonZeroU32::new(1).unwrap()); // debug
-
+				let (slice_min, slice_max) = self.interface.slice_bounds();
+				self.tree.environment = render::PointCloudEnvironment::new(self.state, slice_min, slice_max);
 				self.window.request_redraw();
 			},
 
 			InterfaceAction::SegmentReset => {
 				self.tree.segment = None;
+				self.interface.disable_segment_info();
 				self.window.request_redraw();
 			},
 		}
@@ -179,6 +174,9 @@ impl Game {
 	}
 
 	fn raycast(&mut self) {
+		if self.tree.segment.is_some() {
+			return;
+		}
 		let start = self.tree.camera.position();
 		let direction = self
 			.tree
@@ -186,6 +184,10 @@ impl Game {
 			.ray_direction(self.mouse.position(), self.window.get_size());
 		if let Some(segment) = self.tree.raycast(start, direction) {
 			self.tree.segment = Some(segment);
+			self.interface.enable_segment_info(
+				&self.project.segment_properties,
+				self.project.get_segment_values(segment.get() as usize - 1),
+			);
 			self.request_redraw();
 		}
 	}
@@ -228,7 +230,8 @@ impl render::Entry for Game {
 		self.eye_dome
 			.update_depth(self.state, self.window.depth_texture());
 
-		self.interface.set_scale(self.ui.get_scale());
+		self.interface
+			.resize(self.ui.get_scale(), self.window.get_size());
 		render::ControlFlow::Wait
 	}
 

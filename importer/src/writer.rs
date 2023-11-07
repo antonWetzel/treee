@@ -6,7 +6,6 @@ use crate::ImporterError;
 pub struct Writer {
 	project_path: PathBuf,
 	data_path: PathBuf,
-	index: usize,
 }
 
 impl Writer {
@@ -28,19 +27,14 @@ impl Writer {
 		data_path.push("0.data");
 
 		path.push("project.epc");
-		Ok(Self { project_path: path, data_path, index: 1 })
+		Ok(Self { project_path: path, data_path })
 	}
 
 	pub fn save_project(&self, project: &Project) {
 		project.save(&self.project_path);
 	}
 
-	pub fn next_index(&mut self) -> usize {
-		self.index += 1;
-		self.index
-	}
-
-	pub fn save(&self, index: usize, points: &[render::Point]) {
+	pub fn save(&self, index: u32, points: &[render::Point]) {
 		let view = unsafe {
 			std::slice::from_raw_parts(
 				points as *const _ as *const u8,
@@ -50,7 +44,6 @@ impl Writer {
 		let path = self.data_path.with_file_name(format!("{}.data", index));
 		let mut file = std::fs::OpenOptions::new()
 			.write(true)
-			// .read(true)
 			.create(true)
 			.open(path)
 			.unwrap();
@@ -64,7 +57,7 @@ impl Writer {
 		std::fs::create_dir_all(self.data_path.with_file_name(name)).unwrap();
 	}
 
-	pub fn save_property(&self, index: usize, name: &str, property: &[u32]) {
+	pub fn save_property(&self, index: u32, name: &str, property: &[u32]) {
 		let view = unsafe {
 			std::slice::from_raw_parts(
 				property as *const _ as *const u8,

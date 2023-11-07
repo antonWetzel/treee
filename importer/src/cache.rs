@@ -12,6 +12,9 @@ pub struct Cache<T> {
 }
 
 #[derive(Debug)]
+pub struct CacheIndex(usize);
+
+#[derive(Debug)]
 pub struct CacheEntry<T> {
 	file: Option<File>,
 	active: Vec<T>,
@@ -28,9 +31,14 @@ impl<T> Cache<T> {
 		}
 	}
 
-	pub fn add_point(&mut self, index: usize, point: T) {
+	pub fn new_entry(&mut self) -> CacheIndex {
 		self.current += 1;
-		match self.active.get_mut(&index) {
+		CacheIndex(self.current)
+	}
+
+	pub fn add_point(&mut self, index: &CacheIndex, point: T) {
+		self.current += 1;
+		match self.active.get_mut(&index.0) {
 			None => {},
 			Some(entry) => {
 				entry.0.push(point);
@@ -39,7 +47,7 @@ impl<T> Cache<T> {
 			},
 		}
 		self.evict();
-		self.active.insert(index, (vec![point], self.current));
+		self.active.insert(index.0, (vec![point], self.current));
 	}
 
 	fn evict(&mut self) {
@@ -75,10 +83,14 @@ impl<T> Cache<T> {
 		}
 	}
 
-	pub fn read(&mut self, index: usize) -> CacheEntry<T> {
+	pub fn read(&mut self, index: CacheIndex) -> CacheEntry<T> {
 		CacheEntry {
-			file: self.stored.remove(&index),
-			active: self.active.remove(&index).map(|v| v.0).unwrap_or_default(),
+			file: self.stored.remove(&index.0),
+			active: self
+				.active
+				.remove(&index.0)
+				.map(|v| v.0)
+				.unwrap_or_default(),
 		}
 	}
 }

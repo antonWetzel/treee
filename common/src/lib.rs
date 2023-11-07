@@ -26,10 +26,12 @@ pub struct IndexNode {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Project {
 	pub name: String,
-	pub level: u32,
+	pub depth: u32,
 	pub root: IndexNode,
-	pub node_count: u32,
 	pub properties: Vec<String>,
+
+	pub segment_properties: Vec<String>,
+	pub segment_values: Vec<Value>,
 }
 
 impl Project {
@@ -45,5 +47,25 @@ impl Project {
 			.open(path)
 			.unwrap();
 		bincode::serialize_into(file, self).unwrap();
+	}
+
+	pub fn get_segment_values(&self, index: usize) -> &[Value] {
+		let l = self.segment_properties.len();
+		&self.segment_values[(index * l)..(index * l + l)]
+	}
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub enum Value {
+	Index(NonZeroU32),
+	Percent(f32),
+}
+
+impl std::fmt::Display for Value {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			Value::Index(v) => write!(f, "{}", v),
+			Value::Percent(v) => write!(f, "{:.3}%", v),
+		}
 	}
 }

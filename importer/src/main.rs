@@ -59,6 +59,9 @@ fn import() -> Result<(), ImporterError> {
 		.pick_folder()
 		.ok_or(ImporterError::NoOutputFolder)?;
 
+	// create writer early to check if the folder is empty
+	let writer = Writer::new(output)?;
+
 	spinner.reset();
 	spinner.tick();
 	spinner.set_prefix("Unpacking:");
@@ -125,14 +128,14 @@ fn import() -> Result<(), ImporterError> {
 	progress.enable_steady_tick(Duration::from_micros(100));
 
 	let mut cache = Cache::new();
-	let mut writer = Writer::new(output)?;
 	let mut tree = Tree::new(
-		&mut writer,
 		(min - pos).map(|v| v as f32),
 		diff[X].max(diff[Y]).max(diff[Z]) as f32,
 	);
 
 	let (sender, reciever) = crossbeam::channel::bounded(2048);
+	let segment_properties = ["segment", "random"];
+	let mut segment_values = Vec::with_capacity(segment_properties.len() * segments.len());
 	rayon::join(
 		|| {
 			for (index, segment) in segments.into_iter().enumerate() {
@@ -141,13 +144,15 @@ fn import() -> Result<(), ImporterError> {
 				for point in points {
 					sender.send((point, segment)).unwrap();
 				}
+				segment_values.push(common::Value::Index(segment));
+				segment_values.push(common::Value::Percent(rand::random()));
 			}
 			drop(sender);
 		},
 		|| {
 			let mut counter = 0;
 			for (point, segment) in reciever {
-				tree.insert(point, segment, &mut writer, &mut cache);
+				tree.insert(point, segment, &mut cache);
 				counter += 1;
 				if counter >= IMPORT_PROGRESS_SCALE {
 					progress.inc(1);
@@ -171,13 +176,19 @@ fn import() -> Result<(), ImporterError> {
 		writer.setup_property(property);
 	}
 
-	let (tree, project) = tree.flatten(&properties, input.display().to_string(), cache);
+	let (tree, project) = tree.flatten(
+		&properties,
+		&segment_properties,
+		segment_values,
+		input.display().to_string(),
+		cache,
+	);
 	writer.save_project(&project);
 	spinner.disable_steady_tick();
 	spinner.finish();
 	println!();
 
-	tree.save(&writer, &project, progress);
+	tree.save(&writer, progress);
 
 	Ok(())
 }
