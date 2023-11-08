@@ -26,7 +26,7 @@ pub struct Game {
 	paused: bool,
 
 	ui: render::UI<'static>,
-	eye_dome: render::EyeDome,
+	// eye_dome: render::EyeDome,
 	eye_dome_active: bool,
 	interface: Interface,
 }
@@ -44,18 +44,18 @@ impl Game {
 			&project.properties[0],
 		);
 
-		let eye_dome = render::EyeDome::new(state, window.config(), window.depth_texture(), 0.002);
+		// let eye_dome = render::EyeDome::new(state, window.config(), window.depth_texture(), 0.002);
 		let ui = render::UI::new(
 			state,
 			window.config(),
 			include_bytes!("../assets/Urbanist-Bold.ttf"),
 		);
 		let mut interface = Interface::new(state);
-		interface.update_eye_dome_settings(eye_dome.strength);
+		// interface.update_eye_dome_settings(eye_dome.strength);
 
 		Self {
 			ui,
-			eye_dome,
+			// eye_dome,
 			eye_dome_active: true,
 			interface,
 			paused: false,
@@ -152,11 +152,11 @@ impl Game {
 				self.window.request_redraw();
 			},
 			InterfaceAction::EyeDomeStrength(change) => {
-				self.eye_dome.strength *= 1.0 + change * 0.1;
-				self.eye_dome.update_settings(self.state);
-				self.interface
-					.update_eye_dome_settings(self.eye_dome.strength);
-				self.window.request_redraw();
+				// self.eye_dome.strength *= 1.0 + change * 0.1;
+				// self.eye_dome.update_settings(self.state);
+				// self.interface
+				// 	.update_eye_dome_settings(self.eye_dome.strength);
+				// self.window.request_redraw();
 			},
 			InterfaceAction::SliceChange => {
 				let (slice_min, slice_max) = self.interface.slice_bounds();
@@ -219,16 +219,13 @@ impl render::Entry for Game {
 			return render::ControlFlow::Wait;
 		}
 		self.window.resized(self.state);
-		self.tree.camera.cam.aspect = self.window.get_aspect();
-		self.tree.camera.gpu = render::Camera3DGPU::new(
-			self.state,
-			&self.tree.camera.cam,
-			&self.tree.camera.transform,
-		);
+		self.tree
+			.camera
+			.update_aspect(self.window.get_aspect(), self.state);
 		self.request_redraw();
 		self.ui.resize(self.state, self.window.config());
-		self.eye_dome
-			.update_depth(self.state, self.window.depth_texture());
+		// self.eye_dome
+		// .update_depth(self.state, self.window.depth_texture());
 
 		self.interface
 			.resize(self.ui.get_scale(), self.window.get_size());
@@ -351,22 +348,22 @@ impl render::Entry for Game {
 }
 
 impl render::RenderEntry for Game {
-	fn render<'a>(&'a self, render_pass: &mut render::RenderPass<'a>) {
+	fn render<'a>(&'a self, render_pass: &mut render::RenderPass<'a>, right: bool) {
+		let cam = if right {
+			&self.tree.camera.gpu_right
+		} else {
+			&self.tree.camera.gpu_left
+		};
 		render_pass.render(
 			&self.tree,
-			(
-				self.state,
-				&self.tree.camera.gpu,
-				&self.tree.lookup,
-				&self.tree.environment,
-			),
+			(self.state, cam, &self.tree.lookup, &self.tree.environment),
 		);
 	}
 
 	fn post_process<'a>(&'a self, render_pass: &mut render::RenderPass<'a>) {
-		if self.eye_dome_active {
-			render_pass.render(&self.eye_dome, ());
-		}
+		// if self.eye_dome_active {
+		// 	render_pass.render(&self.eye_dome, ());
+		// }
 		render_pass.render(&self.interface, (&self.ui, self.state));
 	}
 }

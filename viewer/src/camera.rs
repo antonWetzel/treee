@@ -11,8 +11,9 @@ const BASE_ROTATE_SPEED: f32 = 0.002;
 const FIELD_OF_VIEW: f32 = 45.0;
 
 pub struct Camera {
-	pub gpu: render::Camera3DGPU,
-	pub cam: render::Camera3D,
+	pub gpu_right: render::Camera3DGPU,
+	pub gpu_left: render::Camera3DGPU,
+	cam: render::Camera3D,
 	pub transform: Transform<3, f32>,
 	controller: Controller,
 	pub lod: lod::Mode,
@@ -26,7 +27,8 @@ impl Camera {
 		let transform = Transform::translation(position);
 
 		Self {
-			gpu: render::Camera3DGPU::new(state, &camera, &transform),
+			gpu_right: render::Camera3DGPU::new(state, &camera, &transform),
+			gpu_left: Self::left_camera(state, &camera, transform),
 			transform,
 			cam: camera,
 			controller,
@@ -34,19 +36,30 @@ impl Camera {
 		}
 	}
 
+	pub fn left_camera(state: &State, camera: &render::Camera3D, transform: Transform<3, f32>) -> render::Camera3DGPU {
+		render::Camera3DGPU::new(
+			state,
+			camera,
+			&(transform * Transform::translation([0.065, 0.0, 0.0].into())),
+		)
+	}
+
 	pub fn movement(&mut self, direction: Vector<2, f32>, state: &State) {
 		self.controller.movement(direction, &mut self.transform);
-		self.gpu = render::Camera3DGPU::new(state, &self.cam, &self.transform);
+		self.gpu_right = render::Camera3DGPU::new(state, &self.cam, &self.transform);
+		self.gpu_left = Self::left_camera(state, &self.cam, self.transform);
 	}
 
 	pub fn rotate(&mut self, delta: Vector<2, f32>, state: &State) {
 		self.controller.rotate(delta, &mut self.transform);
-		self.gpu = render::Camera3DGPU::new(state, &self.cam, &self.transform);
+		self.gpu_right = render::Camera3DGPU::new(state, &self.cam, &self.transform);
+		self.gpu_left = Self::left_camera(state, &self.cam, self.transform);
 	}
 
 	pub fn scroll(&mut self, value: f32, state: &State) {
 		self.controller.scroll(value, &mut self.transform);
-		self.gpu = render::Camera3DGPU::new(state, &self.cam, &self.transform);
+		self.gpu_right = render::Camera3DGPU::new(state, &self.cam, &self.transform);
+		self.gpu_left = Self::left_camera(state, &self.cam, self.transform);
 	}
 
 	pub fn position(&self) -> Vector<3, f32> {
@@ -123,6 +136,12 @@ impl Camera {
 			}
 		}
 		false
+	}
+
+	pub fn update_aspect(&mut self, aspect: f32, state: &State) {
+		self.cam.aspect = aspect / 2.0;
+		self.gpu_right = render::Camera3DGPU::new(state, &self.cam, &self.transform);
+		self.gpu_left = Self::left_camera(state, &self.cam, self.transform);
 	}
 }
 

@@ -27,7 +27,7 @@ pub use vertex_2d::*;
 pub use window::*;
 
 pub trait RenderEntry {
-	fn render<'a>(&'a self, render_pass: &mut RenderPass<'a>);
+	fn render<'a>(&'a self, render_pass: &mut RenderPass<'a>, right: bool);
 
 	fn post_process<'a>(&'a self, render_pass: &mut RenderPass<'a>);
 }
