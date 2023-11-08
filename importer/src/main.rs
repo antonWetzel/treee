@@ -85,7 +85,7 @@ fn import() -> Result<(), ImporterError> {
 	progress.set_prefix("Import:");
 	progress.inc(0);
 
-	let mut segmenter = Segmenter::new(0.0);
+	let mut segmenter = Segmenter::new();
 
 	let (sender, reciever) = crossbeam::channel::bounded(2048);
 	rayon::join(
@@ -134,18 +134,19 @@ fn import() -> Result<(), ImporterError> {
 	);
 
 	let (sender, reciever) = crossbeam::channel::bounded(2048);
-	let segment_properties = ["segment", "random"];
+	let segment_properties = ["segment", "trunk", "crown"];
 	let mut segment_values = Vec::with_capacity(segment_properties.len() * segments.len());
 	rayon::join(
 		|| {
 			for (index, segment) in segments.into_iter().enumerate() {
-				let points = calculations::calculate(segment.points());
+				let (points, information) = calculations::calculate(segment.points());
 				let segment = NonZeroU32::new(index as u32 + 1).unwrap();
 				for point in points {
 					sender.send((point, segment)).unwrap();
 				}
 				segment_values.push(common::Value::Index(segment));
-				segment_values.push(common::Value::Percent(rand::random()));
+				segment_values.push(information.trunk_height);
+				segment_values.push(information.crown_height);
 			}
 			drop(sender);
 		},

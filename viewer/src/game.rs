@@ -1,4 +1,4 @@
-use std::{num::NonZeroU32, path::PathBuf};
+use std::path::PathBuf;
 
 use common::Project;
 use math::{Vector, X, Y};

@@ -225,7 +225,7 @@ impl Interface {
 		self.statistics.position[X] = 110.0 * scale;
 		self.statistics.font_size = 25.0 * scale;
 		self.segment_info.font_size = 25.0 * scale;
-		self.segment_info.position[X] = size[X] - 200.0 * scale;
+		self.segment_info.position[X] = size[X] - 400.0 * scale;
 	}
 
 	pub fn update_fps(&mut self, fps: f64) {

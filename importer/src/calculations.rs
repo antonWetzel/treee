@@ -5,6 +5,11 @@ use crate::point::Point;
 
 pub const MAX_NEIGHBORS: usize = 64 - 1;
 
+pub struct SegmentInformation {
+	pub trunk_height: common::Value,
+	pub crown_height: common::Value,
+}
+
 fn edge_adjust_factor(direction: f32) -> f32 {
 	// approximate in the range [0, 1] the inverse function of sin(pi*x^2) / (pi*x^2)
 	const LINEAR_WEIGHT: f32 = 0.44876004;
@@ -35,7 +40,7 @@ fn size(neighbors: &[(f32, usize)], points: &[Vector<3, f32>]) -> f32 {
 	(1.0 / 3.0) * mean * edge_adjust_factor(direction_value)
 }
 
-pub fn calculate(data: Vec<Vector<3, f32>>) -> Vec<Point> {
+pub fn calculate(data: Vec<Vector<3, f32>>) -> (Vec<Point>, SegmentInformation) {
 	let neighbors = Neighbors::new(&data);
 
 	let (min, max) = {
@@ -50,11 +55,12 @@ pub fn calculate(data: Vec<Vector<3, f32>>) -> Vec<Point> {
 		}
 		(min, max)
 	};
+	let height = max - min;
 
-	let (slices, slice_width) = {
+	let (slices, slice_width, trunk_crown_sep) = {
 		let slice_width = 0.05;
 
-		let slices = ((max - min) / slice_width).ceil() as usize;
+		let slices = (height / slice_width).ceil() as usize;
 		let mut means = vec![(Vector::new([0.0, 0.0]), 0); slices];
 		for pos in data.iter().copied() {
 			let idx = ((pos[Y] - min) / slice_width) as usize;
@@ -78,9 +84,18 @@ pub fn calculate(data: Vec<Vector<3, f32>>) -> Vec<Point> {
 		}
 		let mut mapped = vec![0; slices];
 		for i in 0..variance.len() {
-			mapped[i] = map_to_u32(variance[i] / max_var)
+			let percent = variance[i] / max_var;
+			mapped[i] = map_to_u32(percent);
 		}
-		(mapped, slice_width)
+
+		let sep = mapped
+			.iter()
+			.enumerate()
+			.find(|&(_, &v)| v > u32::MAX / 3)
+			.map(|(index, _)| index)
+			.unwrap_or(0);
+
+		(mapped, slice_width, min + slice_width * sep as f32)
 	};
 
 	let sub_step = u32::MAX / data.len() as u32;
@@ -141,7 +156,21 @@ pub fn calculate(data: Vec<Vector<3, f32>>) -> Vec<Point> {
 		}
 	}
 
-	res
+	let trunk_heigth = trunk_crown_sep - min;
+	let crown_heigth = max - trunk_crown_sep;
+	(
+		res,
+		SegmentInformation {
+			trunk_height: common::Value::RelativeHeight {
+				absolute: trunk_heigth,
+				percent: trunk_heigth / height,
+			},
+			crown_height: common::Value::RelativeHeight {
+				absolute: crown_heigth,
+				percent: crown_heigth / height,
+			},
+		},
+	)
 }
 
 struct Adapter;

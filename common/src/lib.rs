@@ -59,6 +59,7 @@ impl Project {
 pub enum Value {
 	Index(NonZeroU32),
 	Percent(f32),
+	RelativeHeight { absolute: f32, percent: f32 },
 }
 
 impl std::fmt::Display for Value {
@@ -66,6 +67,7 @@ impl std::fmt::Display for Value {
 		match self {
 			Value::Index(v) => write!(f, "{}", v),
 			Value::Percent(v) => write!(f, "{:.3}%", v),
+			Value::RelativeHeight { absolute, percent } => write!(f, "{:.2}m ({:.3}%)", absolute, percent),
 		}
 	}
 }
