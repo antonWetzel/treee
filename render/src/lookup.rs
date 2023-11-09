@@ -10,7 +10,7 @@ pub struct Lookup {
 impl Lookup {
 	pub fn new_png(state: &impl Has<State>, data: &[u8]) -> Self {
 		let state: &State = state.get();
-		let texture = Texture::new(state, data, wgpu::TextureDimension::D1);
+		let texture = Texture::new_1d(state, data);
 		assert!(texture.size[X].is_power_of_two());
 		assert_eq!(texture.size[Y], 1);
 

@@ -10,7 +10,15 @@ pub struct Texture {
 pub type TextureDimension = wgpu::TextureDimension;
 
 impl Texture {
-	pub fn new(state: &impl Has<State>, data: &[u8], dimension: TextureDimension) -> Self {
+	pub fn new(state: &impl Has<State>, data: &[u8]) -> Self {
+		Self::new_xd(state, data, wgpu::TextureDimension::D2)
+	}
+
+	pub fn new_1d(state: &impl Has<State>, data: &[u8]) -> Self {
+		Self::new_xd(state, data, wgpu::TextureDimension::D1)
+	}
+
+	fn new_xd(state: &impl Has<State>, data: &[u8], dimension: TextureDimension) -> Self {
 		let img = image::load_from_memory(data).unwrap();
 		let dimensions = img.dimensions();
 

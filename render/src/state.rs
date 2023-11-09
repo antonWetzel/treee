@@ -79,7 +79,7 @@ impl Runner {
 	pub fn run<T: Entry>(mut self, game: &mut T) -> i32 {
 		self.event_loop
 			.run_return(|event, _event_loop, control_flow| {
-				*control_flow = match event {
+				match event {
 					winit::event::Event::WindowEvent { ref event, window_id } => match event {
 						winit::event::WindowEvent::CloseRequested => game.close_window(window_id),
 						winit::event::WindowEvent::Resized(size) => {
@@ -109,17 +109,16 @@ impl Runner {
 						},
 						&winit::event::WindowEvent::ModifiersChanged(modifiers) => {
 							game.modifiers_changed(modifiers);
-							ControlFlow::Poll
 						},
-						_ => ControlFlow::Poll,
+						_ => {},
 					},
 					winit::event::Event::RedrawRequested(window_id) => {
 						game.render(window_id);
-						ControlFlow::Poll
 					},
 					winit::event::Event::MainEventsCleared => game.time(),
-					_ => ControlFlow::Poll,
+					_ => {},
 				}
+				*control_flow = game.control_flow();
 			})
 	}
 }

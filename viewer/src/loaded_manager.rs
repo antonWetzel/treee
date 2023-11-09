@@ -161,9 +161,10 @@ impl LoadedManager {
 		}
 	}
 
-	pub fn update(&mut self) -> usize {
+	pub fn update(&mut self) -> bool {
 		let mut todo_pointcloud = Vec::new();
 		let mut todo_property = Vec::new();
+		let mut change = false;
 		for response in self.reciever.try_iter() {
 			match response {
 				Response::PointCloud(index, data) => {
@@ -182,6 +183,7 @@ impl LoadedManager {
 				Response::RedoPointCloud(index) => todo_pointcloud.push(index),
 				Response::RedoProperty(index) => todo_property.push(index),
 			}
+			change = true;
 		}
 		for index in todo_pointcloud {
 			self.sender.send(WorkerTask::PointCloud(index)).unwrap();
@@ -189,7 +191,7 @@ impl LoadedManager {
 		for index in todo_property {
 			self.sender.send(WorkerTask::Property(index)).unwrap();
 		}
-		self.sender.len()
+		change
 	}
 }
 

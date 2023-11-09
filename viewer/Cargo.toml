@@ -11,6 +11,7 @@ render.workspace = true
 input.workspace = true
 math.workspace = true
 common.workspace = true
+ui.workspace = true
 pollster.workspace = true
 rfd.workspace = true
 crossbeam-channel.workspace = true

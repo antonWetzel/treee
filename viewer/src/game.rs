@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use common::Project;
 use math::{Vector, X, Y};
+use ui::Element;
 
 use crate::{
 	interface::{Interface, InterfaceAction},
@@ -29,6 +30,8 @@ pub struct Game {
 	eye_dome: render::EyeDome,
 	eye_dome_active: bool,
 	interface: Interface,
+
+	control_flow: render::ControlFlow,
 }
 
 impl Game {
@@ -50,8 +53,7 @@ impl Game {
 			window.config(),
 			include_bytes!("../assets/Urbanist-Bold.ttf"),
 		);
-		let mut interface = Interface::new(state);
-		interface.update_eye_dome_settings(eye_dome.strength);
+		let interface = Interface::new(state);
 
 		Self {
 			ui,
@@ -71,6 +73,8 @@ impl Game {
 			mouse_start: None,
 			keyboard: input::Keyboard::new(),
 			time: Time::new(),
+
+			control_flow: render::ControlFlow::Wait,
 		}
 	}
 
@@ -121,11 +125,13 @@ impl Game {
 		self.request_redraw();
 	}
 
-	fn handle_interface_action(&mut self, action: InterfaceAction) -> render::ControlFlow {
+	fn handle_interface_action(&mut self, action: Option<InterfaceAction>) {
+		let Some(action) = action else {
+			return;
+		};
 		match action {
-			InterfaceAction::Close => return render::ControlFlow::Exit,
-			InterfaceAction::Nothing => {},
-			InterfaceAction::ReDraw => self.request_redraw(),
+			InterfaceAction::Close => self.control_flow = render::ControlFlow::Exit,
+			InterfaceAction::UpdateInterface | InterfaceAction::Slice => self.request_redraw(),
 			InterfaceAction::Open => self.change_project(),
 			InterfaceAction::ColorPalette => {
 				self.tree.next_lookup(self.state);
@@ -154,23 +160,22 @@ impl Game {
 			InterfaceAction::EyeDomeStrength(change) => {
 				self.eye_dome.strength *= 1.0 + change * 0.1;
 				self.eye_dome.update_settings(self.state);
-				self.interface
-					.update_eye_dome_settings(self.eye_dome.strength);
+				// self.interface
+				// 	.update_eye_dome_settings(self.eye_dome.strength);
 				self.window.request_redraw();
 			},
 			InterfaceAction::SliceChange => {
-				let (slice_min, slice_max) = self.interface.slice_bounds();
-				self.tree.environment = render::PointCloudEnvironment::new(self.state, slice_min, slice_max);
+				// let (slice_min, slice_max) = self.interface.slice_bounds();
+				// self.tree.environment = render::PointCloudEnvironment::new(self.state, slice_min, slice_max);
 				self.window.request_redraw();
 			},
 
 			InterfaceAction::SegmentReset => {
 				self.tree.segment = None;
-				self.interface.disable_segment_info();
+				// self.interface.disable_segment_info();
 				self.window.request_redraw();
 			},
 		}
-		render::ControlFlow::Wait
 	}
 
 	fn raycast(&mut self) {
@@ -184,10 +189,10 @@ impl Game {
 			.ray_direction(self.mouse.position(), self.window.get_size());
 		if let Some(segment) = self.tree.raycast(start, direction) {
 			self.tree.segment = Some(segment);
-			self.interface.enable_segment_info(
-				&self.project.segment_properties,
-				self.project.get_segment_values(segment.get() as usize - 1),
-			);
+			// self.interface.enable_segment_info(
+			// 	&self.project.segment_properties,
+			// 	self.project.get_segment_values(segment.get() as usize - 1),
+			// );
 			self.request_redraw();
 		}
 	}
@@ -198,7 +203,6 @@ impl render::Entry for Game {
 		if self.paused {
 			return;
 		}
-		let start = std::time::Instant::now();
 		self.tree.root.update(
 			lod::Checker::new(&self.tree.camera.lod),
 			&self.tree.camera,
@@ -209,14 +213,12 @@ impl render::Entry for Game {
 		self.ui.queue(self.state, &self.interface);
 
 		self.window.render(self.state, self);
-		let end = std::time::Instant::now();
-		self.interface.update_fps(1.0 / (end - start).as_secs_f64());
 	}
 
-	fn resize_window(&mut self, _window_id: render::WindowId, size: Vector<2, u32>) -> render::ControlFlow {
+	fn resize_window(&mut self, _window_id: render::WindowId, size: Vector<2, u32>) {
 		self.paused = size[X] == 0 || size[Y] == 0;
 		if self.paused {
-			return render::ControlFlow::Wait;
+			return;
 		}
 		self.window.resized(self.state);
 		self.tree.camera.cam.aspect = self.window.get_aspect();
@@ -230,16 +232,20 @@ impl render::Entry for Game {
 		self.eye_dome
 			.update_depth(self.state, self.window.depth_texture());
 
-		self.interface
-			.resize(self.ui.get_scale(), self.window.get_size());
-		render::ControlFlow::Wait
+		self.interface.resize(
+			self.state,
+			ui::Rect {
+				position: Vector::default(),
+				size: self.window.get_size(),
+			},
+		);
 	}
 
-	fn close_window(&mut self, _window_id: render::WindowId) -> render::ControlFlow {
-		render::ControlFlow::Exit
+	fn close_window(&mut self, _window_id: render::WindowId) {
+		self.control_flow = render::ControlFlow::Exit
 	}
 
-	fn time(&mut self) -> render::ControlFlow {
+	fn time(&mut self) {
 		let delta = self.time.elapsed();
 		let mut direction: Vector<2, f32> = [0.0, 0.0].into();
 		if self.keyboard.pressed(input::KeyCode::D) || self.keyboard.pressed(input::KeyCode::Right) {
@@ -261,42 +267,24 @@ impl render::Entry for Game {
 			self.request_redraw();
 		}
 
-		let workload = self.tree.loaded_manager.update();
-		if self.interface.update_workload(workload) {
+		if self.tree.loaded_manager.update() {
 			self.window.request_redraw();
 		}
 
 		self.check_reload();
-
-		render::ControlFlow::Wait
 	}
 
-	fn key_changed(
-		&mut self,
-		_window_id: render::WindowId,
-		key: input::KeyCode,
-		key_state: input::State,
-	) -> render::ControlFlow {
+	fn key_changed(&mut self, _window_id: render::WindowId, key: input::KeyCode, key_state: input::State) {
 		self.keyboard.update(key, key_state);
-		render::ControlFlow::Wait
 	}
 
 	fn modifiers_changed(&mut self, modifiers: input::Modifiers) {
 		self.keyboard.update_modifiers(modifiers);
 	}
 
-	fn mouse_wheel(&mut self, delta: f32) -> render::ControlFlow {
-		let action = self
-			.interface
-			.scrolled(self.mouse.position() / self.ui.get_scale(), delta);
-
-		if action == InterfaceAction::Nothing {
-			self.tree.camera.scroll(delta, self.state);
-			self.request_redraw();
-			render::ControlFlow::Wait
-		} else {
-			self.handle_interface_action(action)
-		}
+	fn mouse_wheel(&mut self, delta: f32) {
+		self.tree.camera.scroll(delta, self.state);
+		self.request_redraw();
 	}
 
 	fn mouse_button_changed(
@@ -304,18 +292,16 @@ impl render::Entry for Game {
 		_window_id: render::WindowId,
 		button: input::MouseButton,
 		button_state: input::State,
-	) -> render::ControlFlow {
+	) {
 		self.mouse.update(button, button_state);
 		match (button, button_state) {
 			(input::MouseButton::Left, input::State::Pressed) => {
-				let action = self
-					.interface
-					.clicked(self.mouse.position() / self.ui.get_scale());
-				if action == InterfaceAction::Nothing {
-					self.mouse_start = Some(self.mouse.position());
-				} else {
-					self.mouse_start = None;
-				}
+				let action = self.interface.click(self.mouse.position());
+				// if action == InterfaceAction::Nothing {
+				// 	self.mouse_start = Some(self.mouse.position());
+				// } else {
+				// 	self.mouse_start = None;
+				// }
 				self.handle_interface_action(action)
 			},
 			(input::MouseButton::Left, input::State::Released) => {
@@ -325,28 +311,32 @@ impl render::Entry for Game {
 						self.raycast();
 					}
 				}
-				render::ControlFlow::Wait
 			},
-			_ => render::ControlFlow::Wait,
+			_ => {},
 		}
 	}
 
-	fn mouse_moved(&mut self, _window_id: render::WindowId, position: Vector<2, f32>) -> render::ControlFlow {
+	fn mouse_moved(&mut self, _window_id: render::WindowId, position: Vector<2, f32>) {
 		let delta = self.mouse.delta(position);
 		let ui_position = position / self.ui.get_scale();
+		let action = self.interface.hover(position);
+		self.handle_interface_action(action);
+
 		if self.mouse.pressed(input::MouseButton::Left) {
-			if self.interface.should_drag(ui_position) {
-				let action = self.interface.drag(ui_position, self.state);
-				self.handle_interface_action(action)
-			} else {
-				self.tree.camera.rotate(delta, self.state);
-				self.request_redraw();
-				render::ControlFlow::Wait
-			}
+			// if let Some(action) = self.interface.drag(ui_position, self.state) {
+			// 	self.handle_interface_action(Some(action))
+			// } else {
+			self.tree.camera.rotate(delta, self.state);
+			self.request_redraw();
+		// }
 		} else {
 			let action = self.interface.hover(ui_position);
 			self.handle_interface_action(action)
 		}
+	}
+
+	fn control_flow(&self) -> render::ControlFlow {
+		self.control_flow
 	}
 }
 

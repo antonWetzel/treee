@@ -1,3 +1,4 @@
+use crate::{Has, Render, RenderPass, State, Texture, Vertex2D};
 use math::{Transform, Vector, X, Y};
 use wgpu::{util::DeviceExt, SurfaceConfiguration};
 use wgpu_text::{
@@ -77,9 +78,11 @@ impl UIState {
 
 		Self { sampler, pipeline, height }
 	}
-}
 
-use crate::{Has, Render, RenderPass, State, Texture, Vertex2D};
+	pub fn sampler(&self) -> &wgpu::Sampler {
+		&self.sampler
+	}
+}
 
 pub struct UI<'a> {
 	brush: TextBrush<FontRef<'a>>,
@@ -121,7 +124,7 @@ impl<'a> UI<'a> {
 		self.scale
 	}
 
-	pub fn queue(&mut self, state: &impl Has<State>, target: &impl UICollect) {
+	pub fn queue(&mut self, state: &impl Has<State>, target: &impl UIElement) {
 		let state = state.get();
 		let mut collector = UICollector { data: Vec::new() };
 		target.collect(&mut collector);
@@ -182,8 +185,33 @@ impl<'a> UI<'a> {
 	}
 }
 
-pub trait UICollect {
-	fn collect<'a>(&'a self, collector: &mut UICollector<'a>);
+#[repr(transparent)]
+pub struct UIPass<'a>(RenderPass<'a>);
+
+impl<'a> UIPass<'a> {
+	pub fn render(&mut self, value: &'a impl UIElement) {
+		value.render(self);
+	}
+}
+
+pub trait UIElement {
+	fn render<'a>(&'a self, ui_pass: &mut UIPass<'a>);
+	#[allow(unused)]
+	fn collect<'a>(&'a self, collector: &mut UICollector<'a>) {}
+}
+
+impl<'a, T, S: Has<UIState>> Render<'a, (&'a UI<'a>, &'a S)> for T
+where
+	T: UIElement,
+{
+	fn render(&'a self, render_pass: &mut RenderPass<'a>, data: (&'a UI<'a>, &'a S)) {
+		let (ui, state) = (data.0, data.1.get());
+		ui.brush.draw(render_pass);
+		render_pass.set_pipeline(&state.pipeline);
+		render_pass.set_bind_group(0, &ui.projection, &[]);
+		let ui_pass = unsafe { std::mem::transmute::<_, &mut UIPass<'a>>(render_pass) };
+		self.render(ui_pass);
+	}
 }
 
 pub struct UICollector<'a> {
@@ -191,7 +219,7 @@ pub struct UICollector<'a> {
 }
 
 impl<'a> UICollector<'a> {
-	pub fn add_element(&mut self, element: &'a UIElement) {
+	pub fn add_element(&mut self, element: &'a UIText) {
 		self.data.push(Section {
 			screen_position: (element.position[X], element.position[Y]),
 			text: element
@@ -208,13 +236,13 @@ impl<'a> UICollector<'a> {
 	}
 }
 
-pub struct UIElement {
+pub struct UIText {
 	pub position: Vector<2, f32>,
 	pub text: Vec<String>,
 	pub font_size: f32,
 }
 
-impl UIElement {
+impl UIText {
 	pub fn new(text: Vec<String>, position: Vector<2, f32>, font_size: f32) -> Self {
 		Self { text, position, font_size }
 	}
@@ -228,17 +256,23 @@ pub struct UIImage {
 impl UIImage {
 	pub fn new(
 		state: &(impl Has<State> + Has<UIState>),
-		texture: &Texture,
 		position: Vector<2, f32>,
 		size: Vector<2, f32>,
+		texture: &Texture,
 	) -> Self {
 		let (state, ui_state): (&State, &UIState) = (state.get(), state.get());
 
-		assert_eq!(
-			texture.size[X] / size[X] as u32,
-			texture.size[Y] / size[Y] as u32
-		);
+		Self {
+			buffer: Self::gpu_buffer(state, position, size),
+			bind_group: Self::gpu_bind_group(state, ui_state, texture),
+		}
+	}
 
+	pub fn update(&mut self, state: &(impl Has<State> + Has<UIState>), position: Vector<2, f32>, size: Vector<2, f32>) {
+		self.buffer = Self::gpu_buffer(state.get(), position, size);
+	}
+
+	fn gpu_buffer(state: &State, position: Vector<2, f32>, size: Vector<2, f32>) -> wgpu::Buffer {
 		let vertices = [
 			Vertex2D {
 				position: position.data(),
@@ -266,16 +300,18 @@ impl UIImage {
 			},
 		];
 
-		let buffer = state
+		state
 			.get()
 			.device
 			.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 				label: Some("Vertex Buffer"),
 				contents: bytemuck::cast_slice(&vertices[..]),
 				usage: wgpu::BufferUsages::VERTEX,
-			});
+			})
+	}
 
-		let bind_group = state.device.create_bind_group(&wgpu::BindGroupDescriptor {
+	fn gpu_bind_group(state: &State, ui_state: &UIState, texture: &Texture) -> wgpu::BindGroup {
+		state.device.create_bind_group(&wgpu::BindGroupDescriptor {
 			layout: &Self::get_layout(state),
 			entries: &[
 				wgpu::BindGroupEntry {
@@ -292,9 +328,7 @@ impl UIImage {
 				},
 			],
 			label: Some("diffuse_bind_group"),
-		});
-
-		Self { buffer, bind_group }
+		})
 	}
 
 	pub fn get_layout(state: &impl Has<State>) -> wgpu::BindGroupLayout {
@@ -325,37 +359,10 @@ impl UIImage {
 	}
 }
 
-impl UIRender for UIImage {
+impl UIElement for UIImage {
 	fn render<'a>(&'a self, ui_pass: &mut UIPass<'a>) {
 		ui_pass.0.set_vertex_buffer(0, self.buffer.slice(..));
 		ui_pass.0.set_bind_group(1, &self.bind_group, &[]);
 		ui_pass.0.draw(0..6, 0..1);
-	}
-}
-
-#[repr(transparent)]
-pub struct UIPass<'a>(RenderPass<'a>);
-
-impl<'a> UIPass<'a> {
-	pub fn render(&mut self, value: &'a impl UIRender) {
-		value.render(self);
-	}
-}
-
-pub trait UIRender {
-	fn render<'a>(&'a self, ui_pass: &mut UIPass<'a>);
-}
-
-impl<'a, T, S: Has<UIState>> Render<'a, (&'a UI<'a>, &'a S)> for T
-where
-	T: UIRender,
-{
-	fn render(&'a self, render_pass: &mut RenderPass<'a>, data: (&'a UI<'a>, &'a S)) {
-		let (ui, state) = (data.0, data.1.get());
-		ui.brush.draw(render_pass);
-		render_pass.set_pipeline(&state.pipeline);
-		render_pass.set_bind_group(0, &ui.projection, &[]);
-		let ui_pass = unsafe { std::mem::transmute::<_, &mut UIPass<'a>>(render_pass) };
-		self.render(ui_pass);
 	}
 }
