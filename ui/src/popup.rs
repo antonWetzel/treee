@@ -12,14 +12,14 @@ where
 	base: Base,
 	popup: Popup,
 	active: bool,
-	event: Base::Event,
+	event: fn() -> Base::Event,
 }
 
 impl<Base: Element, P: Element> Popup<Base, P>
 where
 	Base::Event: From<P::Event>,
 {
-	pub fn new(base: Base, popup: P, event: Base::Event) -> Self {
+	pub fn new(base: Base, popup: P, event: fn() -> Base::Event) -> Self {
 		Self { base, popup, active: false, event }
 	}
 }
@@ -53,9 +53,13 @@ where
 		self.base.inside(position) || self.active && self.popup.inside(position)
 	}
 
+	fn bounding_rect(&self) -> Rect {
+		self.base.bounding_rect().merge(self.popup.bounding_rect())
+	}
+
 	fn resize(&mut self, state: &(impl Has<render::State> + Has<render::UIState>), rect: Rect) {
 		self.base.resize(state, rect);
-		self.popup.resize(state, rect);
+		self.popup.resize(state, self.base.bounding_rect());
 	}
 
 	fn click(&mut self, position: Vector<2, f32>) -> Option<Self::Event> {
@@ -71,7 +75,7 @@ where
 	fn hover(&mut self, position: Vector<2, f32>) -> Option<Self::Event> {
 		if self.active != self.inside(position) {
 			self.active = self.active.not();
-			Some(self.event)
+			Some((self.event)())
 		} else {
 			None
 		}

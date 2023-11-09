@@ -130,7 +130,6 @@ impl Game {
 			return;
 		};
 		match action {
-			InterfaceAction::Close => self.control_flow = render::ControlFlow::Exit,
 			InterfaceAction::UpdateInterface | InterfaceAction::Slice => self.request_redraw(),
 			InterfaceAction::Open => self.change_project(),
 			InterfaceAction::ColorPalette => {
@@ -235,8 +234,8 @@ impl render::Entry for Game {
 		self.interface.resize(
 			self.state,
 			ui::Rect {
-				position: Vector::default(),
-				size: self.window.get_size(),
+				min: Vector::default(),
+				max: self.window.get_size(),
 			},
 		);
 	}
@@ -296,13 +295,12 @@ impl render::Entry for Game {
 		self.mouse.update(button, button_state);
 		match (button, button_state) {
 			(input::MouseButton::Left, input::State::Pressed) => {
-				let action = self.interface.click(self.mouse.position());
-				// if action == InterfaceAction::Nothing {
-				// 	self.mouse_start = Some(self.mouse.position());
-				// } else {
-				// 	self.mouse_start = None;
-				// }
-				self.handle_interface_action(action)
+				if let Some(action) = self.interface.click(self.mouse.position()) {
+					self.handle_interface_action(Some(action));
+					self.mouse_start = None;
+				} else {
+					self.mouse_start = Some(self.mouse.position());
+				}
 			},
 			(input::MouseButton::Left, input::State::Released) => {
 				if let Some(start) = self.mouse_start {
@@ -318,19 +316,14 @@ impl render::Entry for Game {
 
 	fn mouse_moved(&mut self, _window_id: render::WindowId, position: Vector<2, f32>) {
 		let delta = self.mouse.delta(position);
-		let ui_position = position / self.ui.get_scale();
 		let action = self.interface.hover(position);
 		self.handle_interface_action(action);
 
 		if self.mouse.pressed(input::MouseButton::Left) {
-			// if let Some(action) = self.interface.drag(ui_position, self.state) {
-			// 	self.handle_interface_action(Some(action))
-			// } else {
 			self.tree.camera.rotate(delta, self.state);
 			self.request_redraw();
-		// }
 		} else {
-			let action = self.interface.hover(ui_position);
+			let action = self.interface.hover(position);
 			self.handle_interface_action(action)
 		}
 	}

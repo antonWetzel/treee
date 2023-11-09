@@ -5,6 +5,7 @@ use render::Has;
 
 use crate::{Anchor, Element, Rect};
 
+/// todo: split into composable types
 pub struct Area<Base: Element> {
 	anchor: Anchor,
 	base: Base,
@@ -33,6 +34,10 @@ impl<Base: Element> Element for Area<Base> {
 		self.base.inside(position)
 	}
 
+	fn bounding_rect(&self) -> Rect {
+		self.base.bounding_rect()
+	}
+
 	fn click(&mut self, position: Vector<2, f32>) -> Option<Self::Event> {
 		if self.inside(position).not() {
 			return None;
@@ -40,18 +45,23 @@ impl<Base: Element> Element for Area<Base> {
 		self.base.click(position)
 	}
 
+	fn hover(&mut self, position: Vector<2, f32>) -> Option<Self::Event> {
+		self.base.hover(position)
+	}
+
 	fn resize(&mut self, state: &(impl Has<render::State> + Has<render::UIState>), rect: Rect) {
+		let size = rect.size();
 		self.base.resize(
 			state,
 			Rect {
-				position: [
-					self.anchor.position[X].map(rect.position[X], rect.size),
-					self.anchor.position[Y].map(rect.position[Y], rect.size),
+				min: [
+					self.anchor.min[X].map(rect.min[X], size),
+					self.anchor.min[Y].map(rect.min[Y], size),
 				]
 				.into(),
-				size: [
-					self.anchor.size[X].map(rect.position[X], rect.size),
-					self.anchor.size[Y].map(rect.position[Y], rect.size),
+				max: [
+					self.anchor.max[X].map(rect.min[X], size),
+					self.anchor.max[Y].map(rect.min[Y], size),
 				]
 				.into(),
 			},

@@ -28,7 +28,7 @@ impl State {
 	pub fn new(state: render::State) -> Self {
 		Self {
 			pointcloud: render::PointCloudState::new(&state),
-			ui: render::UIState::new(&state, 1080.0),
+			ui: render::UIState::new(&state),
 			state,
 		}
 	}

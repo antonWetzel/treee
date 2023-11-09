@@ -9,11 +9,10 @@ use wgpu_text::{
 pub struct UIState {
 	pipeline: wgpu::RenderPipeline,
 	sampler: wgpu::Sampler,
-	height: f32,
 }
 
 impl UIState {
-	pub fn new(state: &impl Has<State>, height: f32) -> Self {
+	pub fn new(state: &impl Has<State>) -> Self {
 		let state: &State = state.get();
 		let shader = state
 			.device
@@ -76,7 +75,7 @@ impl UIState {
 			..Default::default()
 		});
 
-		Self { sampler, pipeline, height }
+		Self { sampler, pipeline }
 	}
 
 	pub fn sampler(&self) -> &wgpu::Sampler {
@@ -87,41 +86,26 @@ impl UIState {
 pub struct UI<'a> {
 	brush: TextBrush<FontRef<'a>>,
 	projection: wgpu::BindGroup,
-	scale: f32,
 }
 
 impl<'a> UI<'a> {
-	pub fn new(state: &(impl Has<State> + Has<UIState>), config: &SurfaceConfiguration, font_bytes: &'a [u8]) -> Self {
-		let (render_state, ui_state): (&State, &UIState) = (state.get(), state.get());
+	pub fn new(state: &impl Has<State>, config: &SurfaceConfiguration, font_bytes: &'a [u8]) -> Self {
+		let state: &State = state.get();
 		let font = FontRef::try_from_slice(font_bytes).unwrap();
 
-		let brush = BrushBuilder::using_font(font).build(
-			&render_state.device,
-			config.width,
-			config.height,
-			config.format,
-		);
+		let brush = BrushBuilder::using_font(font).build(&state.device, config.width, config.height, config.format);
 
 		Self {
 			brush,
-			scale: config.height as f32 / ui_state.height,
 			projection: Self::create_projection(state, config),
 		}
 	}
 
-	pub fn resize(&mut self, state: &(impl Has<State> + Has<UIState>), config: &SurfaceConfiguration) {
-		let (render_state, ui_state): (&State, &UIState) = (state.get(), state.get());
-		self.brush.resize_view(
-			config.width as f32,
-			config.height as f32,
-			&render_state.queue,
-		);
-		self.scale = config.height as f32 / ui_state.height;
+	pub fn resize(&mut self, state: &impl Has<State>, config: &SurfaceConfiguration) {
+		let state: &State = state.get();
+		self.brush
+			.resize_view(config.width as f32, config.height as f32, &state.queue);
 		self.projection = Self::create_projection(state, config);
-	}
-
-	pub fn get_scale(&self) -> f32 {
-		self.scale
 	}
 
 	pub fn queue(&mut self, state: &impl Has<State>, target: &impl UIElement) {
@@ -133,16 +117,10 @@ impl<'a> UI<'a> {
 			.unwrap();
 	}
 
-	fn create_projection(state: &(impl Has<State> + Has<UIState>), config: &SurfaceConfiguration) -> wgpu::BindGroup {
-		let (state, ui_state): (&State, &UIState) = (state.get(), state.get());
+	fn create_projection(state: &impl Has<State>, config: &SurfaceConfiguration) -> wgpu::BindGroup {
+		let state: &State = state.get();
 		let projection: Transform<2, f32> = Transform::translation([-1.0, 1.0].into())
-			* Transform::scale(
-				[
-					1.0 * (config.height as f32 / config.width as f32) / ui_state.height * 2.0,
-					-1.0 / ui_state.height * 2.0,
-				]
-				.into(),
-			);
+			* Transform::scale([2.0 / config.width as f32, -2.0 / (config.height as f32)].into());
 		let projection_buffer = state
 			.get()
 			.device
