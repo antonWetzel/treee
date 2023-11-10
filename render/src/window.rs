@@ -1,4 +1,5 @@
 use math::Vector;
+use winit::platform::windows::WindowExtWindows;
 
 use super::*;
 
@@ -61,6 +62,7 @@ impl Window {
 	pub fn id(&self) -> WindowId {
 		self.window.id()
 	}
+
 	pub fn request_redraw(&self) {
 		self.window.request_redraw();
 	}
@@ -71,6 +73,19 @@ impl Window {
 
 	pub fn depth_texture(&self) -> &DepthTexture {
 		&self.depth_texture
+	}
+
+	pub fn set_window_icon(&self, png: &[u8]) {
+		let img = image::load_from_memory(png).unwrap();
+		let icon = winit::window::Icon::from_rgba(img.to_rgba8().into_vec(), img.width(), img.height()).unwrap();
+		self.window.set_window_icon(Some(icon));
+	}
+
+	#[cfg(target_os = "windows")]
+	pub fn set_taskbar_icon(&self, png: &[u8]) {
+		let img = image::load_from_memory(png).unwrap();
+		let icon = winit::window::Icon::from_rgba(img.to_rgba8().into_vec(), img.width(), img.height()).unwrap();
+		self.window.set_taskbar_icon(Some(icon));
 	}
 
 	pub fn resized(&mut self, state: &impl Has<State>) {

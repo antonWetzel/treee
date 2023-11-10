@@ -1,7 +1,6 @@
 use std::ops::Not;
 
 use math::Vector;
-use render::Has;
 
 use crate::{Element, Rect, State};
 

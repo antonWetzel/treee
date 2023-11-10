@@ -9,7 +9,6 @@ pub enum InterfaceAction {
 	ColorPalette,
 	Property,
 	Camera,
-	Slice,
 	LevelOfDetail,
 	LevelOfDetailChange(f32),
 	EyeDome,
@@ -30,8 +29,10 @@ type Image = ui::Image<InterfaceAction>;
 
 type UpDownButton = ui::Split<ui::Horizontal, ui::Button<Image>, ui::Button<Image>>;
 
-ui::List!(
+ui::Stack!(
 	type Event = InterfaceAction;
+
+	const DIRECTION = math::Y;
 
 	struct Left {
 		open: ui::RelHeight<ui::Button<Image>>,
@@ -67,6 +68,8 @@ impl Left {
 	pub fn new(state: &State) -> Self {
 		let up = render::Texture::new(state, include_bytes!("../assets/chevron-expand-top.png"));
 		let down = render::Texture::new(state, include_bytes!("../assets/chevron-expand-bottom.png"));
+		let dot = render::Texture::new(state, include_bytes!("../assets/dot.png"));
+
 		Self {
 			open: ui::RelHeight::square(ui::Button::new(
 				ui::Image::new(
@@ -169,15 +172,9 @@ impl Left {
 							state,
 							&render::Texture::new(state, include_bytes!("../assets/line.png")),
 						),
-						ui::Image::new(
-							state,
-							&render::Texture::new(state, include_bytes!("../assets/dot.png")),
-						),
-						ui::Image::new(
-							state,
-							&render::Texture::new(state, include_bytes!("../assets/dot.png")),
-						),
-						|lower, upper| InterfaceAction::SliceUpdate(lower, upper),
+						ui::Image::new(state, &dot),
+						ui::Image::new(state, &dot),
+						InterfaceAction::SliceUpdate,
 					),
 					ui::Anchor::new(
 						[ui::length!(w 1.0), ui::length!()].into(),

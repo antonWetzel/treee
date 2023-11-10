@@ -31,7 +31,7 @@ pub struct Game {
 	eye_dome_active: bool,
 	interface: Interface,
 
-	control_flow: render::ControlFlow,
+	quit: bool,
 }
 
 impl Game {
@@ -39,6 +39,13 @@ impl Game {
 		let project = Project::from_file(&path);
 
 		let window = render::Window::new(state, &runner.event_loop, &project.name);
+
+		window.set_window_icon(include_bytes!("../assets/tree-fill-small.png"));
+
+		if cfg!(windows) {
+			window.set_taskbar_icon(include_bytes!("../assets/tree-fill-big.png"));
+		}
+
 		let tree = Tree::new(
 			state,
 			&project,
@@ -74,7 +81,7 @@ impl Game {
 			keyboard: input::Keyboard::new(),
 			time: Time::new(),
 
-			control_flow: render::ControlFlow::Wait,
+			quit: false,
 		}
 	}
 
@@ -127,7 +134,7 @@ impl Game {
 
 	fn handle_interface_action(&mut self, action: InterfaceAction) {
 		match action {
-			InterfaceAction::UpdateInterface | InterfaceAction::Slice => self.request_redraw(),
+			InterfaceAction::UpdateInterface => self.request_redraw(),
 			InterfaceAction::Open => self.change_project(),
 			InterfaceAction::ColorPalette => {
 				self.tree.next_lookup(self.state);
@@ -242,7 +249,7 @@ impl render::Entry for Game {
 	}
 
 	fn close_window(&mut self, _window_id: render::WindowId) {
-		self.control_flow = render::ControlFlow::Exit
+		self.quit = true;
 	}
 
 	fn time(&mut self) {
@@ -352,7 +359,11 @@ impl render::Entry for Game {
 	}
 
 	fn control_flow(&self) -> render::ControlFlow {
-		self.control_flow
+		if self.quit {
+			render::ControlFlow::Exit
+		} else {
+			render::ControlFlow::WaitUntil(std::time::Instant::now() + std::time::Duration::from_millis(16))
+		}
 	}
 }
 

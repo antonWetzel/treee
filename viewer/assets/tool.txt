@@ -1,2 +1,4 @@
 gradients: https://doodad.dev/gradient-generator/
-icons: https://ionic.io/ionicons
+icons:
+	- https://ionic.io/ionicons
+	- https://icons.getbootstrap.com/

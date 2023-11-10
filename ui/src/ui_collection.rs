@@ -51,9 +51,11 @@ macro_rules! Collection {
 }
 
 #[macro_export]
-macro_rules! List {
+macro_rules! Stack {
 	(
-		type Event = $event:ident;
+		type Event = $event:ty;
+
+		const DIRECTION = $dir:expr;
 
 		$visibility:vis struct $name:ident {
 			$($m_visibility:vis $m_name:ident: $m_type:ty),* $(,)?
@@ -91,7 +93,7 @@ macro_rules! List {
 
 				$(
 					self.$m_name.resize(state, rect);
-					rect.min[math::Y] = self.$m_name.bounding_rect().max[math::Y];
+					rect.min[$dir] = self.$m_name.bounding_rect().max[$dir];
 				)*
 			}
 

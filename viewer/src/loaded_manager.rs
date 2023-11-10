@@ -28,8 +28,8 @@ enum WorkerTask {
 enum Response {
 	PointCloud(usize, render::PointCloud),
 	Property(usize, render::PointCloudProperty, usize),
-	RedoPointCloud(usize),
-	RedoProperty(usize),
+	FailedPointCloud(usize),
+	FailedProperty(usize),
 }
 
 enum WorkerUpdate {
@@ -81,7 +81,7 @@ impl LoadedManager {
 						if let Some(pc) = load_pointcloud(&path, state) {
 							let _ = pc_tx.send(Response::PointCloud(index, pc));
 						} else {
-							let _ = pc_tx.send(Response::RedoPointCloud(index));
+							let _ = pc_tx.send(Response::FailedPointCloud(index));
 						};
 					},
 					WorkerTask::Property(index) => {
@@ -89,7 +89,7 @@ impl LoadedManager {
 						if let Some(property) = load_property(&property_path, state) {
 							let _ = pc_tx.send(Response::Property(index, property, property_index));
 						} else {
-							let _ = pc_tx.send(Response::RedoProperty(index));
+							let _ = pc_tx.send(Response::FailedProperty(index));
 						};
 					},
 				}
@@ -162,8 +162,6 @@ impl LoadedManager {
 	}
 
 	pub fn update(&mut self) -> bool {
-		let mut todo_pointcloud = Vec::new();
-		let mut todo_property = Vec::new();
 		let mut change = false;
 		for response in self.reciever.try_iter() {
 			match response {
@@ -180,16 +178,16 @@ impl LoadedManager {
 						self.property_available.insert(index, property);
 					}
 				},
-				Response::RedoPointCloud(index) => todo_pointcloud.push(index),
-				Response::RedoProperty(index) => todo_property.push(index),
+				Response::FailedPointCloud(index) => {
+					self.requested.remove(&index);
+					self.available.remove(&index);
+				},
+				Response::FailedProperty(index) => {
+					self.property_requested.remove(&index);
+					self.property_available.remove(&index);
+				},
 			}
 			change = true;
-		}
-		for index in todo_pointcloud {
-			self.sender.send(WorkerTask::PointCloud(index)).unwrap();
-		}
-		for index in todo_property {
-			self.sender.send(WorkerTask::Property(index)).unwrap();
 		}
 		change
 	}

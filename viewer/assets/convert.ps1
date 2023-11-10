@@ -10,3 +10,5 @@ foreach ($file in $files) {
 }
 
 inkscape -h 256 line.svg -o line.png
+inkscape -h 256 tree-fill-bg.svg -o tree-fill-big.png
+inkscape -h 16 tree-fill-bg.svg -o tree-fill-small.png
