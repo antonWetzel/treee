@@ -125,10 +125,7 @@ impl Game {
 		self.request_redraw();
 	}
 
-	fn handle_interface_action(&mut self, action: Option<InterfaceAction>) {
-		let Some(action) = action else {
-			return;
-		};
+	fn handle_interface_action(&mut self, action: InterfaceAction) {
 		match action {
 			InterfaceAction::UpdateInterface | InterfaceAction::Slice => self.request_redraw(),
 			InterfaceAction::Open => self.change_project(),
@@ -163,9 +160,13 @@ impl Game {
 				// 	.update_eye_dome_settings(self.eye_dome.strength);
 				self.window.request_redraw();
 			},
-			InterfaceAction::SliceChange => {
-				// let (slice_min, slice_max) = self.interface.slice_bounds();
-				// self.tree.environment = render::PointCloudEnvironment::new(self.state, slice_min, slice_max);
+
+			InterfaceAction::SliceUpdate(min, max) => {
+				self.tree.environment = render::PointCloudEnvironment::new(
+					self.state,
+					(min * u32::MAX as f32) as u32,
+					(max * u32::MAX as f32) as u32,
+				);
 				self.window.request_redraw();
 			},
 
@@ -293,13 +294,28 @@ impl render::Entry for Game {
 		button_state: input::State,
 	) {
 		self.mouse.update(button, button_state);
+		if let Some(action) = self.interface.hover(
+			self.state,
+			self.mouse.position(),
+			self.mouse.pressed(input::MouseButton::Left),
+		) {
+			self.handle_interface_action(action);
+		}
+
 		match (button, button_state) {
 			(input::MouseButton::Left, input::State::Pressed) => {
-				if let Some(action) = self.interface.click(self.mouse.position()) {
-					self.handle_interface_action(Some(action));
+				if let Some(action) = self.interface.click(self.state, self.mouse.position()) {
+					self.handle_interface_action(action);
 					self.mouse_start = None;
 				} else {
 					self.mouse_start = Some(self.mouse.position());
+				}
+
+				if let Some(action) = self
+					.interface
+					.hover(self.state, self.mouse.position(), true)
+				{
+					self.handle_interface_action(action);
 				}
 			},
 			(input::MouseButton::Left, input::State::Released) => {
@@ -309,6 +325,13 @@ impl render::Entry for Game {
 						self.raycast();
 					}
 				}
+
+				if let Some(action) = self
+					.interface
+					.hover(self.state, self.mouse.position(), false)
+				{
+					self.handle_interface_action(action);
+				}
 			},
 			_ => {},
 		}
@@ -316,15 +339,15 @@ impl render::Entry for Game {
 
 	fn mouse_moved(&mut self, _window_id: render::WindowId, position: Vector<2, f32>) {
 		let delta = self.mouse.delta(position);
-		let action = self.interface.hover(position);
-		self.handle_interface_action(action);
-
-		if self.mouse.pressed(input::MouseButton::Left) {
+		if let Some(action) = self.interface.hover(
+			self.state,
+			position,
+			self.mouse.pressed(input::MouseButton::Left),
+		) {
+			self.handle_interface_action(action);
+		} else if self.mouse.pressed(input::MouseButton::Left) {
 			self.tree.camera.rotate(delta, self.state);
 			self.request_redraw();
-		} else {
-			let action = self.interface.hover(position);
-			self.handle_interface_action(action)
 		}
 	}
 

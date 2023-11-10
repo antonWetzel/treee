@@ -2,6 +2,7 @@ mod area;
 mod button;
 mod image;
 mod popup;
+mod slider;
 mod split;
 mod ui_collection;
 
@@ -9,6 +10,7 @@ pub use area::*;
 pub use button::*;
 pub use image::*;
 pub use popup::*;
+pub use slider::*;
 pub use split::*;
 
 use math::{Vector, X, Y};
@@ -45,21 +47,6 @@ impl Length {
 
 	pub fn map(&self, base: f32, size: Vector<2, f32>) -> f32 {
 		base + self.absolute + self.relative_width * size[X] + self.relative_height * size[Y]
-	}
-
-	pub fn abs(mut self, abs: f32) -> Self {
-		self.absolute += abs;
-		self
-	}
-
-	pub fn h(mut self, rel: f32) -> Self {
-		self.relative_height += rel;
-		self
-	}
-
-	pub fn w(mut self, rel: f32) -> Self {
-		self.relative_width += rel;
-		self
 	}
 }
 
@@ -152,7 +139,7 @@ impl<E> render::UIElement for Empty<E> {
 impl<E> Element for Empty<E> {
 	type Event = E;
 
-	fn resize(&mut self, _state: &(impl Has<render::State> + Has<render::UIState>), rect: Rect) {
+	fn resize(&mut self, _state: &impl State, rect: Rect) {
 		self.rect = rect
 	}
 
@@ -164,26 +151,29 @@ impl<E> Element for Empty<E> {
 		self.rect.inside(position)
 	}
 
-	fn click(&mut self, _position: Vector<2, f32>) -> Option<Self::Event> {
+	fn click(&mut self, _state: &impl State, _position: Vector<2, f32>) -> Option<Self::Event> {
 		None
 	}
 
-	fn hover(&mut self, _position: Vector<2, f32>) -> Option<Self::Event> {
+	fn hover(&mut self, _state: &impl State, _position: Vector<2, f32>, _pressed: bool) -> Option<Self::Event> {
 		None
 	}
 }
+
+pub trait State: Has<render::State> + Has<render::UIState> {}
+impl<T: Has<render::State> + Has<render::UIState>> State for T {}
 
 pub trait Element: render::UIElement {
 	type Event;
 
 	fn inside(&self, position: Vector<2, f32>) -> bool;
 
-	fn resize(&mut self, state: &(impl Has<render::State> + Has<render::UIState>), rect: Rect);
+	fn resize(&mut self, state: &impl State, rect: Rect);
 
 	fn bounding_rect(&self) -> Rect;
 
-	fn click(&mut self, position: Vector<2, f32>) -> Option<Self::Event>;
-	fn hover(&mut self, position: Vector<2, f32>) -> Option<Self::Event>;
+	fn click(&mut self, state: &impl State, position: Vector<2, f32>) -> Option<Self::Event>;
+	fn hover(&mut self, state: &impl State, position: Vector<2, f32>, pressed: bool) -> Option<Self::Event>;
 }
 
 pub struct RelHeight<Base: Element> {
@@ -217,15 +207,15 @@ impl<Base: Element> Element for RelHeight<Base> {
 	fn bounding_rect(&self) -> crate::Rect {
 		self.base.bounding_rect()
 	}
-	fn click(&mut self, position: math::Vector<2, f32>) -> Option<Self::Event> {
+	fn click(&mut self, state: &impl State, position: math::Vector<2, f32>) -> Option<Self::Event> {
 		if self.inside(position) {
-			return self.base.click(position);
+			return self.base.click(state, position);
 		}
 		None
 	}
 
-	fn hover(&mut self, position: math::Vector<2, f32>) -> Option<Self::Event> {
-		self.base.hover(position)
+	fn hover(&mut self, state: &impl State, position: math::Vector<2, f32>, pressed: bool) -> Option<Self::Event> {
+		self.base.hover(state, position, pressed)
 	}
 
 	fn inside(&self, position: math::Vector<2, f32>) -> bool {
@@ -235,4 +225,64 @@ impl<Base: Element> Element for RelHeight<Base> {
 		rect.max[Y] = rect.min[Y] + self.scale * (rect.max[X] - rect.min[X]);
 		self.base.resize(state, rect)
 	}
+}
+
+#[macro_export]
+macro_rules! length {
+	($abs:expr , w $w:expr , h $h:expr) => {
+		$crate::Length {
+			absolute: $abs,
+			relative_width: $w,
+			relative_height: $h,
+		}
+	};
+	($abs:expr , w $w:expr) => {
+		$crate::Length {
+			absolute: $abs,
+			relative_width: $w,
+			relative_height: 0.0,
+		}
+	};
+	($abs:expr , h $h:expr) => {
+		$crate::Length {
+			absolute: $abs,
+			relative_width: 0.0,
+			relative_height: $h,
+		}
+	};
+	(w $w:expr , h $h:expr) => {
+		$crate::Length {
+			absolute: 0.0,
+			relative_width: $w,
+			relative_height: $h,
+		}
+	};
+	($abs:expr) => {
+		$crate::Length {
+			absolute: $abs,
+			relative_width: 0.0,
+			relative_height: 0.0,
+		}
+	};
+	(w $w:expr) => {
+		$crate::Length {
+			absolute: 0.0,
+			relative_width: $w,
+			relative_height: 0.0,
+		}
+	};
+	(h $h:expr) => {
+		$crate::Length {
+			absolute: 0.0,
+			relative_width: 0.0,
+			relative_height: $h,
+		}
+	};
+	() => {
+		$crate::Length {
+			absolute: 0.0,
+			relative_width: 0.0,
+			relative_height: 0.0,
+		}
+	};
 }

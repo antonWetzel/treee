@@ -3,11 +3,11 @@ use std::ops::Not;
 use math::{Vector, X, Y};
 use render::Has;
 
-use crate::{Anchor, Element, Rect};
+use crate::{Anchor, Element, Rect, State};
 
 /// todo: split into composable types
 pub struct Area<Base: Element> {
-	anchor: Anchor,
+	pub anchor: Anchor,
 	base: Base,
 }
 
@@ -38,18 +38,18 @@ impl<Base: Element> Element for Area<Base> {
 		self.base.bounding_rect()
 	}
 
-	fn click(&mut self, position: Vector<2, f32>) -> Option<Self::Event> {
+	fn click(&mut self, state: &impl State, position: Vector<2, f32>) -> Option<Self::Event> {
 		if self.inside(position).not() {
 			return None;
 		}
-		self.base.click(position)
+		self.base.click(state, position)
 	}
 
-	fn hover(&mut self, position: Vector<2, f32>) -> Option<Self::Event> {
-		self.base.hover(position)
+	fn hover(&mut self, state: &impl State, position: Vector<2, f32>, pressed: bool) -> Option<Self::Event> {
+		self.base.hover(state, position, pressed)
 	}
 
-	fn resize(&mut self, state: &(impl Has<render::State> + Has<render::UIState>), rect: Rect) {
+	fn resize(&mut self, state: &impl State, rect: Rect) {
 		let size = rect.size();
 		self.base.resize(
 			state,

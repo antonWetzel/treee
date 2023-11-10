@@ -8,3 +8,5 @@ foreach ($file in $files) {
 	# inkscape -b white -h 64 $file -o $name
 	inkscape -w 256 $file -o $name
 }
+
+inkscape -h 256 line.svg -o line.png

@@ -3,7 +3,7 @@ use std::ops::Not;
 use math::Vector;
 use render::Has;
 
-use crate::{Element, Rect};
+use crate::{Element, Rect, State};
 
 pub struct Popup<Base: Element, Popup: Element>
 where
@@ -57,27 +57,41 @@ where
 		self.base.bounding_rect().merge(self.popup.bounding_rect())
 	}
 
-	fn resize(&mut self, state: &(impl Has<render::State> + Has<render::UIState>), rect: Rect) {
+	fn resize(&mut self, state: &impl State, rect: Rect) {
 		self.base.resize(state, rect);
 		self.popup.resize(state, self.base.bounding_rect());
 	}
 
-	fn click(&mut self, position: Vector<2, f32>) -> Option<Self::Event> {
+	fn click(&mut self, state: &impl State, position: Vector<2, f32>) -> Option<Self::Event> {
 		if self.base.inside(position) {
-			return self.base.click(position);
+			return self.base.click(state, position);
 		}
 		if self.active && self.popup.inside(position) {
-			return self.popup.click(position).map(|e| e.into());
+			return self.popup.click(state, position).map(|e| e.into());
 		}
 		None
 	}
 
-	fn hover(&mut self, position: Vector<2, f32>) -> Option<Self::Event> {
-		if self.active != self.inside(position) {
-			self.active = self.active.not();
-			Some((self.event)())
-		} else {
-			None
+	fn hover(&mut self, state: &impl State, position: Vector<2, f32>, pressed: bool) -> Option<Self::Event> {
+		if self.base.inside(position) {
+			if self.active {
+				return None;
+			}
+			if pressed.not() {
+				self.active = true;
+				return Some((self.event)());
+			}
+			return None;
 		}
+
+		if self.active {
+			if self.popup.inside(position) {
+				return self.popup.hover(state, position, pressed).map(|v| v.into());
+			} else {
+				self.active = false;
+				return Some((self.event)());
+			}
+		}
+		None
 	}
 }

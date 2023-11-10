@@ -14,7 +14,7 @@ pub enum InterfaceAction {
 	LevelOfDetailChange(f32),
 	EyeDome,
 	EyeDomeStrength(f32),
-	SliceChange,
+	SliceUpdate(f32, f32),
 	SegmentReset,
 }
 
@@ -26,23 +26,26 @@ ui::Collection!(
 	}
 );
 
-type UpDownButton =
-	ui::Split<ui::Horizontal, ui::Button<ui::Image<InterfaceAction>>, ui::Button<ui::Image<InterfaceAction>>>;
+type Image = ui::Image<InterfaceAction>;
+
+type UpDownButton = ui::Split<ui::Horizontal, ui::Button<Image>, ui::Button<Image>>;
 
 ui::List!(
 	type Event = InterfaceAction;
 
 	struct Left {
-		open: ui::RelHeight<ui::Button<ui::Image<InterfaceAction>>>,
-		color_palette: ui::RelHeight<ui::Button<ui::Image<InterfaceAction>>>,
-		property: ui::RelHeight<ui::Button<ui::Image<InterfaceAction>>>,
+		open: ui::RelHeight<ui::Button<Image>>,
+		color_palette: ui::RelHeight<ui::Button<Image>>,
+		property: ui::RelHeight<ui::Button<Image>>,
 
-		eye_dome: ui::Popup<ui::RelHeight<ui::Button<ui::Image<InterfaceAction>>>, ui::Area<UpDownButton>>,
+		eye_dome: ui::Popup<ui::RelHeight<ui::Button<Image>>, ui::Area<UpDownButton>>,
 
-		camera: ui::RelHeight<ui::Button<ui::Image<InterfaceAction>>>,
-		level_of_detail: ui::Popup<ui::RelHeight<ui::Button<ui::Image<InterfaceAction>>>, ui::Area<UpDownButton>>,
+		camera: ui::RelHeight<ui::Button<Image>>,
+		level_of_detail: ui::Popup<ui::RelHeight<ui::Button<Image>>, ui::Area<UpDownButton>>,
 
-		segment: ui::RelHeight<ui::Button<ui::Image<InterfaceAction>>>,
+		segment: ui::RelHeight<ui::Button<Image>>,
+
+		slice: ui::Popup<ui::RelHeight<ui::Button<Image>>, ui::Area<ui::DoubleSlider<Image, Image>>>,
 	}
 );
 
@@ -53,7 +56,7 @@ impl Interface {
 				Left::new(state),
 				ui::Anchor::new(
 					[ui::Length::new(), ui::Length::new()].into(),
-					[ui::Length::new().h(0.1), ui::Length::new().h(1.0)].into(),
+					[ui::length!(h 0.1), ui::length!(h 1.0)].into(),
 				),
 			),
 		}
@@ -104,8 +107,8 @@ impl Left {
 						}),
 					),
 					ui::Anchor::square(
-						[ui::Length::new().w(1.0), ui::Length::new()].into(),
-						ui::Length::new().h(1.0),
+						[ui::length!(w 1.0), ui::length!()].into(),
+						ui::length!(h 1.0),
 					),
 				),
 				|| InterfaceAction::UpdateInterface,
@@ -137,8 +140,8 @@ impl Left {
 						}),
 					),
 					ui::Anchor::square(
-						[ui::Length::new().w(1.0), ui::Length::new()].into(),
-						ui::Length::new().h(1.0),
+						[ui::length!(w 1.0), ui::length!()].into(),
+						ui::length!(h 1.0),
 					),
 				),
 				|| InterfaceAction::UpdateInterface,
@@ -151,6 +154,38 @@ impl Left {
 				),
 				|| InterfaceAction::SegmentReset,
 			)),
+
+			slice: ui::Popup::new(
+				ui::RelHeight::square(ui::Button::new(
+					ui::Image::new(
+						state,
+						&render::Texture::new(state, include_bytes!("../assets/sliders.png")),
+					),
+					|| InterfaceAction::UpdateInterface,
+				)),
+				ui::Area::new(
+					ui::DoubleSlider::new(
+						ui::Image::new(
+							state,
+							&render::Texture::new(state, include_bytes!("../assets/line.png")),
+						),
+						ui::Image::new(
+							state,
+							&render::Texture::new(state, include_bytes!("../assets/dot.png")),
+						),
+						ui::Image::new(
+							state,
+							&render::Texture::new(state, include_bytes!("../assets/dot.png")),
+						),
+						|lower, upper| InterfaceAction::SliceUpdate(lower, upper),
+					),
+					ui::Anchor::new(
+						[ui::length!(w 1.0), ui::length!()].into(),
+						[ui::length!(w 3.0), ui::length!(h 1.0)].into(),
+					),
+				),
+				|| InterfaceAction::UpdateInterface,
+			),
 		}
 	}
 }

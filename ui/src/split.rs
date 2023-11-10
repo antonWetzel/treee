@@ -1,6 +1,6 @@
 use math::{X, Y};
 
-use crate::{Element, Rect};
+use crate::{Element, Rect, State};
 
 pub trait Direction {
 	fn first(rect: Rect) -> Rect;
@@ -81,27 +81,30 @@ where
 			.merge(self.second.bounding_rect())
 	}
 
-	fn resize(&mut self, state: &(impl render::Has<render::State> + render::Has<render::UIState>), rect: crate::Rect) {
+	fn resize(&mut self, state: &impl State, rect: crate::Rect) {
 		self.first.resize(state, D::first(rect));
 		self.second.resize(state, D::second(rect));
 	}
 
-	fn hover(&mut self, position: math::Vector<2, f32>) -> Option<Self::Event> {
+	fn hover(&mut self, state: &impl State, position: math::Vector<2, f32>, pressed: bool) -> Option<Self::Event> {
 		if self.first.inside(position) {
-			return self.first.hover(position);
+			return self.first.hover(state, position, pressed);
 		}
 		if self.second.inside(position) {
-			return self.second.hover(position).map(|v| v.into());
+			return self
+				.second
+				.hover(state, position, pressed)
+				.map(|v| v.into());
 		}
 		None
 	}
 
-	fn click(&mut self, position: math::Vector<2, f32>) -> Option<Self::Event> {
+	fn click(&mut self, state: &impl State, position: math::Vector<2, f32>) -> Option<Self::Event> {
 		if self.first.inside(position) {
-			return self.first.click(position);
+			return self.first.click(state, position);
 		}
 		if self.second.inside(position) {
-			return self.second.click(position).map(|v| v.into());
+			return self.second.click(state, position).map(|v| v.into());
 		}
 		None
 	}

@@ -1,7 +1,7 @@
 use math::Vector;
 use render::Has;
 
-use crate::{Element, Rect};
+use crate::{Element, Rect, State};
 
 pub struct Image<Event> {
 	image: render::UIImage,
@@ -10,7 +10,7 @@ pub struct Image<Event> {
 }
 
 impl<Event> Image<Event> {
-	pub fn new(state: &(impl Has<render::State> + Has<render::UIState>), texture: &render::Texture) -> Self {
+	pub fn new(state: &impl State, texture: &render::Texture) -> Self {
 		let position = [0.0, 0.0].into();
 		let size = [16.0, 16.0].into();
 		Self {
@@ -38,15 +38,15 @@ impl<E> Element for Image<E> {
 		self.rect
 	}
 
-	fn click(&mut self, _position: Vector<2, f32>) -> Option<Self::Event> {
+	fn click(&mut self, _state: &impl State, _position: Vector<2, f32>) -> Option<Self::Event> {
 		None
 	}
 
-	fn hover(&mut self, _position: Vector<2, f32>) -> Option<Self::Event> {
+	fn hover(&mut self, _state: &impl State, _position: Vector<2, f32>, _pressed: bool) -> Option<Self::Event> {
 		None
 	}
 
-	fn resize(&mut self, state: &(impl Has<render::State> + Has<render::UIState>), rect: Rect) {
+	fn resize(&mut self, state: &impl State, rect: Rect) {
 		self.rect = rect;
 		self.image.update(state, rect.min, rect.size());
 	}

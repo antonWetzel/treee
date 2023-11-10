@@ -1,7 +1,7 @@
 use math::Vector;
 use render::Has;
 
-use crate::{Element, Rect};
+use crate::{Element, Rect, State};
 
 pub struct Button<Base: Element> {
 	base: Base,
@@ -35,15 +35,15 @@ impl<Base: Element> Element for Button<Base> {
 		self.base.bounding_rect()
 	}
 
-	fn click(&mut self, _position: Vector<2, f32>) -> Option<Self::Event> {
+	fn click(&mut self, _state: &impl State, _position: Vector<2, f32>) -> Option<Self::Event> {
 		Some((self.event)())
 	}
 
-	fn hover(&mut self, position: Vector<2, f32>) -> Option<Self::Event> {
-		self.base.hover(position)
+	fn hover(&mut self, state: &impl State, position: Vector<2, f32>, pressed: bool) -> Option<Self::Event> {
+		self.base.hover(state, position, pressed)
 	}
 
-	fn resize(&mut self, state: &(impl Has<render::State> + Has<render::UIState>), rect: Rect) {
+	fn resize(&mut self, state: &impl State, rect: Rect) {
 		self.base.resize(state, rect)
 	}
 }

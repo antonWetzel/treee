@@ -35,15 +35,15 @@ macro_rules! Collection {
 				}$(.merge(self.$m_name.bounding_rect()))*
 			}
 
-			fn resize(&mut self, state: &(impl render::Has<render::State> + render::Has<render::UIState>), rect: ui::Rect) {
+			fn resize(&mut self, state: &impl ui::State, rect: ui::Rect) {
 				$(self.$m_name.resize(state, rect);)*
 			}
 
-			fn click(&mut self, position: Vector<2, f32>) -> Option<Self::Event> {
-				None$(.or_else(|| self.$m_name.click(position)))*
+			fn click(&mut self, state: &impl ui::State, position: Vector<2, f32>) -> Option<Self::Event> {
+				None$(.or_else(|| self.$m_name.click(state, position)))*
 			}
-			fn hover(&mut self, position: Vector<2, f32>) -> Option<Self::Event> {
-				None$(.or_else(|| self.$m_name.hover(position)))*
+			fn hover(&mut self, state: &impl ui::State, position: Vector<2, f32>, pressed: bool) -> Option<Self::Event> {
+				None$(.or_else(|| self.$m_name.hover(state, position, pressed)))*
 			}
 
 		}
@@ -87,7 +87,7 @@ macro_rules! List {
 				}$(.merge(self.$m_name.bounding_rect()))*
 			}
 
-			fn resize(&mut self, state: &(impl render::Has<render::State> + render::Has<render::UIState>), mut rect: ui::Rect) {
+			fn resize(&mut self, state: &impl ui::State, mut rect: ui::Rect) {
 
 				$(
 					self.$m_name.resize(state, rect);
@@ -95,11 +95,11 @@ macro_rules! List {
 				)*
 			}
 
-			fn click(&mut self, position: Vector<2, f32>) -> Option<Self::Event> {
-				None$(.or_else(|| self.$m_name.click(position)))*
+			fn click(&mut self, state: &impl ui::State, position: Vector<2, f32>) -> Option<Self::Event> {
+				None$(.or_else(|| self.$m_name.click(state, position)))*
 			}
-			fn hover(&mut self, position: Vector<2, f32>) -> Option<Self::Event> {
-				None$(.or_else(|| self.$m_name.hover(position)))*
+			fn hover(&mut self, state: &impl ui::State, position: Vector<2, f32>, pressed: bool) -> Option<Self::Event> {
+				None$(.or_else(|| self.$m_name.hover(state, position, pressed)))*
 			}
 
 		}
