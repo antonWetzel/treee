@@ -1,61 +1,61 @@
 use math::{X, Y};
 
-use crate::{Element, Rect, State};
+use crate::{Element, Horizontal, Rect, State, Vertical};
 
-pub trait Direction {
-	fn first(rect: Rect) -> Rect;
-	fn second(rect: Rect) -> Rect;
+pub trait SplitDirection {
+	fn first(rect: Rect, sep: f32) -> Rect;
+	fn second(rect: Rect, sep: f32) -> Rect;
 }
 
-pub struct Horizontal;
-impl Direction for Horizontal {
-	fn first(mut rect: Rect) -> Rect {
-		rect.max[Y] = (rect.min[Y] + rect.max[Y]) / 2.0;
+impl SplitDirection for Horizontal {
+	fn first(mut rect: Rect, sep: f32) -> Rect {
+		rect.max[Y] = rect.min[Y] + (rect.max[Y] - rect.min[Y]) * sep;
 		rect
 	}
 
-	fn second(mut rect: Rect) -> Rect {
-		rect.min[Y] = (rect.min[Y] + rect.max[Y]) / 2.0;
-		rect
-	}
-}
-
-pub struct Vertical;
-impl Direction for Vertical {
-	fn first(mut rect: Rect) -> Rect {
-		rect.max[X] = (rect.min[X] + rect.max[X]) / 2.0;
-		rect
-	}
-
-	fn second(mut rect: Rect) -> Rect {
-		rect.min[X] = (rect.min[X] + rect.max[X]) / 2.0;
+	fn second(mut rect: Rect, sep: f32) -> Rect {
+		rect.min[Y] += (rect.max[Y] - rect.min[Y]) * sep;
 		rect
 	}
 }
 
-pub struct Split<D: Direction, First: Element, Second: Element>
+impl SplitDirection for Vertical {
+	fn first(mut rect: Rect, sep: f32) -> Rect {
+		rect.max[X] = rect.min[X] + (rect.max[X] - rect.min[X]) * sep;
+		rect
+	}
+
+	fn second(mut rect: Rect, sep: f32) -> Rect {
+		rect.min[X] += (rect.max[X] - rect.min[X]) * sep;
+		rect
+	}
+}
+
+pub struct Split<D: SplitDirection, First: Element, Second: Element>
 where
 	First::Event: From<Second::Event>,
 {
-	first: First,
-	second: Second,
+	pub first: First,
+	pub second: Second,
+	sep: f32,
 	phantom: std::marker::PhantomData<D>,
 }
 
-impl<D: Direction, First: Element, Second: Element> Split<D, First, Second>
+impl<D: SplitDirection, First: Element, Second: Element> Split<D, First, Second>
 where
 	First::Event: From<Second::Event>,
 {
-	pub fn new(left: First, right: Second) -> Self {
+	pub fn new(left: First, right: Second, sep: f32) -> Self {
 		Self {
 			first: left,
 			second: right,
+			sep,
 			phantom: std::marker::PhantomData,
 		}
 	}
 }
 
-impl<D: Direction, First: Element, Second: Element> render::UIElement for Split<D, First, Second>
+impl<D: SplitDirection, First: Element, Second: Element> render::UIElement for Split<D, First, Second>
 where
 	First::Event: From<Second::Event>,
 {
@@ -63,9 +63,14 @@ where
 		self.first.render(ui_pass);
 		self.second.render(ui_pass);
 	}
+
+	fn collect<'a>(&'a self, collector: &mut render::UICollector<'a>) {
+		self.first.collect(collector);
+		self.second.collect(collector);
+	}
 }
 
-impl<D: Direction, First: Element, Second: Element> Element for Split<D, First, Second>
+impl<D: SplitDirection, First: Element, Second: Element> Element for Split<D, First, Second>
 where
 	First::Event: From<Second::Event>,
 {
@@ -82,8 +87,8 @@ where
 	}
 
 	fn resize(&mut self, state: &impl State, rect: crate::Rect) {
-		self.first.resize(state, D::first(rect));
-		self.second.resize(state, D::second(rect));
+		self.first.resize(state, D::first(rect, self.sep));
+		self.second.resize(state, D::second(rect, self.sep));
 	}
 
 	fn hover(&mut self, state: &impl State, position: math::Vector<2, f32>, pressed: bool) -> Option<Self::Event> {
@@ -107,5 +112,8 @@ where
 			return self.second.click(state, position).map(|v| v.into());
 		}
 		None
+	}
+	fn release(&mut self, position: math::Vector<2, f32>) -> bool {
+		self.first.release(position) | self.second.release(position)
 	}
 }

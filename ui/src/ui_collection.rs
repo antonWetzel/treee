@@ -42,6 +42,11 @@ macro_rules! Collection {
 			fn click(&mut self, state: &impl ui::State, position: Vector<2, f32>) -> Option<Self::Event> {
 				None$(.or_else(|| self.$m_name.click(state, position)))*
 			}
+
+			fn release(&mut self, position: Vector<2, f32>) -> bool {
+				$(self.$m_name.release(position)|)* false
+			}
+
 			fn hover(&mut self, state: &impl ui::State, position: Vector<2, f32>, pressed: bool) -> Option<Self::Event> {
 				None$(.or_else(|| self.$m_name.hover(state, position, pressed)))*
 			}
@@ -79,7 +84,7 @@ macro_rules! Stack {
 			type Event = $event;
 
 			fn inside(&self, position: math::Vector<2, f32>) -> bool {
-				$(self.$m_name.inside(position) )||*
+				$(self.$m_name.inside(position) ||)* false
 			}
 
 			fn bounding_rect(&self) -> ui::Rect {
@@ -98,12 +103,28 @@ macro_rules! Stack {
 			}
 
 			fn click(&mut self, state: &impl ui::State, position: Vector<2, f32>) -> Option<Self::Event> {
-				None$(.or_else(|| self.$m_name.click(state, position)))*
-			}
-			fn hover(&mut self, state: &impl ui::State, position: Vector<2, f32>, pressed: bool) -> Option<Self::Event> {
-				None$(.or_else(|| self.$m_name.hover(state, position, pressed)))*
+				None$(.or_else(|| {
+					if self.$m_name.inside(position) {
+						self.$m_name.click(state, position)
+					} else {
+						None
+					}
+				}))*
 			}
 
+			fn release(&mut self, position: Vector<2, f32>) -> bool {
+				$(self.$m_name.release(position)|)* false
+			}
+
+			fn hover(&mut self, state: &impl ui::State, position: Vector<2, f32>, pressed: bool) -> Option<Self::Event> {
+				None$(.or_else(|| {
+					if self.$m_name.inside(position) {
+						self.$m_name.hover(state, position, pressed)
+					} else {
+						None
+					}
+				}))*
+			}
 		}
 	}
 }

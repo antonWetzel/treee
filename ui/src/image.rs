@@ -24,6 +24,7 @@ impl<E> render::UIElement for Image<E> {
 	fn render<'a>(&'a self, ui_pass: &mut render::UIPass<'a>) {
 		self.image.render(ui_pass);
 	}
+	fn collect<'a>(&'a self, _collector: &mut render::UICollector<'a>) {}
 }
 
 impl<E> Element for Image<E> {
@@ -39,6 +40,9 @@ impl<E> Element for Image<E> {
 
 	fn click(&mut self, _state: &impl State, _position: Vector<2, f32>) -> Option<Self::Event> {
 		None
+	}
+	fn release(&mut self, _position: Vector<2, f32>) -> bool {
+		false
 	}
 
 	fn hover(&mut self, _state: &impl State, _position: Vector<2, f32>, _pressed: bool) -> Option<Self::Event> {

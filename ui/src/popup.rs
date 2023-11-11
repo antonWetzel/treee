@@ -8,8 +8,8 @@ pub struct Popup<Base: Element, Popup: Element>
 where
 	Base::Event: From<Popup::Event>,
 {
-	base: Base,
-	popup: Popup,
+	pub base: Base,
+	pub popup: Popup,
 	active: bool,
 	event: fn() -> Base::Event,
 }
@@ -49,11 +49,11 @@ where
 	type Event = Base::Event;
 
 	fn inside(&self, position: Vector<2, f32>) -> bool {
-		self.base.inside(position) || self.active && self.popup.inside(position)
+		self.active || self.base.inside(position)
 	}
 
 	fn bounding_rect(&self) -> Rect {
-		self.base.bounding_rect().merge(self.popup.bounding_rect())
+		self.base.bounding_rect()
 	}
 
 	fn resize(&mut self, state: &impl State, rect: Rect) {
@@ -69,6 +69,16 @@ where
 			return self.popup.click(state, position).map(|e| e.into());
 		}
 		None
+	}
+	fn release(&mut self, position: Vector<2, f32>) -> bool {
+		if self.active.not() {
+			return false;
+		}
+		if self.base.inside(position) || self.popup.inside(position) {
+			return false;
+		}
+		self.active = false;
+		true
 	}
 
 	fn hover(&mut self, state: &impl State, position: Vector<2, f32>, pressed: bool) -> Option<Self::Event> {

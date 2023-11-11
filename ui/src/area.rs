@@ -43,6 +43,9 @@ impl<Base: Element> Element for Area<Base> {
 		}
 		self.base.click(state, position)
 	}
+	fn release(&mut self, position: Vector<2, f32>) -> bool {
+		self.base.release(position)
+	}
 
 	fn hover(&mut self, state: &impl State, position: Vector<2, f32>, pressed: bool) -> Option<Self::Event> {
 		self.base.hover(state, position, pressed)
@@ -65,5 +68,18 @@ impl<Base: Element> Element for Area<Base> {
 				.into(),
 			},
 		)
+	}
+}
+
+impl<Base: Element> std::ops::Deref for Area<Base> {
+	type Target = Base;
+	fn deref(&self) -> &Self::Target {
+		&self.base
+	}
+}
+
+impl<Base: Element> std::ops::DerefMut for Area<Base> {
+	fn deref_mut(&mut self) -> &mut Self::Target {
+		&mut self.base
 	}
 }

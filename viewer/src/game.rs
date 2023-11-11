@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use common::Project;
-use math::{Vector, X, Y};
+use math::{Vector, X, Y, Z};
 use ui::Element;
 
 use crate::{
@@ -10,6 +10,8 @@ use crate::{
 	state::State,
 	tree::Tree,
 };
+
+const DEFAULT_BACKGROUND: Vector<3, f32> = Vector::new([0.1, 0.2, 0.3]);
 
 pub struct Game {
 	window: render::Window,
@@ -31,6 +33,8 @@ pub struct Game {
 	eye_dome_active: bool,
 	interface: Interface,
 
+	background: Vector<3, f32>,
+
 	quit: bool,
 }
 
@@ -40,10 +44,10 @@ impl Game {
 
 		let window = render::Window::new(state, &runner.event_loop, &project.name);
 
-		window.set_window_icon(include_bytes!("../assets/tree-fill-small.png"));
+		window.set_window_icon(include_bytes!("../assets/png/tree-fill-small.png"));
 
 		if cfg!(windows) {
-			window.set_taskbar_icon(include_bytes!("../assets/tree-fill-big.png"));
+			window.set_taskbar_icon(include_bytes!("../assets/png/tree-fill-big.png"));
 		}
 
 		let tree = Tree::new(
@@ -60,7 +64,7 @@ impl Game {
 			window.config(),
 			include_bytes!("../assets/Urbanist-Bold.ttf"),
 		);
-		let interface = Interface::new(state);
+		let interface = Interface::new(state, DEFAULT_BACKGROUND);
 
 		Self {
 			ui,
@@ -80,6 +84,8 @@ impl Game {
 			mouse_start: None,
 			keyboard: input::Keyboard::new(),
 			time: Time::new(),
+
+			background: DEFAULT_BACKGROUND,
 
 			quit: false,
 		}
@@ -136,6 +142,26 @@ impl Game {
 		match action {
 			InterfaceAction::UpdateInterface => self.request_redraw(),
 			InterfaceAction::Open => self.change_project(),
+
+			InterfaceAction::BackgroundReset => {
+				self.background = DEFAULT_BACKGROUND;
+				self.interface
+					.reset_background(self.state, DEFAULT_BACKGROUND);
+				self.request_redraw();
+			},
+			InterfaceAction::BackgroundRed(v) => {
+				self.background[X] = v;
+				self.request_redraw();
+			},
+			InterfaceAction::BackgroundGreen(v) => {
+				self.background[Y] = v;
+				self.request_redraw();
+			},
+			InterfaceAction::BackgroundBlue(v) => {
+				self.background[Z] = v;
+				self.request_redraw();
+			},
+
 			InterfaceAction::ColorPalette => {
 				self.tree.next_lookup(self.state);
 				self.request_redraw();
@@ -160,14 +186,11 @@ impl Game {
 				self.tree.camera.lod.change_detail(change);
 				self.window.request_redraw();
 			},
-			InterfaceAction::EyeDomeStrength(change) => {
-				self.eye_dome.strength *= 1.0 + change * 0.1;
+			InterfaceAction::EyeDomeStrength(v) => {
+				self.eye_dome.strength = if v < 0.1 { 0.1 } else { v }.powi(6);
 				self.eye_dome.update_settings(self.state);
-				// self.interface
-				// 	.update_eye_dome_settings(self.eye_dome.strength);
 				self.window.request_redraw();
 			},
-
 			InterfaceAction::SliceUpdate(min, max) => {
 				self.tree.environment = render::PointCloudEnvironment::new(
 					self.state,
@@ -177,9 +200,25 @@ impl Game {
 				self.window.request_redraw();
 			},
 
+			InterfaceAction::EyeDomeBlue(v) => {
+				self.eye_dome.color[X] = v;
+				self.eye_dome.update_settings(self.state);
+				self.window.request_redraw();
+			},
+			InterfaceAction::EyeDomeGreen(v) => {
+				self.eye_dome.color[Y] = v;
+				self.eye_dome.update_settings(self.state);
+				self.window.request_redraw();
+			},
+			InterfaceAction::EyeDomeRed(v) => {
+				self.eye_dome.color[Z] = v;
+				self.eye_dome.update_settings(self.state);
+				self.window.request_redraw();
+			},
+
 			InterfaceAction::SegmentReset => {
 				self.tree.segment = None;
-				// self.interface.disable_segment_info();
+				self.interface.disable_segment_info();
 				self.window.request_redraw();
 			},
 		}
@@ -196,10 +235,10 @@ impl Game {
 			.ray_direction(self.mouse.position(), self.window.get_size());
 		if let Some(segment) = self.tree.raycast(start, direction) {
 			self.tree.segment = Some(segment);
-			// self.interface.enable_segment_info(
-			// 	&self.project.segment_properties,
-			// 	self.project.get_segment_values(segment.get() as usize - 1),
-			// );
+			self.interface.enable_segment_info(
+				&self.project.segment_properties,
+				self.project.get_segment_values(segment.get() as usize - 1),
+			);
 			self.request_redraw();
 		}
 	}
@@ -301,14 +340,6 @@ impl render::Entry for Game {
 		button_state: input::State,
 	) {
 		self.mouse.update(button, button_state);
-		if let Some(action) = self.interface.hover(
-			self.state,
-			self.mouse.position(),
-			self.mouse.pressed(input::MouseButton::Left),
-		) {
-			self.handle_interface_action(action);
-		}
-
 		match (button, button_state) {
 			(input::MouseButton::Left, input::State::Pressed) => {
 				if let Some(action) = self.interface.click(self.state, self.mouse.position()) {
@@ -316,13 +347,6 @@ impl render::Entry for Game {
 					self.mouse_start = None;
 				} else {
 					self.mouse_start = Some(self.mouse.position());
-				}
-
-				if let Some(action) = self
-					.interface
-					.hover(self.state, self.mouse.position(), true)
-				{
-					self.handle_interface_action(action);
 				}
 			},
 			(input::MouseButton::Left, input::State::Released) => {
@@ -332,12 +356,8 @@ impl render::Entry for Game {
 						self.raycast();
 					}
 				}
-
-				if let Some(action) = self
-					.interface
-					.hover(self.state, self.mouse.position(), false)
-				{
-					self.handle_interface_action(action);
+				if self.interface.release(self.mouse.position()) {
+					self.request_redraw();
 				}
 			},
 			_ => {},
@@ -368,6 +388,10 @@ impl render::Entry for Game {
 }
 
 impl render::RenderEntry for Game {
+	fn background(&self) -> Vector<3, f32> {
+		self.background
+	}
+
 	fn render<'a>(&'a self, render_pass: &mut render::RenderPass<'a>) {
 		render_pass.render(
 			&self.tree,

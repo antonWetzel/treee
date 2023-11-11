@@ -2,7 +2,7 @@ use crate::{Has, Render, RenderPass, State, Texture, Vertex2D};
 use math::{Transform, Vector, X, Y};
 use wgpu::{util::DeviceExt, SurfaceConfiguration};
 use wgpu_text::{
-	glyph_brush::{ab_glyph::FontRef, Section, Text},
+	glyph_brush::{ab_glyph::FontRef, BuiltInLineBreaker, HorizontalAlign, Layout, Section, Text, VerticalAlign},
 	BrushBuilder, TextBrush,
 };
 
@@ -175,7 +175,7 @@ impl<'a> UIPass<'a> {
 pub trait UIElement {
 	fn render<'a>(&'a self, ui_pass: &mut UIPass<'a>);
 	#[allow(unused)]
-	fn collect<'a>(&'a self, collector: &mut UICollector<'a>) {}
+	fn collect<'a>(&'a self, collector: &mut UICollector<'a>);
 }
 
 impl<'a, T, S: Has<UIState>> Render<'a, (&'a UI<'a>, &'a S)> for T
@@ -209,20 +209,49 @@ impl<'a> UICollector<'a> {
 						.with_color([0.0, 0.0, 0.0, 1.0])
 				})
 				.collect(),
+			layout: Layout::Wrap {
+				line_breaker: BuiltInLineBreaker::UnicodeLineBreaker,
+				h_align: element.horizontal,
+				v_align: element.vertical,
+			},
 			..Default::default()
 		});
 	}
 }
 
+pub type UIHorizontalAlign = HorizontalAlign;
+pub type UIVerticalAlign = VerticalAlign;
+
 pub struct UIText {
 	pub position: Vector<2, f32>,
 	pub text: Vec<String>,
 	pub font_size: f32,
+	pub vertical: VerticalAlign,
+	pub horizontal: HorizontalAlign,
 }
 
 impl UIText {
-	pub fn new(text: Vec<String>, position: Vector<2, f32>, font_size: f32) -> Self {
-		Self { text, position, font_size }
+	pub fn new(
+		text: Vec<String>,
+		position: Vector<2, f32>,
+		font_size: f32,
+		horizontal: HorizontalAlign,
+		vertical: VerticalAlign,
+	) -> Self {
+		Self {
+			text,
+			position,
+			font_size,
+			horizontal,
+			vertical,
+		}
+	}
+}
+
+impl UIElement for UIText {
+	fn render<'a>(&'a self, _ui_pass: &mut UIPass<'a>) {}
+	fn collect<'a>(&'a self, collector: &mut UICollector<'a>) {
+		collector.add_element(self)
 	}
 }
 
@@ -343,4 +372,5 @@ impl UIElement for UIImage {
 		ui_pass.0.set_bind_group(1, &self.bind_group, &[]);
 		ui_pass.0.draw(0..6, 0..1);
 	}
+	fn collect<'a>(&'a self, _collector: &mut UICollector<'a>) {}
 }

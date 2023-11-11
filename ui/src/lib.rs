@@ -1,20 +1,29 @@
 mod area;
 mod button;
+mod hide;
 mod image;
 mod popup;
+mod relative;
 mod slider;
 mod split;
+mod text;
 mod ui_collection;
 
 pub use area::*;
 pub use button::*;
+pub use hide::*;
 pub use image::*;
 pub use popup::*;
+pub use relative::*;
 pub use slider::*;
 pub use split::*;
+pub use text::*;
 
 use math::{Vector, X, Y};
 use render::Has;
+
+pub struct Horizontal;
+pub struct Vertical;
 
 #[derive(Clone, Copy)]
 pub struct Length {
@@ -134,6 +143,7 @@ impl<E> Default for Empty<E> {
 
 impl<E> render::UIElement for Empty<E> {
 	fn render<'a>(&'a self, _ui_pass: &mut render::UIPass<'a>) {}
+	fn collect<'a>(&'a self, _collector: &mut render::UICollector<'a>) {}
 }
 
 impl<E> Element for Empty<E> {
@@ -154,6 +164,9 @@ impl<E> Element for Empty<E> {
 	fn click(&mut self, _state: &impl State, _position: Vector<2, f32>) -> Option<Self::Event> {
 		None
 	}
+	fn release(&mut self, _position: Vector<2, f32>) -> bool {
+		false
+	}
 
 	fn hover(&mut self, _state: &impl State, _position: Vector<2, f32>, _pressed: bool) -> Option<Self::Event> {
 		None
@@ -173,58 +186,8 @@ pub trait Element: render::UIElement {
 	fn bounding_rect(&self) -> Rect;
 
 	fn click(&mut self, state: &impl State, position: Vector<2, f32>) -> Option<Self::Event>;
+	fn release(&mut self, position: Vector<2, f32>) -> bool;
 	fn hover(&mut self, state: &impl State, position: Vector<2, f32>, pressed: bool) -> Option<Self::Event>;
-}
-
-pub struct RelHeight<Base: Element> {
-	base: Base,
-	scale: f32,
-}
-
-impl<Base: Element> RelHeight<Base> {
-	pub fn new(base: Base, scale: f32) -> Self {
-		Self { base, scale }
-	}
-
-	pub fn square(base: Base) -> Self {
-		Self { base, scale: 1.0 }
-	}
-}
-
-impl<Base: Element> render::UIElement for RelHeight<Base> {
-	fn render<'a>(&'a self, ui_pass: &mut render::UIPass<'a>) {
-		self.base.render(ui_pass);
-	}
-
-	fn collect<'a>(&'a self, collector: &mut render::UICollector<'a>) {
-		self.base.collect(collector);
-	}
-}
-
-impl<Base: Element> Element for RelHeight<Base> {
-	type Event = Base::Event;
-
-	fn bounding_rect(&self) -> crate::Rect {
-		self.base.bounding_rect()
-	}
-	fn click(&mut self, state: &impl State, position: math::Vector<2, f32>) -> Option<Self::Event> {
-		if self.inside(position) {
-			return self.base.click(state, position);
-		}
-		None
-	}
-
-	fn hover(&mut self, state: &impl State, position: math::Vector<2, f32>, pressed: bool) -> Option<Self::Event> {
-		self.base.hover(state, position, pressed)
-	}
-
-	fn inside(&self, position: math::Vector<2, f32>) -> bool {
-		self.base.inside(position)
-	}
-	fn resize(&mut self, state: &(impl render::Has<render::State> + render::Has<render::UIState>), mut rect: Rect) {
-		rect.max[Y] = rect.min[Y] + self.scale * (rect.max[X] - rect.min[X]);
-		self.base.resize(state, rect)
-	}
 }
 
 #[macro_export]

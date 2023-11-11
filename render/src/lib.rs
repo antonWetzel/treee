@@ -17,6 +17,7 @@ pub use depth_texture::*;
 pub use entry::*;
 pub use eye_dome::*;
 pub use lookup::*;
+use math::Vector;
 pub use point::*;
 pub use point_cloud::*;
 pub use render_pass::*;
@@ -27,6 +28,8 @@ pub use vertex_2d::*;
 pub use window::*;
 
 pub trait RenderEntry {
+	fn background(&self) -> Vector<3, f32>;
+
 	fn render<'a>(&'a self, render_pass: &mut RenderPass<'a>);
 
 	fn post_process<'a>(&'a self, render_pass: &mut RenderPass<'a>);

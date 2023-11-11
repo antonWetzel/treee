@@ -1,4 +1,4 @@
-use math::Vector;
+use math::{Vector, X, Y, Z};
 use winit::platform::windows::WindowExtWindows;
 
 use super::*;
@@ -108,13 +108,20 @@ impl Window {
 			.device
 			.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("Render Encoder") });
 
+		let background = renderable.background();
+
 		let mut render_pass = RenderPass::new(encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
 			label: Some("Render Pass"),
 			color_attachments: &[Some(wgpu::RenderPassColorAttachment {
 				view: &view,
 				resolve_target: None,
 				ops: wgpu::Operations {
-					load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.1, g: 0.2, b: 0.3, a: 1.0 }),
+					load: wgpu::LoadOp::Clear(wgpu::Color {
+						r: background[X] as f64,
+						g: background[Y] as f64,
+						b: background[Z] as f64,
+						a: 1.0,
+					}),
 					store: wgpu::StoreOp::Store,
 				},
 			})],
