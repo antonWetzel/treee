@@ -1,5 +1,4 @@
 use math::{Dimension, Mat, Vector, X, Y, Z};
-use rayon::prelude::*;
 
 use crate::point::Point;
 
@@ -60,7 +59,7 @@ pub fn calculate(data: Vec<Vector<3, f32>>) -> (Vec<Point>, SegmentInformation) 
 	let (slices, slice_width, trunk_crown_sep) = {
 		let slice_width = 0.05;
 
-		let slices = (height / slice_width).ceil() as usize;
+		let slices = ((height / slice_width).ceil() as usize) + 1;
 		let mut means = vec![(Vector::new([0.0, 0.0]), 0); slices];
 		for pos in data.iter().copied() {
 			let idx = ((pos[Y] - min) / slice_width) as usize;
@@ -101,7 +100,6 @@ pub fn calculate(data: Vec<Vector<3, f32>>) -> (Vec<Point>, SegmentInformation) 
 	let sub_step = u32::MAX / data.len() as u32;
 
 	let mut res = (0..data.len())
-		.into_par_iter()
 		.map(|i| {
 			let neighbors = neighbors.get(i);
 
@@ -195,7 +193,7 @@ impl Neighbors {
 		neighbors.reserve_exact(points.len());
 		unsafe { neighbors.set_len(points.len()) };
 		neighbors
-			.par_iter_mut()
+			.iter_mut()
 			.zip(points)
 			.for_each(|(neighbor, point)| {
 				neighbor.0 = kd_tree.k_nearest(point, &mut neighbor.1, 1.0);

@@ -21,16 +21,17 @@ impl Writer {
 			}
 			std::fs::remove_dir_all(&path).unwrap();
 		}
+		std::fs::create_dir_all(&path).unwrap();
 		let mut data_path = path.clone();
 		data_path.push("data");
-		std::fs::create_dir_all(&data_path).unwrap();
-		data_path.push("0.data");
 
 		path.push("project.epc");
 		Ok(Self { project_path: path, data_path })
 	}
 
-	pub fn save_project(&self, project: &Project) {
+	pub fn save_project(&mut self, project: &Project) {
+		std::fs::create_dir_all(&self.data_path).unwrap();
+		self.data_path.push("0.data");
 		project.save(&self.project_path);
 	}
 

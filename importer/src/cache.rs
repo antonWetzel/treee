@@ -9,6 +9,7 @@ pub struct Cache<T> {
 	active: HashMap<usize, (Vec<T>, usize)>,
 	stored: HashMap<usize, File>,
 	current: usize,
+	max_active: usize,
 }
 
 #[derive(Debug)]
@@ -21,13 +22,12 @@ pub struct CacheEntry<T> {
 }
 
 impl<T> Cache<T> {
-	const MAX: usize = 64;
-
-	pub fn new() -> Self {
+	pub fn new(max_active: usize) -> Self {
 		Self {
 			active: HashMap::new(),
 			stored: HashMap::new(),
 			current: 0,
+			max_active,
 		}
 	}
 
@@ -51,7 +51,7 @@ impl<T> Cache<T> {
 	}
 
 	fn evict(&mut self) {
-		if self.active.len() < Self::MAX {
+		if self.active.len() < self.max_active {
 			return;
 		}
 		let mut oldest_index = 0;

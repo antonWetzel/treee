@@ -11,6 +11,7 @@ use std::{num::NonZeroU32, time::Duration};
 use indicatif::{ProgressBar, ProgressStyle};
 use las::Read;
 use math::{Vector, X, Y, Z};
+use rayon::prelude::*;
 use thiserror::Error;
 use writer::Writer;
 
@@ -60,7 +61,7 @@ fn import() -> Result<(), ImporterError> {
 		.ok_or(ImporterError::NoOutputFolder)?;
 
 	// create writer early to check if the folder is empty
-	let writer = Writer::new(output)?;
+	let mut writer = Writer::new(output)?;
 
 	spinner.reset();
 	spinner.tick();
@@ -85,7 +86,7 @@ fn import() -> Result<(), ImporterError> {
 	progress.set_prefix("Import:");
 	progress.inc(0);
 
-	let mut segmenter = Segmenter::new();
+	let mut segmenter = Segmenter::new((min - pos).map(|v| v as f32), (max - pos).map(|v| v as f32));
 
 	let (sender, reciever) = crossbeam::channel::bounded(2048);
 	rayon::join(
@@ -127,7 +128,7 @@ fn import() -> Result<(), ImporterError> {
 	progress.set_prefix("Calculate:");
 	progress.enable_steady_tick(Duration::from_micros(100));
 
-	let mut cache = Cache::new();
+	let mut cache = Cache::new(1024);
 	let mut tree = Tree::new(
 		(min - pos).map(|v| v as f32),
 		diff[X].max(diff[Y]).max(diff[Z]) as f32,
@@ -135,20 +136,27 @@ fn import() -> Result<(), ImporterError> {
 
 	let (sender, reciever) = crossbeam::channel::bounded(2048);
 	let segment_properties = ["segment", "trunk", "crown"];
-	let mut segment_values = Vec::with_capacity(segment_properties.len() * segments.len());
-	rayon::join(
+	let (segment_values, _) = rayon::join(
 		|| {
-			for (index, segment) in segments.into_iter().enumerate() {
-				let (points, information) = calculations::calculate(segment.points());
-				let segment = NonZeroU32::new(index as u32 + 1).unwrap();
-				for point in points {
-					sender.send((point, segment)).unwrap();
-				}
-				segment_values.push(common::Value::Index(segment));
-				segment_values.push(information.trunk_height);
-				segment_values.push(information.crown_height);
-			}
+			let vec = segments
+				.into_par_iter()
+				.enumerate()
+				.map(|(index, segment)| {
+					let (points, information) = calculations::calculate(segment.points());
+					let segment = NonZeroU32::new(index as u32 + 1).unwrap();
+					for point in points {
+						sender.send((point, segment)).unwrap();
+					}
+					[
+						common::Value::Index(segment),
+						information.trunk_height,
+						information.crown_height,
+					]
+				})
+				.flatten()
+				.collect();
 			drop(sender);
+			vec
 		},
 		|| {
 			let mut counter = 0;
@@ -172,11 +180,6 @@ fn import() -> Result<(), ImporterError> {
 	spinner.enable_steady_tick(Duration::from_millis(100));
 
 	let properties = ["slice", "sub_index", "curve"];
-
-	for property in properties {
-		writer.setup_property(property);
-	}
-
 	let (tree, project) = tree.flatten(
 		&properties,
 		&segment_properties,
@@ -185,6 +188,11 @@ fn import() -> Result<(), ImporterError> {
 		cache,
 	);
 	writer.save_project(&project);
+
+	for property in properties {
+		writer.setup_property(property);
+	}
+
 	spinner.disable_steady_tick();
 	spinner.finish();
 	println!();

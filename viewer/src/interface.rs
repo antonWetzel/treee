@@ -219,14 +219,7 @@ ui::Stack!(
 );
 
 impl EyeDome {
-	pub fn new(
-		state: &State,
-		up: &render::Texture,
-		down: &render::Texture,
-		line_h: &render::Texture,
-		line_v: &render::Texture,
-		dot: &render::Texture,
-	) -> Self {
+	pub fn new(state: &State, line_h: &render::Texture, line_v: &render::Texture, dot: &render::Texture) -> Self {
 		Self {
 			strength: ui::Relative::new(
 				ui::Slider::new(
@@ -323,7 +316,7 @@ impl Controls {
 					|| InterfaceAction::EyeDome,
 				)),
 				ui::Area::new(
-					EyeDome::new(state, &up, &down, &line_h, &line_v, &dot),
+					EyeDome::new(state, &line_h, &line_v, &dot),
 					ui::Anchor::new(
 						[ui::length!(w 1.0), ui::length!()].into(),
 						[ui::length!(h 5.0), ui::length!(h 3.0)].into(),

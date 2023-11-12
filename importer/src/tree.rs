@@ -236,6 +236,7 @@ impl FlatTree {
 		progress.reset();
 		progress.set_length(self.nodes.len() as u64);
 		progress.set_prefix("Save Data:");
+		progress.enable_steady_tick(std::time::Duration::from_millis(100));
 
 		let mut data = Vec::with_capacity(self.nodes.len());
 		for _ in 0..self.nodes.len() {
