@@ -352,6 +352,7 @@ name = "common"
 version = "0.1.0"
 dependencies = [
  "bincode",
+ "bytemuck",
  "math",
  "serde",
 ]
@@ -1179,6 +1180,7 @@ dependencies = [
 name = "math"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "serde",
 ]
 

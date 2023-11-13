@@ -200,7 +200,7 @@ impl Game {
 				self.window.request_redraw();
 			},
 
-			InterfaceAction::EyeDomeBlue(v) => {
+			InterfaceAction::EyeDomeRed(v) => {
 				self.eye_dome.color[X] = v;
 				self.eye_dome.update_settings(self.state);
 				self.window.request_redraw();
@@ -210,7 +210,7 @@ impl Game {
 				self.eye_dome.update_settings(self.state);
 				self.window.request_redraw();
 			},
-			InterfaceAction::EyeDomeRed(v) => {
+			InterfaceAction::EyeDomeBlue(v) => {
 				self.eye_dome.color[Z] = v;
 				self.eye_dome.update_settings(self.state);
 				self.window.request_redraw();

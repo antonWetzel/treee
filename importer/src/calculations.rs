@@ -144,16 +144,6 @@ pub fn calculate(data: Vec<Vector<3, f32>>) -> (Vec<Point>, SegmentInformation) 
 		})
 		.collect::<Vec<Point>>();
 
-	for _ in 0..3 {
-		for i in 0..data.len() {
-			let neighbors = neighbors.get(i);
-			res[i].curve = neighbors
-				.iter()
-				.map(|n| res[n.1].curve / neighbors.len() as u32)
-				.sum()
-		}
-	}
-
 	let trunk_heigth = trunk_crown_sep - min;
 	let crown_heigth = max - trunk_crown_sep;
 	(

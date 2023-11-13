@@ -13,6 +13,9 @@ use crate::{
 #[derive(Clone, Copy, Debug)]
 pub struct Vector<const N: usize, T>([T; N]);
 
+unsafe impl<const N: usize, T: bytemuck::Zeroable> bytemuck::Zeroable for Vector<N, T> {}
+unsafe impl<const N: usize, T: bytemuck::Pod> bytemuck::Pod for Vector<N, T> {}
+
 impl<const N: usize, T> std::default::Default for Vector<N, T>
 where
 	T: Zero,

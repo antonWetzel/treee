@@ -9,3 +9,4 @@ edition.workspace = true
 math.workspace = true
 bincode.workspace = true
 serde.workspace = true
+bytemuck.workspace = true

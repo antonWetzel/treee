@@ -2,15 +2,12 @@ use math::Vector;
 use wgpu::vertex_attr_array;
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Point {
 	pub position: Vector<3, f32>,
 	pub normal: Vector<3, f32>,
 	pub size: f32,
 }
-
-unsafe impl bytemuck::Zeroable for Point {}
-unsafe impl bytemuck::Pod for Point {}
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]

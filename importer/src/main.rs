@@ -6,7 +6,7 @@ mod segment;
 mod tree;
 mod writer;
 
-use std::{num::NonZeroU32, time::Duration};
+use std::num::NonZeroU32;
 
 use indicatif::{ProgressBar, ProgressStyle};
 use las::Read;
@@ -60,13 +60,10 @@ fn import() -> Result<(), ImporterError> {
 		.pick_folder()
 		.ok_or(ImporterError::NoOutputFolder)?;
 
-	// create writer early to check if the folder is empty
-	let mut writer = Writer::new(output)?;
-
 	spinner.reset();
 	spinner.tick();
 	spinner.set_prefix("Unpacking:");
-	spinner.enable_steady_tick(Duration::from_millis(100));
+	// spinner.enable_steady_tick(Duration::from_millis(100));
 
 	let mut reader = las::Reader::from_path(&input).expect("Unable to open reader");
 	let header_min = reader.header().bounds().min;
@@ -126,7 +123,7 @@ fn import() -> Result<(), ImporterError> {
 	progress.reset();
 	progress.set_length(progress_points);
 	progress.set_prefix("Calculate:");
-	progress.enable_steady_tick(Duration::from_micros(100));
+	// progress.enable_steady_tick(Duration::from_micros(100));
 
 	let mut cache = Cache::new(1024);
 	let mut tree = Tree::new(
@@ -177,7 +174,7 @@ fn import() -> Result<(), ImporterError> {
 	spinner.reset();
 	spinner.set_prefix("Save Project:");
 	spinner.tick();
-	spinner.enable_steady_tick(Duration::from_millis(100));
+	// spinner.enable_steady_tick(Duration::from_millis(100));
 
 	let properties = ["slice", "sub_index", "curve"];
 	let (tree, project) = tree.flatten(
@@ -187,17 +184,15 @@ fn import() -> Result<(), ImporterError> {
 		input.display().to_string(),
 		cache,
 	);
-	writer.save_project(&project);
 
-	for property in properties {
-		writer.setup_property(property);
-	}
+	// todo: earlier check if output is empty
+	let writer = Writer::new(output, &project)?;
 
 	spinner.disable_steady_tick();
 	spinner.finish();
 	println!();
 
-	tree.save(&writer, progress);
+	tree.save(writer, progress);
 
 	Ok(())
 }

@@ -4,6 +4,8 @@ use std::io::Read;
 use std::mem::MaybeUninit;
 use std::path::{Path, PathBuf};
 
+use common::DataFile;
+
 use crate::State;
 
 pub struct LoadedManager {
@@ -18,6 +20,8 @@ pub struct LoadedManager {
 	property_available: HashMap<usize, render::PointCloudProperty>,
 	property_requested: HashSet<usize>,
 	property_index: usize,
+
+	property_path: PathBuf,
 }
 
 enum WorkerTask {
@@ -33,35 +37,32 @@ enum Response {
 }
 
 enum WorkerUpdate {
-	ChangeProperty(String, usize),
+	ChangeProperty(PathBuf, usize),
 }
 
 impl LoadedManager {
 	pub fn new(state: &'static State, mut path: PathBuf, property: &str) -> Self {
 		let (index_tx, index_rx) = crossbeam_channel::bounded(512);
 		let (pc_tx, pc_rx) = crossbeam_channel::bounded(512);
-		path.push("data");
+		path.push("points.data");
 		let mut property_path = path.clone();
-		property_path.push(property);
-		path.push("0.data");
-		property_path.push("0.data");
+		property_path.set_file_name(format!("{}.data", property));
 
 		let mut update_senders = Vec::new();
 		for _ in 0..2 {
 			let (update_sender, update_reciever) = crossbeam_channel::bounded(2);
 			update_senders.push(update_sender);
 			let index_rx = index_rx.clone();
-			let mut path = path.clone();
-			let mut property_path = property_path.clone();
 			let pc_tx = pc_tx.clone();
 			let mut property_index = 0;
+
+			let mut points_file = DataFile::open(&path);
+			let mut property_file = DataFile::open(&property_path);
 			std::thread::spawn(move || loop {
 				for update in update_reciever.try_iter() {
 					match update {
-						WorkerUpdate::ChangeProperty(name, index) => {
-							property_path = path.parent().unwrap().to_owned();
-							property_path.push(name);
-							property_path.push("0.data");
+						WorkerUpdate::ChangeProperty(path, index) => {
+							property_file = DataFile::open(&path);
 							property_index = index;
 						},
 					}
@@ -77,16 +78,14 @@ impl LoadedManager {
 				};
 				match task {
 					WorkerTask::PointCloud(index) => {
-						path.set_file_name(format!("{}.data", index));
-						if let Some(pc) = load_pointcloud(&path, state) {
+						if let Some(pc) = load_pointcloud(state, &mut points_file, index) {
 							let _ = pc_tx.send(Response::PointCloud(index, pc));
 						} else {
 							let _ = pc_tx.send(Response::FailedPointCloud(index));
 						};
 					},
 					WorkerTask::Property(index) => {
-						property_path.set_file_name(format!("{}.data", index));
-						if let Some(property) = load_property(&property_path, state) {
+						if let Some(property) = load_property(state, &mut property_file, index) {
 							let _ = pc_tx.send(Response::Property(index, property, property_index));
 						} else {
 							let _ = pc_tx.send(Response::FailedProperty(index));
@@ -107,15 +106,18 @@ impl LoadedManager {
 			property_default: render::PointCloudProperty::new_empty(state),
 			property_available: HashMap::new(),
 			property_requested: HashSet::new(),
+
+			property_path,
 		}
 	}
 
 	pub fn change_property(&mut self, name: &str, index: usize) {
 		self.property_index = index;
+		self.property_path.set_file_name(format!("{}.data", name));
 		for sender in &self.update_senders {
 			sender
 				.send(WorkerUpdate::ChangeProperty(
-					String::from(name),
+					self.property_path.clone(),
 					self.property_index,
 				))
 				.unwrap();
@@ -193,48 +195,12 @@ impl LoadedManager {
 	}
 }
 
-fn load_pointcloud(path: &Path, state: &State) -> Option<render::PointCloud> {
-	let mut file = std::fs::File::open(path).ok()?;
-	let file_length = file.metadata().ok()?.len() as usize;
-	if file_length < 8 {
-		return None;
-	}
-	let mut buffer = [0u8; 8];
-	file.read_exact(&mut buffer).ok()?;
-	let size = u64::from_le_bytes(buffer) as usize;
-
-	if file_length == 0 {
-		return None;
-	}
-	if file_length != size * std::mem::size_of::<render::Point>() + 8 {
-		return None;
-	}
-	let data = unsafe {
-		let mut data = Vec::<MaybeUninit<render::Point>>::new();
-		data.reserve_exact(size);
-		data.set_len(size);
-		let view = std::slice::from_raw_parts_mut(
-			data.as_mut_ptr() as *mut u8,
-			std::mem::size_of::<render::Point>() * size,
-		);
-		file.read_exact(view).ok()?;
-		std::mem::transmute::<_, Vec<_>>(data)
-	};
+fn load_pointcloud(state: &State, data_file: &mut DataFile<render::Point>, index: usize) -> Option<render::PointCloud> {
+	let data = data_file.read(index);
 	Some(render::PointCloud::new(state, &data))
 }
 
-fn load_property(path: &Path, state: &State) -> Option<render::PointCloudProperty> {
-	let mut file = std::fs::File::open(path).ok()?;
-	let file_length = file.metadata().ok()?.len() as usize;
-	let size = file_length / std::mem::size_of::<u32>();
-
-	let data = unsafe {
-		let mut data = Vec::<MaybeUninit<u32>>::new();
-		data.reserve_exact(size);
-		data.set_len(size);
-		let view = std::slice::from_raw_parts_mut(data.as_mut_ptr() as *mut u8, file_length);
-		file.read_exact(view).ok()?;
-		std::mem::transmute::<_, Vec<_>>(data)
-	};
+fn load_property(state: &State, data_file: &mut DataFile<u32>, index: usize) -> Option<render::PointCloudProperty> {
+	let data = data_file.read(index);
 	Some(render::PointCloudProperty::new(state, &data))
 }

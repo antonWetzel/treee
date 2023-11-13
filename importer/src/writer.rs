@@ -1,15 +1,17 @@
 use common::Project;
-use std::{io::Write, path::PathBuf};
+use std::path::PathBuf;
 
 use crate::ImporterError;
 
 pub struct Writer {
-	project_path: PathBuf,
-	data_path: PathBuf,
+	pub points: common::DataFile<render::Point>,
+	pub slice: common::DataFile<u32>,
+	pub curve: common::DataFile<u32>,
+	pub sub_index: common::DataFile<u32>,
 }
 
 impl Writer {
-	pub fn new(mut path: PathBuf) -> Result<Self, ImporterError> {
+	pub fn new(mut path: PathBuf, project: &Project) -> Result<Self, ImporterError> {
 		if path.is_file() {
 			return Err(ImporterError::OutputFolderIsFile);
 		}
@@ -21,59 +23,28 @@ impl Writer {
 			}
 			std::fs::remove_dir_all(&path).unwrap();
 		}
+
+		let size = project.root.index as usize + 1;
 		std::fs::create_dir_all(&path).unwrap();
-		let mut data_path = path.clone();
-		data_path.push("data");
-
 		path.push("project.epc");
-		Ok(Self { project_path: path, data_path })
+		project.save(&path);
+
+		path.set_file_name("points.data");
+		let points = common::DataFile::new(size, &path);
+
+		path.set_file_name("slice.data");
+		let slice = common::DataFile::new(size, &path);
+
+		path.set_file_name("curve.data");
+		let curve = common::DataFile::new(size, &path);
+
+		path.set_file_name("sub_index.data");
+		let sub_index = common::DataFile::new(size, &path);
+
+		Ok(Self { points, slice, curve, sub_index })
 	}
 
-	pub fn save_project(&mut self, project: &Project) {
-		std::fs::create_dir_all(&self.data_path).unwrap();
-		self.data_path.push("0.data");
-		project.save(&self.project_path);
-	}
-
-	pub fn save(&self, index: u32, points: &[render::Point]) {
-		let view = unsafe {
-			std::slice::from_raw_parts(
-				points as *const _ as *const u8,
-				std::mem::size_of_val(points),
-			)
-		};
-		let path = self.data_path.with_file_name(format!("{}.data", index));
-		let mut file = std::fs::OpenOptions::new()
-			.write(true)
-			.create(true)
-			.open(path)
-			.unwrap();
-		file.set_len(8 + view.len() as u64).unwrap();
-		file.write_all(&(points.len() as u64).to_le_bytes())
-			.unwrap();
-		file.write_all(view).unwrap();
-	}
-
-	pub fn setup_property(&self, name: &str) {
-		std::fs::create_dir_all(self.data_path.with_file_name(name)).unwrap();
-	}
-
-	pub fn save_property(&self, index: u32, name: &str, property: &[u32]) {
-		let view = unsafe {
-			std::slice::from_raw_parts(
-				property as *const _ as *const u8,
-				std::mem::size_of_val(property),
-			)
-		};
-		let path = self
-			.data_path
-			.with_file_name(format!("{}/{}.data", name, index));
-		let mut file = std::fs::OpenOptions::new()
-			.write(true)
-			.create(true)
-			.open(path)
-			.unwrap();
-		file.set_len(view.len() as u64).unwrap();
-		file.write_all(view).unwrap();
+	pub fn save(&mut self, index: u32, points: &[render::Point]) {
+		self.points.save(index as usize, points);
 	}
 }

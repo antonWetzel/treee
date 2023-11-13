@@ -11,7 +11,7 @@ use crate::{
 
 #[derive(Clone, Copy, Debug)]
 pub struct Transform<const N: usize, T> {
-	pub basis:    Mat<N, T>,
+	pub basis: Mat<N, T>,
 	pub position: Vector<N, T>,
 }
 
@@ -22,7 +22,7 @@ where
 {
 	fn default() -> Self {
 		Self {
-			basis:    Mat::<N, T>::default(),
+			basis: Mat::<N, T>::default(),
 			position: Vector::<N, T>::default(),
 		}
 	}
@@ -36,7 +36,7 @@ impl<const N: usize, T> Transform<N, T> {
 		T: Copy,
 	{
 		Self {
-			basis:    Mat::<N, T>::identity(),
+			basis: Mat::<N, T>::identity(),
 			position: Vector::<N, T>::default(),
 		}
 	}
@@ -212,7 +212,7 @@ impl<T> Transform<2, T> {
 		T: Mul<T, Output = T>,
 	{
 		Self {
-			basis:    Mat::<2, T>::rotation(angle),
+			basis: Mat::<2, T>::rotation(angle),
 			position: Vector::default(),
 		}
 	}
@@ -273,7 +273,7 @@ impl<T> Transform<3, T> {
 		T: Mul<T, Output = T>,
 	{
 		Self {
-			basis:    Mat::<3, T>::rotation(axis, angle),
+			basis: Mat::<3, T>::rotation(axis, angle),
 			position: Vector::default(),
 		}
 	}

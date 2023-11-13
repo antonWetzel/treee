@@ -1,4 +1,5 @@
 use std::num::NonZeroU32;
+use std::sync::Mutex;
 
 use common::{IndexData, IndexNode, Project, MAX_LEAF_SIZE};
 use crossbeam::atomic::AtomicCell;
@@ -232,22 +233,24 @@ pub struct FlatTree {
 }
 
 impl FlatTree {
-	pub fn save(self, writer: &Writer, progress: ProgressBar) {
+	pub fn save(self, writer: Writer, progress: ProgressBar) {
 		progress.reset();
 		progress.set_length(self.nodes.len() as u64);
 		progress.set_prefix("Save Data:");
-		progress.enable_steady_tick(std::time::Duration::from_millis(100));
+		// progress.enable_steady_tick(std::time::Duration::from_millis(100));
 
 		let mut data = Vec::with_capacity(self.nodes.len());
 		for _ in 0..self.nodes.len() {
 			data.push(AtomicCell::new(None));
 		}
 
+		let writer = Mutex::new(writer);
+
 		self.nodes
 			.into_par_iter()
 			.enumerate()
 			.for_each(|(i, node)| {
-				let res = node.save(&data, writer);
+				let res = node.save(&data, &writer);
 				data[i].store(Some(res));
 				progress.inc(1);
 			});
@@ -258,7 +261,7 @@ impl FlatTree {
 }
 
 impl FLatNode {
-	fn save(self, data: &[AtomicCell<Option<PointsCollection>>], writer: &Writer) -> PointsCollection {
+	fn save(self, data: &[AtomicCell<Option<PointsCollection>>], writer: &Mutex<Writer>) -> PointsCollection {
 		match self.data {
 			FlatData::Branch { mut children } => {
 				let mut points = Vec::with_capacity(8);
@@ -273,11 +276,16 @@ impl FLatNode {
 				}
 
 				let points = level_of_detail::grid(points, self.corner, self.size);
-				writer.save(self.index, &points.render);
 
-				writer.save_property(self.index, "slice", &points.slice);
-				writer.save_property(self.index, "sub_index", &points.sub_index);
-				writer.save_property(self.index, "curve", &points.curve);
+				{
+					let mut writer = writer.lock().unwrap();
+					writer.save(self.index, &points.render);
+					writer.slice.save(self.index as usize, &points.slice);
+					writer
+						.sub_index
+						.save(self.index as usize, &points.sub_index);
+					writer.curve.save(self.index as usize, &points.curve);
+				}
 
 				points
 			},
@@ -293,16 +301,18 @@ impl FLatNode {
 					}
 					points
 				};
-				writer.save(self.index, &points);
 
 				let slice = data.iter().map(|p| p.slice).collect::<Vec<_>>();
-				writer.save_property(self.index, "slice", &slice);
-
 				let sub_index = data.iter().map(|p| p.sub_index).collect::<Vec<_>>();
-				writer.save_property(self.index, "sub_index", &sub_index);
-
 				let curve = data.iter().map(|p| p.curve).collect::<Vec<_>>();
-				writer.save_property(self.index, "curve", &curve);
+
+				{
+					let mut writer = writer.lock().unwrap();
+					writer.save(self.index, &points);
+					writer.curve.save(self.index as usize, &curve);
+					writer.sub_index.save(self.index as usize, &sub_index);
+					writer.slice.save(self.index as usize, &slice);
+				}
 
 				PointsCollection { render: points, slice, sub_index, curve }
 			},
