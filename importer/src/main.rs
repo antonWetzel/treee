@@ -2,22 +2,23 @@ mod cache;
 mod calculations;
 mod level_of_detail;
 mod point;
+mod progress;
 mod segment;
 mod tree;
 mod writer;
 
 use std::num::NonZeroU32;
 
-use indicatif::{ProgressBar, ProgressStyle};
 use las::Read;
 use math::{Vector, X, Y, Z};
+use progress::Progress;
 use rayon::prelude::*;
 use thiserror::Error;
 use writer::Writer;
 
 use tree::Tree;
 
-use crate::{cache::Cache, segment::Segmenter};
+use crate::{cache::Cache, progress::Stage, segment::Segmenter};
 
 const IMPORT_PROGRESS_SCALE: u64 = 10_000;
 
@@ -39,16 +40,6 @@ pub enum ImporterError {
 }
 
 fn import() -> Result<(), ImporterError> {
-	let progress = ProgressBar::new(0);
-	progress.set_style(
-		ProgressStyle::with_template(
-			"{prefix:15} [{elapsed_precise}] {wide_bar:.cyan/blue} {human_pos:>12}/{human_len:12} {eta_precise}",
-		)
-		.unwrap(),
-	);
-	let spinner = ProgressBar::new(0);
-	spinner.set_style(ProgressStyle::with_template("{prefix:15} [{elapsed_precise}] {spinner:.blue}").unwrap());
-
 	let input = rfd::FileDialog::new()
 		.set_title("Select Input File")
 		.add_filter("Input File", &["las", "laz"])
@@ -60,10 +51,7 @@ fn import() -> Result<(), ImporterError> {
 		.pick_folder()
 		.ok_or(ImporterError::NoOutputFolder)?;
 
-	spinner.reset();
-	spinner.tick();
-	spinner.set_prefix("Unpacking:");
-	// spinner.enable_steady_tick(Duration::from_millis(100));
+	let stage = Stage::new("Unpacking");
 
 	let mut reader = las::Reader::from_path(&input).expect("Unable to open reader");
 	let header_min = reader.header().bounds().min;
@@ -74,14 +62,9 @@ fn import() -> Result<(), ImporterError> {
 	let pos = min + diff / 2.0;
 	let progress_points = reader.header().number_of_points() / IMPORT_PROGRESS_SCALE;
 
-	spinner.disable_steady_tick();
-	spinner.finish();
-	println!();
+	stage.finish();
 
-	progress.reset();
-	progress.set_length(progress_points);
-	progress.set_prefix("Import:");
-	progress.inc(0);
+	let mut progress = Progress::new("Import", progress_points as usize);
 
 	let mut segmenter = Segmenter::new((min - pos).map(|v| v as f32), (max - pos).map(|v| v as f32));
 
@@ -96,7 +79,7 @@ fn import() -> Result<(), ImporterError> {
 					.unwrap();
 				counter += 1;
 				if counter >= IMPORT_PROGRESS_SCALE {
-					progress.inc(1);
+					progress.step();
 					counter -= IMPORT_PROGRESS_SCALE;
 				}
 			}
@@ -116,14 +99,13 @@ fn import() -> Result<(), ImporterError> {
 		},
 	);
 
-	let segments = segmenter.result();
 	progress.finish();
-	println!();
 
-	progress.reset();
-	progress.set_length(progress_points);
-	progress.set_prefix("Calculate:");
-	// progress.enable_steady_tick(Duration::from_micros(100));
+	let stage = Stage::new("Segmenting");
+	let segments = segmenter.result();
+	stage.finish();
+
+	let mut progress = Progress::new("Calculate", progress_points as usize);
 
 	let mut cache = Cache::new(1024);
 	let mut tree = Tree::new(
@@ -161,7 +143,7 @@ fn import() -> Result<(), ImporterError> {
 				tree.insert(point, segment, &mut cache);
 				counter += 1;
 				if counter >= IMPORT_PROGRESS_SCALE {
-					progress.inc(1);
+					progress.step();
 					counter -= IMPORT_PROGRESS_SCALE;
 				}
 			}
@@ -169,12 +151,8 @@ fn import() -> Result<(), ImporterError> {
 	);
 
 	progress.finish();
-	println!();
 
-	spinner.reset();
-	spinner.set_prefix("Save Project:");
-	spinner.tick();
-	// spinner.enable_steady_tick(Duration::from_millis(100));
+	let stage = Stage::new("Save Project");
 
 	let properties = ["slice", "sub_index", "curve"];
 	let (tree, project) = tree.flatten(
@@ -188,11 +166,9 @@ fn import() -> Result<(), ImporterError> {
 	// todo: earlier check if output is empty
 	let writer = Writer::new(output, &project)?;
 
-	spinner.disable_steady_tick();
-	spinner.finish();
-	println!();
+	stage.finish();
 
-	tree.save(writer, progress);
+	tree.save(writer);
 
 	Ok(())
 }

@@ -197,10 +197,16 @@ impl LoadedManager {
 
 fn load_pointcloud(state: &State, data_file: &mut DataFile<render::Point>, index: usize) -> Option<render::PointCloud> {
 	let data = data_file.read(index);
+	if data.is_empty() {
+		return None;
+	}
 	Some(render::PointCloud::new(state, &data))
 }
 
 fn load_property(state: &State, data_file: &mut DataFile<u32>, index: usize) -> Option<render::PointCloudProperty> {
 	let data = data_file.read(index);
+	if data.is_empty() {
+		return None;
+	}
 	Some(render::PointCloudProperty::new(state, &data))
 }

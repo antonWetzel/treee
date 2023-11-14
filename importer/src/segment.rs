@@ -46,15 +46,14 @@ pub struct Segmenter {
 
 impl Segmenter {
 	pub fn new(min: Vector<3, f32>, max: Vector<3, f32>) -> Self {
-		let mut cache = Cache::new(64);
-		let entry = cache.new_entry();
+		let cache = Cache::new(64);
 		Self {
 			cache,
 			min: [min[X], min[Z]].into(),
 			size: (max[X] - min[X]).max(max[Z] - min[Z]),
 
-			// root: Node::Branch(Box::new([None, None, None, None])),
-			root: Node::Leaf(entry),
+			root: Node::Branch(Box::new([None, None, None, None])),
+			// root: Node::Leaf(entry),
 		}
 	}
 
@@ -79,7 +78,7 @@ impl Segmenter {
 					};
 
 					if children[idx].is_none() {
-						children[idx] = Some(if size > 200000000000.0 {
+						children[idx] = Some(if size > 2.5 {
 							Node::Branch(Box::new([None, None, None, None]))
 						} else {
 							Node::Leaf(self.cache.new_entry())

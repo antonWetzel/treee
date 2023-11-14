@@ -3,13 +3,13 @@ use std::sync::Mutex;
 
 use common::{IndexData, IndexNode, Project, MAX_LEAF_SIZE};
 use crossbeam::atomic::AtomicCell;
-use indicatif::ProgressBar;
 use math::Vector;
 use math::{X, Z};
 use rayon::prelude::*;
 
 use crate::cache::{Cache, CacheEntry, CacheIndex};
 use crate::point::{Point, PointsCollection};
+use crate::progress::Progress;
 use crate::{level_of_detail, Writer};
 
 #[derive(Debug)]
@@ -103,7 +103,7 @@ impl Node {
 				size += 1;
 				Data::Leaf { size, segment, index }
 			},
-			Data::Leaf { size: _, segment: leaf_segment, index } => {
+			Data::Leaf { size: _, segment: leaf_segment, index } if self.size > 0.1 => {
 				let mut children: [Option<Self>; 8] = Default::default();
 				let points = cache.read(index).read();
 				for point in points {
@@ -119,6 +119,7 @@ impl Node {
 				insert_into_children(&mut children, point, self.corner, self.size, segment, cache);
 				Data::Branch { children: Box::new(children) }
 			},
+			Data::Leaf { size, segment, index } => Data::Leaf { size, segment, index },
 		});
 	}
 
@@ -233,11 +234,8 @@ pub struct FlatTree {
 }
 
 impl FlatTree {
-	pub fn save(self, writer: Writer, progress: ProgressBar) {
-		progress.reset();
-		progress.set_length(self.nodes.len() as u64);
-		progress.set_prefix("Save Data:");
-		// progress.enable_steady_tick(std::time::Duration::from_millis(100));
+	pub fn save(self, writer: Writer) {
+		let progress = Mutex::new(Progress::new("Save Data", self.nodes.len()));
 
 		let mut data = Vec::with_capacity(self.nodes.len());
 		for _ in 0..self.nodes.len() {
@@ -252,11 +250,10 @@ impl FlatTree {
 			.for_each(|(i, node)| {
 				let res = node.save(&data, &writer);
 				data[i].store(Some(res));
-				progress.inc(1);
+				progress.lock().unwrap().step();
 			});
 
-		progress.finish();
-		println!();
+		progress.into_inner().unwrap().finish();
 	}
 }
 

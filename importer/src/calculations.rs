@@ -99,7 +99,7 @@ pub fn calculate(data: Vec<Vector<3, f32>>) -> (Vec<Point>, SegmentInformation) 
 
 	let sub_step = u32::MAX / data.len() as u32;
 
-	let mut res = (0..data.len())
+	let res = (0..data.len())
 		.map(|i| {
 			let neighbors = neighbors.get(i);
 
