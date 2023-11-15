@@ -37,6 +37,7 @@ impl<'a> Progress<'a> {
 		}
 	}
 
+	#[allow(dead_code)]
 	pub fn step_by(&mut self, amount: usize) {
 		self.current += amount;
 		self.maybe_print();
@@ -58,11 +59,7 @@ impl<'a> Progress<'a> {
 		let (left, sub, right) = if left < size {
 			(
 				left,
-				Self::SUB_STEPS
-					.chars()
-					.skip(used % sub_length)
-					.next()
-					.unwrap(),
+				Self::SUB_STEPS.chars().nth(used % sub_length).unwrap(),
 				size - left - 1,
 			)
 		} else {
@@ -88,7 +85,7 @@ impl<'a> Progress<'a> {
 
 	pub fn finish(self) {
 		Self::print(self.name, self.goal, self.goal, self.start);
-		print!("\n")
+		println!()
 	}
 }
 

@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::num::NonZeroU32;
 use std::sync::Mutex;
 
@@ -16,7 +17,7 @@ use crate::{level_of_detail, Writer};
 pub enum Data {
 	Leaf {
 		size: usize,
-		segment: NonZeroU32,
+		segments: HashSet<NonZeroU32>,
 		index: CacheIndex,
 	},
 	Branch {
@@ -40,25 +41,24 @@ impl Node {
 		}
 	}
 
-	fn new_leaf(corner: Vector<3, f32>, size: f32, segment: NonZeroU32, cache: &mut Cache<Point>) -> Self {
+	fn new_leaf(corner: Vector<3, f32>, size: f32, cache: &mut Cache<Point>) -> Self {
 		Node {
 			corner,
 			size,
 			data: Data::Leaf {
 				size: 0,
-				segment,
+				segments: HashSet::new(),
 				index: cache.new_entry(),
 			},
 		}
 	}
 
-	fn insert_position(&mut self, point: Point, segment: NonZeroU32, cache: &mut Cache<Point>) {
+	fn insert_position(&mut self, point: Point, cache: &mut Cache<Point>) {
 		fn insert_into_children(
 			children: &mut [Option<Node>; 8],
 			point: Point,
 			corner: Vector<3, f32>,
 			size: f32,
-			segment: NonZeroU32,
 			cache: &mut Cache<Point>,
 		) {
 			let mut index = 0;
@@ -68,7 +68,7 @@ impl Node {
 				}
 			}
 			match &mut children[index] {
-				Some(v) => v.insert_position(point, segment, cache),
+				Some(v) => v.insert_position(point, cache),
 				None => {
 					let mut corner = corner;
 					for dim in X.to(Z) {
@@ -76,8 +76,8 @@ impl Node {
 							corner[dim] += size / 2.0;
 						}
 					}
-					let mut node = Node::new_leaf(corner, size / 2.0, segment, cache);
-					node.insert_position(point, segment, cache);
+					let mut node = Node::new_leaf(corner, size / 2.0, cache);
+					node.insert_position(point, cache);
 					children[index] = Some(node);
 				},
 			}
@@ -93,33 +93,24 @@ impl Node {
 
 		update_value(&mut self.data, |data| match data {
 			Data::Branch { mut children, .. } => {
-				insert_into_children(&mut children, point, self.corner, self.size, segment, cache);
+				insert_into_children(&mut children, point, self.corner, self.size, cache);
 				Data::Branch { children }
 			},
-			Data::Leaf { mut size, segment: leaf_segment, index }
-				if size < MAX_LEAF_SIZE && leaf_segment == segment =>
-			{
+			Data::Leaf { mut size, mut segments, index } if size < MAX_LEAF_SIZE => {
+				segments.insert(point.segment);
 				cache.add_point(&index, point);
 				size += 1;
-				Data::Leaf { size, segment, index }
+				Data::Leaf { size, segments, index }
 			},
-			Data::Leaf { size: _, segment: leaf_segment, index } if self.size > 0.1 => {
+			Data::Leaf { size: _, segments: _, index } => {
 				let mut children: [Option<Self>; 8] = Default::default();
 				let points = cache.read(index).read();
 				for point in points {
-					insert_into_children(
-						&mut children,
-						point,
-						self.corner,
-						self.size,
-						leaf_segment,
-						cache,
-					)
+					insert_into_children(&mut children, point, self.corner, self.size, cache)
 				}
-				insert_into_children(&mut children, point, self.corner, self.size, segment, cache);
+				insert_into_children(&mut children, point, self.corner, self.size, cache);
 				Data::Branch { children: Box::new(children) }
 			},
-			Data::Leaf { size, segment, index } => Data::Leaf { size, segment, index },
 		});
 	}
 
@@ -143,9 +134,9 @@ impl Node {
 					max_level + 1,
 				)
 			},
-			Data::Leaf { size, segment, index } => (
+			Data::Leaf { size, segments, index } => (
 				FlatData::Leaf { size, data: cache.read(index) },
-				IndexData::Leaf { segment },
+				IndexData::Leaf { segments },
 				1,
 			),
 		};
@@ -178,8 +169,8 @@ impl Tree {
 		Self { root: Node::new_branch(corner, size) }
 	}
 
-	pub fn insert(&mut self, point: Point, segment: NonZeroU32, cache: &mut Cache<Point>) {
-		self.root.insert_position(point, segment, cache);
+	pub fn insert(&mut self, point: Point, cache: &mut Cache<Point>) {
+		self.root.insert_position(point, cache);
 	}
 
 	pub fn flatten(

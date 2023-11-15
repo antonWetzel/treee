@@ -7,6 +7,7 @@ macro_rules! Collection {
 			$($m_visibility:vis $m_name:ident: $m_type:ty),* $(,)?
 		}
 	) => {
+		#[allow(clippy::type_complexity)]
 		$visibility struct $name {
 			$($m_visibility $m_name: $m_type),*
 		}
@@ -66,6 +67,7 @@ macro_rules! Stack {
 			$($m_visibility:vis $m_name:ident: $m_type:ty),* $(,)?
 		}
 	) => {
+		#[allow(clippy::type_complexity)]
 		$visibility struct $name {
 			$($m_visibility $m_name: $m_type),*
 		}

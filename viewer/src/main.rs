@@ -7,6 +7,7 @@ mod game;
 mod interface;
 mod loaded_manager;
 mod lod;
+mod segment;
 mod state;
 mod tree;
 

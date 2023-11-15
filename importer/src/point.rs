@@ -1,7 +1,10 @@
+use std::num::NonZeroU32;
+
 #[derive(Debug)]
 pub struct Point {
 	pub render: render::Point,
 
+	pub segment: NonZeroU32,
 	pub slice: u32,
 	pub sub_index: u32,
 	pub curve: u32,
@@ -19,6 +22,7 @@ impl PointsCollection {
 	pub fn new() -> Self {
 		Self {
 			render: Vec::new(),
+
 			slice: Vec::new(),
 			sub_index: Vec::new(),
 			curve: Vec::new(),

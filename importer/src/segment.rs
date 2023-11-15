@@ -32,7 +32,7 @@ impl Node {
 
 /// ### Idea
 /// 1. split into quadtree
-/// 	- dynamic or fixed physical size
+///     - dynamic or fixed physical size
 /// 1. identify ground level
 /// 1. slice above ground
 /// 1. identify trunks

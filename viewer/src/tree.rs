@@ -1,7 +1,8 @@
 use std::collections::HashSet;
+use std::io::Read;
 use std::num::NonZeroU32;
 use std::ops::Not;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::loaded_manager::LoadedManager;
 use crate::state::State;
@@ -45,8 +46,6 @@ pub struct Tree {
 	lookup_name: LookupName,
 
 	property_index: usize,
-
-	pub segment: Option<NonZeroU32>,
 }
 
 pub struct Node {
@@ -62,7 +61,7 @@ pub enum Data {
 		segments: HashSet<NonZeroU32>,
 	},
 	Leaf {
-		segment: NonZeroU32,
+		segments: HashSet<NonZeroU32>,
 	},
 }
 
@@ -84,7 +83,7 @@ impl Node {
 
 				Data::Branch { children: Box::new(children), segments }
 			},
-			IndexData::Leaf { segment } => Data::Leaf { segment: *segment },
+			IndexData::Leaf { segments } => Data::Leaf { segments: segments.clone() },
 		};
 
 		Node {
@@ -102,8 +101,10 @@ impl Node {
 					set.insert(segment);
 				}
 			},
-			&Data::Leaf { segment } => {
-				set.insert(segment);
+			Data::Leaf { segments } => {
+				for &segment in segments {
+					set.insert(segment);
+				}
 			},
 		}
 	}
@@ -114,19 +115,12 @@ impl Node {
 		view_checker: lod::Checker,
 		camera: &camera::Camera,
 		loaded_manager: &'a LoadedManager,
-		segment: Option<NonZeroU32>,
 	) {
 		if !camera.inside_frustrum(self.corner, self.size) {
 			return;
 		}
 		match &self.data {
-			Data::Branch { children, segments } => {
-				if let Some(segment) = segment {
-					if segments.contains(&segment).not() {
-						return;
-					}
-				}
-
+			Data::Branch { children, segments: _ } => {
 				if loaded_manager.exist(self.index)
 					&& (view_checker.should_render(self.corner, self.size, camera)
 						|| !Self::can_render_children(children, loaded_manager, camera))
@@ -135,22 +129,11 @@ impl Node {
 				} else {
 					let view_checker = view_checker.level_down();
 					for child in children.iter().flatten() {
-						child.render(
-							point_cloud_pass,
-							view_checker,
-							camera,
-							loaded_manager,
-							segment,
-						);
+						child.render(point_cloud_pass, view_checker, camera, loaded_manager);
 					}
 				}
 			},
-			&Data::Leaf { segment: leaf_segment } => {
-				if let Some(segment) = segment {
-					if segment != leaf_segment {
-						return;
-					}
-				}
+			Data::Leaf { segments: _ } => {
 				loaded_manager.render(self.index, point_cloud_pass);
 			},
 		}
@@ -173,25 +156,13 @@ impl Node {
 		count < 1
 	}
 
-	pub fn update(
-		&mut self,
-		view_checker: lod::Checker,
-		camera: &camera::Camera,
-		loaded_manager: &mut LoadedManager,
-		segment: Option<NonZeroU32>,
-	) {
+	pub fn update(&mut self, view_checker: lod::Checker, camera: &camera::Camera, loaded_manager: &mut LoadedManager) {
 		if !camera.inside_moved_frustrum(self.corner, self.size, -100.0) {
 			self.clear(loaded_manager);
 			return;
 		}
 		match &mut self.data {
-			Data::Branch { children, segments } => {
-				if let Some(segment) = segment {
-					if segments.contains(&segment).not() {
-						return;
-					}
-				}
-
+			Data::Branch { children, segments: _ } => {
 				if view_checker.should_render(self.corner, self.size, camera) {
 					loaded_manager.request(self.index);
 					for child in children.iter_mut().flatten() {
@@ -203,16 +174,11 @@ impl Node {
 					}
 					let view_checker = view_checker.level_down();
 					for child in children.iter_mut().flatten() {
-						child.update(view_checker, camera, loaded_manager, segment);
+						child.update(view_checker, camera, loaded_manager);
 					}
 				}
 			},
-			&mut Data::Leaf { segment: leaf_segment } => {
-				if let Some(segment) = segment {
-					if segment != leaf_segment {
-						return;
-					}
-				}
+			&mut Data::Leaf { segments: _ } => {
 				loaded_manager.request(self.index);
 			},
 		}
@@ -229,7 +195,7 @@ impl Node {
 					child.clear(loaded_manager);
 				}
 			},
-			Data::Leaf { segment: _ } => {},
+			Data::Leaf { segments: _ } => {},
 		}
 	}
 
@@ -253,7 +219,7 @@ impl Node {
 			})
 	}
 
-	pub fn raycast(&self, start: Vector<3, f32>, direction: Vector<3, f32>) -> Option<NonZeroU32> {
+	pub fn raycast(&self, start: Vector<3, f32>, direction: Vector<3, f32>, path: &Path) -> Option<NonZeroU32> {
 		match &self.data {
 			Data::Branch { children, segments: _ } => {
 				let (mut best, mut distance) = (None, f32::MAX);
@@ -267,7 +233,7 @@ impl Node {
 					if dist >= distance {
 						continue;
 					}
-					let Some(segment) = child.raycast(start, direction) else {
+					let Some(segment) = child.raycast(start, direction, path) else {
 						continue;
 					};
 					best = Some(segment);
@@ -275,7 +241,40 @@ impl Node {
 				}
 				best
 			},
-			&Data::Leaf { segment } => Some(segment),
+			Data::Leaf { segments } => {
+				let mut best = None;
+				let mut best_dist = f32::MAX;
+				for &segment in segments {
+					let mut path = path.to_path_buf();
+					path.push(format!("{}", segment));
+					path.push("points.data");
+					let mut file = std::fs::OpenOptions::new().read(true).open(&path).unwrap();
+					let length = file.metadata().unwrap().len();
+					let mut data =
+						bytemuck::zeroed_vec::<render::Point>(length as usize / std::mem::size_of::<render::Point>());
+					file.read_exact(bytemuck::cast_slice_mut(&mut data))
+						.unwrap();
+
+					for point in data {
+						let diff = point.position - start;
+						let diff_length = diff.length();
+						if diff_length >= best_dist {
+							continue;
+						}
+						let cos = direction.dot(diff.normalized());
+						let sin = (1.0 - cos * cos).sqrt();
+						let distance = sin * diff_length;
+						if distance < point.size {
+							let l = cos * diff_length;
+							if l < best_dist {
+								best = Some(segment);
+								best_dist = l;
+							}
+						}
+					}
+				}
+				best
+			},
 		}
 	}
 }
@@ -291,7 +290,6 @@ impl Tree {
 			lookup: render::Lookup::new_png(state, lookup_name.data()),
 			property_index: 0,
 			environment: render::PointCloudEnvironment::new(state, u32::MIN, u32::MAX),
-			segment: None,
 		}
 	}
 
@@ -303,12 +301,16 @@ impl Tree {
 	pub fn next_property(&mut self, properties: &[String]) {
 		self.property_index = (self.property_index + 1) % properties.len();
 		self.loaded_manager
-			.change_property(&properties[self.property_index], self.property_index)
+			.change_property(&properties[self.property_index], self.property_index);
 	}
 
-	pub fn raycast(&self, start: Vector<3, f32>, direction: Vector<3, f32>) -> Option<NonZeroU32> {
+	pub fn current_property<'a>(&self, properties: &'a [String]) -> &'a str {
+		&properties[self.property_index]
+	}
+
+	pub fn raycast(&self, start: Vector<3, f32>, direction: Vector<3, f32>, path: &Path) -> Option<NonZeroU32> {
 		self.root.raycast_distance(start, direction)?;
-		self.root.raycast(start, direction)
+		self.root.raycast(start, direction, path)
 	}
 }
 
@@ -355,7 +357,6 @@ impl render::PointCloudRender for Tree {
 			lod::Checker::new(&self.camera.lod),
 			&self.camera,
 			&self.loaded_manager,
-			self.segment,
 		);
 	}
 }

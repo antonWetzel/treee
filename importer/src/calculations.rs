@@ -1,3 +1,5 @@
+use std::num::NonZeroU32;
+
 use math::{Dimension, Mat, Vector, X, Y, Z};
 
 use crate::point::Point;
@@ -39,7 +41,7 @@ fn size(neighbors: &[(f32, usize)], points: &[Vector<3, f32>]) -> f32 {
 	(1.0 / 3.0) * mean * edge_adjust_factor(direction_value)
 }
 
-pub fn calculate(data: Vec<Vector<3, f32>>) -> (Vec<Point>, SegmentInformation) {
+pub fn calculate(data: Vec<Vector<3, f32>>, segment: NonZeroU32) -> (Vec<Point>, SegmentInformation) {
 	let neighbors = Neighbors::new(&data);
 
 	let (min, max) = {
@@ -137,6 +139,7 @@ pub fn calculate(data: Vec<Vector<3, f32>>) -> (Vec<Point>, SegmentInformation) 
 					normal: eigen_vectors[Z],
 					size: size(neighbors, &data),
 				},
+				segment,
 				slice: slices[((data[i][Y] - min) / slice_width) as usize],
 				sub_index: i as u32 * sub_step,
 				curve: map_to_u32((3.0 * eigen_values[Z]) / (eigen_values[X] + eigen_values[Y] + eigen_values[Z])),

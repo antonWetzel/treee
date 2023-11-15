@@ -7,6 +7,7 @@ use ui::Element;
 use crate::{
 	interface::{Interface, InterfaceAction},
 	lod,
+	segment::Segment,
 	state::State,
 	tree::Tree,
 };
@@ -16,8 +17,10 @@ const DEFAULT_BACKGROUND: Vector<3, f32> = Vector::new([0.1, 0.2, 0.3]);
 pub struct Game {
 	window: render::Window,
 	tree: Tree,
+	segment: Option<Segment>,
 	project: Project,
 	path: PathBuf,
+	segment_path: PathBuf,
 	project_time: std::time::SystemTime,
 
 	state: &'static State,
@@ -66,6 +69,8 @@ impl Game {
 		);
 		let interface = Interface::new(state, DEFAULT_BACKGROUND);
 
+		let mut segment_path = path.parent().unwrap().to_path_buf();
+		segment_path.push("segments");
 		Self {
 			ui,
 			eye_dome,
@@ -78,6 +83,8 @@ impl Game {
 			project,
 			project_time: std::fs::metadata(&path).unwrap().modified().unwrap(),
 			path,
+			segment_path,
+			segment: None,
 
 			state,
 			mouse: input::Mouse::new(),
@@ -168,6 +175,12 @@ impl Game {
 			},
 			InterfaceAction::Property => {
 				self.tree.next_property(&self.project.properties);
+				if let Some(segment) = &mut self.segment {
+					segment.change_property(
+						self.state,
+						self.tree.current_property(&self.project.properties),
+					);
+				}
 				self.request_redraw();
 			},
 			InterfaceAction::EyeDome => {
@@ -217,7 +230,7 @@ impl Game {
 			},
 
 			InterfaceAction::SegmentReset => {
-				self.tree.segment = None;
+				self.segment = None;
 				self.interface.disable_segment_info();
 				self.window.request_redraw();
 			},
@@ -225,7 +238,7 @@ impl Game {
 	}
 
 	fn raycast(&mut self) {
-		if self.tree.segment.is_some() {
+		if self.segment.is_some() {
 			return;
 		}
 		let start = self.tree.camera.position();
@@ -233,8 +246,13 @@ impl Game {
 			.tree
 			.camera
 			.ray_direction(self.mouse.position(), self.window.get_size());
-		if let Some(segment) = self.tree.raycast(start, direction) {
-			self.tree.segment = Some(segment);
+		if let Some(segment) = self.tree.raycast(start, direction, &self.segment_path) {
+			self.segment = Some(Segment::new(
+				self.state,
+				self.segment_path.clone(),
+				self.tree.current_property(&self.project.properties),
+				segment,
+			));
 			self.interface.enable_segment_info(
 				&self.project.segment_properties,
 				self.project.get_segment_values(segment.get() as usize - 1),
@@ -249,12 +267,13 @@ impl render::Entry for Game {
 		if self.paused {
 			return;
 		}
-		self.tree.root.update(
-			lod::Checker::new(&self.tree.camera.lod),
-			&self.tree.camera,
-			&mut self.tree.loaded_manager,
-			self.tree.segment,
-		);
+		if self.segment.is_none() {
+			self.tree.root.update(
+				lod::Checker::new(&self.tree.camera.lod),
+				&self.tree.camera,
+				&mut self.tree.loaded_manager,
+			);
+		}
 
 		self.ui.queue(self.state, &self.interface);
 
@@ -393,15 +412,27 @@ impl render::RenderEntry for Game {
 	}
 
 	fn render<'a>(&'a self, render_pass: &mut render::RenderPass<'a>) {
-		render_pass.render(
-			&self.tree,
-			(
-				self.state,
-				&self.tree.camera.gpu,
-				&self.tree.lookup,
-				&self.tree.environment,
-			),
-		);
+		if let Some(segment) = &self.segment {
+			render_pass.render(
+				segment,
+				(
+					self.state,
+					&self.tree.camera.gpu,
+					&self.tree.lookup,
+					&self.tree.environment,
+				),
+			);
+		} else {
+			render_pass.render(
+				&self.tree,
+				(
+					self.state,
+					&self.tree.camera.gpu,
+					&self.tree.lookup,
+					&self.tree.environment,
+				),
+			);
+		}
 	}
 
 	fn post_process<'a>(&'a self, render_pass: &mut render::RenderPass<'a>) {

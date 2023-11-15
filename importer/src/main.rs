@@ -53,6 +53,8 @@ fn import() -> Result<(), ImporterError> {
 
 	let stage = Stage::new("Unpacking");
 
+	Writer::setup(&output)?;
+
 	let mut reader = las::Reader::from_path(&input).expect("Unable to open reader");
 	let header_min = reader.header().bounds().min;
 	let header_max = reader.header().bounds().max;
@@ -114,23 +116,18 @@ fn import() -> Result<(), ImporterError> {
 	);
 
 	let (sender, reciever) = crossbeam::channel::bounded(2048);
-	let segment_properties = ["segment", "trunk", "crown"];
+	let segment_properties = ["trunk", "crown"];
 	let (segment_values, _) = rayon::join(
 		|| {
 			let vec = segments
 				.into_par_iter()
 				.enumerate()
 				.map(|(index, segment)| {
-					let (points, information) = calculations::calculate(segment.points());
-					let segment = NonZeroU32::new(index as u32 + 1).unwrap();
-					for point in points {
-						sender.send((point, segment)).unwrap();
-					}
-					[
-						common::Value::Index(segment),
-						information.trunk_height,
-						information.crown_height,
-					]
+					let index = NonZeroU32::new(index as u32 + 1).unwrap();
+					let (points, information) = calculations::calculate(segment.points(), index);
+					sender.send((points, index)).unwrap();
+
+					[information.trunk_height, information.crown_height]
 				})
 				.flatten()
 				.collect();
@@ -139,12 +136,15 @@ fn import() -> Result<(), ImporterError> {
 		},
 		|| {
 			let mut counter = 0;
-			for (point, segment) in reciever {
-				tree.insert(point, segment, &mut cache);
-				counter += 1;
-				if counter >= IMPORT_PROGRESS_SCALE {
-					progress.step();
-					counter -= IMPORT_PROGRESS_SCALE;
+			for (points, segment) in reciever {
+				Writer::save_segment(&output, segment, &points);
+				for point in points {
+					tree.insert(point, &mut cache);
+					counter += 1;
+					if counter >= IMPORT_PROGRESS_SCALE {
+						progress.step();
+						counter -= IMPORT_PROGRESS_SCALE;
+					}
 				}
 			}
 		},

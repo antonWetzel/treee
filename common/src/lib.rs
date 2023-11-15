@@ -1,4 +1,5 @@
 use std::{
+	collections::HashSet,
 	fs::File,
 	io::{Read, Seek, Write},
 	num::NonZeroU32,
@@ -16,7 +17,7 @@ pub enum IndexData {
 		children: Box<[Option<IndexNode>; 8]>,
 	},
 	Leaf {
-		segment: NonZeroU32,
+		segments: HashSet<NonZeroU32>,
 	},
 }
 
