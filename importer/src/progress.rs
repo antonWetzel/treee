@@ -108,7 +108,7 @@ pub struct Stage<'a> {
 impl<'a> Stage<'a> {
 	pub fn new(name: &'a str) -> Self {
 		print!(
-			"{}:{: >width$} [00:00:00] ...\r",
+			"{}:{: >width$} [--:--:--] ...\r",
 			name,
 			"",
 			width = 15 - name.len()

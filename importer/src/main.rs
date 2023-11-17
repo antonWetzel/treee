@@ -13,6 +13,7 @@ use las::Read;
 use math::{Vector, X, Y, Z};
 use progress::Progress;
 use rayon::prelude::*;
+use segment::Segment;
 use thiserror::Error;
 use writer::Writer;
 
@@ -39,6 +40,10 @@ pub enum ImporterError {
 	OutputFolderIsNotEmpty,
 }
 
+fn map_point(point: las::Point, center: Vector<3, f64>) -> Vector<3, f32> {
+	(Vector::new([point.x, point.z, -point.y]) - center).map(|v| v as f32)
+}
+
 fn import() -> Result<(), ImporterError> {
 	let input = rfd::FileDialog::new()
 		.set_title("Select Input File")
@@ -55,14 +60,15 @@ fn import() -> Result<(), ImporterError> {
 
 	Writer::setup(&output)?;
 
-	let mut reader = las::Reader::from_path(&input).expect("Unable to open reader");
-	let header_min = reader.header().bounds().min;
-	let header_max = reader.header().bounds().max;
+	let mut reader = las::Reader::from_path(&input).map_err(Box::new)?;
+	let header = reader.header();
+	let header_min = header.bounds().min;
+	let header_max = header.bounds().max;
 	let min = Vector::new([header_min.x, header_min.z, -header_max.y]);
 	let max = Vector::new([header_max.x, header_max.z, -header_min.y]);
 	let diff = max - min;
 	let pos = min + diff / 2.0;
-	let progress_points = reader.header().number_of_points() / IMPORT_PROGRESS_SCALE;
+	let progress_points = header.number_of_points() / IMPORT_PROGRESS_SCALE;
 
 	stage.finish();
 
@@ -73,39 +79,52 @@ fn import() -> Result<(), ImporterError> {
 	let (sender, reciever) = crossbeam::channel::bounded(2048);
 	rayon::join(
 		|| {
-			let mut counter = 0;
 			//skips invalid points without error or warning
 			for point in reader.points().flatten() {
-				sender
-					.send(Vector::new([point.x, point.z, -point.y]))
-					.unwrap();
+				sender.send(map_point(point, pos)).unwrap();
+			}
+			drop(sender);
+		},
+		|| {
+			let mut counter = 0;
+			for point in reciever {
+				segmenter.add_point(point);
 				counter += 1;
 				if counter >= IMPORT_PROGRESS_SCALE {
 					progress.step();
 					counter -= IMPORT_PROGRESS_SCALE;
 				}
 			}
-			drop(sender);
-		},
-		|| {
-			for point in reciever {
-				segmenter.add_point(
-					[
-						(point[X] - pos[X]) as f32,
-						(point[Y] - pos[Y]) as f32,
-						(point[Z] - pos[Z]) as f32,
-					]
-					.into(),
-				);
-			}
 		},
 	);
 
 	progress.finish();
 
-	let stage = Stage::new("Segmenting");
-	let segments = segmenter.result();
-	stage.finish();
+	let mut progress = Progress::new("Segmenting", progress_points as usize);
+	let mut segments = segmenter.segments();
+	let (sender, reciever) = crossbeam::channel::bounded(2048);
+	rayon::join(
+		|| {
+			reader.seek(0).unwrap();
+			for point in reader.points().flatten() {
+				sender.send(map_point(point, pos)).unwrap();
+			}
+			drop(sender);
+		},
+		|| {
+			let mut counter = 0;
+			for point in reciever {
+				segments.add_point(point);
+				counter += 1;
+				if counter >= IMPORT_PROGRESS_SCALE {
+					progress.step();
+					counter -= IMPORT_PROGRESS_SCALE;
+				}
+			}
+		},
+	);
+	let segments = segments.segments();
+	progress.finish();
 
 	let mut progress = Progress::new("Calculate", progress_points as usize);
 

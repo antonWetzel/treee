@@ -1,3 +1,9 @@
+use std::{
+	cmp::Ordering,
+	collections::{HashMap, HashSet},
+	ops::Not,
+};
+
 use math::{Vector, X, Y, Z};
 
 use crate::cache::{Cache, CacheEntry, CacheIndex};
@@ -12,92 +18,86 @@ impl Segment {
 	}
 }
 
-enum Node {
-	Branch(Box<[Option<Node>; 4]>),
-	Leaf(CacheIndex),
-}
-
-impl Node {
-	fn result(self, res: &mut Vec<Segment>, cache: &mut Cache<Vector<3, f32>>) {
-		match self {
-			Node::Branch(children) => {
-				for child in children.into_iter().flatten() {
-					child.result(res, cache)
-				}
-			},
-			Node::Leaf(index) => res.push(Segment { data: cache.read(index) }),
-		}
-	}
-}
-
-/// ### Idea
-/// 1. split into quadtree
-///     - dynamic or fixed physical size
-/// 1. identify ground level
-/// 1. slice above ground
-/// 1. identify trunks
-/// 1. grow trees from identified segments
 pub struct Segmenter {
-	root: Node,
-	cache: Cache<Vector<3, f32>>,
-	min: Vector<2, f32>,
-	size: f32,
+	data: HashSet<(usize, usize, usize)>,
+	min: Vector<3, f32>,
 }
 
 impl Segmenter {
 	pub fn new(min: Vector<3, f32>, max: Vector<3, f32>) -> Self {
-		let cache = Cache::new(64);
-		Self {
-			cache,
-			min: [min[X], min[Z]].into(),
-			size: (max[X] - min[X]).max(max[Z] - min[Z]),
-
-			root: Node::Branch(Box::new([None, None, None, None])),
-			// root: Node::Leaf(entry),
-		}
+		Self { data: HashSet::new(), min }
 	}
 
 	pub fn add_point(&mut self, point: Vector<3, f32>) {
-		let mut size = self.size;
-		let mut node = &mut self.root;
-		let mut pos = self.min;
-		loop {
-			node = match node {
-				Node::Branch(children) => {
-					size /= 2.0;
-					let idx = if point[X] >= pos[X] + size {
-						pos[X] += size;
-						1
-					} else {
-						0
-					} + if point[Z] >= pos[Y] + size {
-						pos[Y] += size;
-						2
-					} else {
-						0
-					};
-
-					if children[idx].is_none() {
-						children[idx] = Some(if size > 2.5 {
-							Node::Branch(Box::new([None, None, None, None]))
-						} else {
-							Node::Leaf(self.cache.new_entry())
-						});
-					};
-
-					children[idx].as_mut().unwrap()
-				},
-				Node::Leaf(index) => {
-					self.cache.add_point(index, point);
-					break;
-				},
-			};
-		}
+		let x = ((point[X] - self.min[X]) / 0.05) as usize;
+		let y = ((point[Y] - self.min[Y]) / 0.05) as usize;
+		let z = ((point[Z] - self.min[Z]) / 0.05) as usize;
+		self.data.insert((x, y, z));
 	}
 
-	pub fn result(mut self) -> Vec<Segment> {
-		let mut res = Vec::new();
-		self.root.result(&mut res, &mut self.cache);
+	pub fn segments(self) -> Segments {
+		let mut cache = Cache::new(16);
+
+		let mut ground = HashMap::<_, f32>::new();
+		for &(x, y, z) in self.data.iter() {
+			let x = x / 100;
+			let y = y as f32 * 0.05;
+			let z = z / 100;
+			if let Some(ground) = ground.get_mut(&(x, z)) {
+				*ground = (*ground).min(y);
+			} else {
+				ground.insert((x, z), y);
+			}
+		}
+
+		Segments {
+			segments: vec![cache.new_entry(), cache.new_entry()],
+			cache,
+			min: self.min,
+			// data: self.data,
+			ground,
+		}
+	}
+}
+
+pub struct Segments {
+	cache: Cache<Vector<3, f32>>,
+	segments: Vec<CacheIndex>,
+
+	// data: HashSet<(usize, usize, usize)>,
+	ground: HashMap<(usize, usize), f32>,
+	min: Vector<3, f32>,
+}
+
+impl Segments {
+	pub fn add_point(&mut self, point: Vector<3, f32>) {
+		let x = ((point[X] - self.min[X]) / 0.05) as usize;
+		// let y = ((point[Y] - self.min[Y]) / 0.05) as usize;
+		let z = ((point[Z] - self.min[Z]) / 0.05) as usize;
+
+		let ground = *self.ground.get(&(x / 100, z / 100)).unwrap();
+
+		let distance = (point[Y] - self.min[Y]) - ground;
+		let idx = (distance / 1.0) as usize;
+		while idx >= self.segments.len() {
+			self.segments.push(self.cache.new_entry());
+		}
+		self.cache.add_point(&self.segments[idx], point);
+	}
+
+	pub fn segments(mut self) -> Vec<Segment> {
+		let mut res = self
+			.segments
+			.into_iter()
+			.map(|index| self.cache.read(index))
+			.filter(|d| d.is_empty().not())
+			.map(|d| Segment { data: d })
+			.collect::<Vec<_>>();
+		res.sort_by(|a, b| match (a.data.active(), b.data.active()) {
+			(true, true) | (false, false) => Ordering::Equal,
+			(true, false) => Ordering::Less,
+			(false, true) => Ordering::Greater,
+		});
 		res
 	}
 }

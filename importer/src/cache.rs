@@ -3,6 +3,7 @@ use std::{
 	fs::File,
 	io::{Read, Seek, Write},
 	mem::MaybeUninit,
+	ops::Not,
 };
 
 pub struct Cache<T> {
@@ -113,5 +114,13 @@ impl<T> CacheEntry<T> {
 		} else {
 			self.active
 		}
+	}
+
+	pub fn is_empty(&self) -> bool {
+		self.active.is_empty() && self.file.is_none()
+	}
+
+	pub fn active(&self) -> bool {
+		self.active.is_empty().not()
 	}
 }

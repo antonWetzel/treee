@@ -42,7 +42,7 @@ fn size(neighbors: &[(f32, usize)], points: &[Vector<3, f32>]) -> f32 {
 }
 
 pub fn calculate(data: Vec<Vector<3, f32>>, segment: NonZeroU32) -> (Vec<Point>, SegmentInformation) {
-	let neighbors = Neighbors::new(&data);
+	let neighbors_tree = NeighborsTree::new(&data);
 
 	let (min, max) = {
 		let mut min = data[0][Y];
@@ -99,11 +99,10 @@ pub fn calculate(data: Vec<Vector<3, f32>>, segment: NonZeroU32) -> (Vec<Point>,
 		(mapped, slice_width, min + slice_width * sep as f32)
 	};
 
-	let sub_step = u32::MAX / data.len() as u32;
-
 	let res = (0..data.len())
 		.map(|i| {
-			let neighbors = neighbors.get(i);
+			let mut neighbors = [(0.0, 0); MAX_NEIGHBORS];
+			let neighbors = neighbors_tree.get(data[i], &mut neighbors);
 
 			let mean = {
 				let mut mean = Vector::<3, f32>::new([0.0, 0.0, 0.0]);
@@ -141,7 +140,7 @@ pub fn calculate(data: Vec<Vector<3, f32>>, segment: NonZeroU32) -> (Vec<Point>,
 				},
 				segment,
 				slice: slices[((data[i][Y] - min) / slice_width) as usize],
-				sub_index: i as u32 * sub_step,
+				sub_index: ((data[i][Y] - min) / (max - min) * u32::MAX as f32) as u32,
 				curve: map_to_u32((3.0 * eigen_values[Z]) / (eigen_values[X] + eigen_values[Y] + eigen_values[Z])),
 			}
 		})
@@ -175,27 +174,17 @@ impl k_nearest::Adapter<3, f32, Vector<3, f32>> for Adapter {
 }
 
 //todo: check if precalculated is better
-pub struct Neighbors(Vec<(usize, [(f32, usize); MAX_NEIGHBORS])>);
+// pub struct Neighbors(Vec<(usize, [(f32, usize); MAX_NEIGHBORS])>);
+pub struct NeighborsTree(k_nearest::KDTree<3, f32, Vector<3, f32>, Adapter, k_nearest::EuclideanDistanceSquared>);
 
-impl Neighbors {
+impl NeighborsTree {
 	pub fn new(points: &[Vector<3, f32>]) -> Self {
-		let kd_tree =
-			k_nearest::KDTree::<3, f32, Vector<3, f32>, Adapter, k_nearest::EuclideanDistanceSquared>::new(points);
-
-		let mut neighbors = Vec::<(usize, [(f32, usize); MAX_NEIGHBORS])>::new();
-		neighbors.reserve_exact(points.len());
-		unsafe { neighbors.set_len(points.len()) };
-		neighbors
-			.iter_mut()
-			.zip(points)
-			.for_each(|(neighbor, point)| {
-				neighbor.0 = kd_tree.k_nearest(point, &mut neighbor.1, 1.0);
-			});
-		Self(neighbors)
+		Self(k_nearest::KDTree::new(points))
 	}
 
-	pub fn get(&self, index: usize) -> &[(f32, usize)] {
-		&self.0[index].1[0..self.0[index].0]
+	pub fn get<'a>(&self, point: Vector<3, f32>, data: &'a mut [(f32, usize)]) -> &'a [(f32, usize)] {
+		let l = self.0.k_nearest(&point, data, 1000.0);
+		&data[0..l]
 	}
 }
 

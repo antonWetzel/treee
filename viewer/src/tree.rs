@@ -248,7 +248,9 @@ impl Node {
 					let mut path = path.to_path_buf();
 					path.push(format!("{}", segment));
 					path.push("points.data");
-					let mut file = std::fs::OpenOptions::new().read(true).open(&path).unwrap();
+					let Ok(mut file) = std::fs::OpenOptions::new().read(true).open(&path) else {
+						continue;
+					};
 					let length = file.metadata().unwrap().len();
 					let mut data =
 						bytemuck::zeroed_vec::<render::Point>(length as usize / std::mem::size_of::<render::Point>());

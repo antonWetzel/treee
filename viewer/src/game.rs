@@ -247,6 +247,7 @@ impl Game {
 			.camera
 			.ray_direction(self.mouse.position(), self.window.get_size());
 		if let Some(segment) = self.tree.raycast(start, direction, &self.segment_path) {
+			println!("Switch to Segment '{}'", segment);
 			self.segment = Some(Segment::new(
 				self.state,
 				self.segment_path.clone(),
