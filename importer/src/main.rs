@@ -13,7 +13,6 @@ use las::Read;
 use math::{Vector, X, Y, Z};
 use progress::Progress;
 use rayon::prelude::*;
-use segment::Segment;
 use thiserror::Error;
 use writer::Writer;
 
