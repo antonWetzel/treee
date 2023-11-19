@@ -10,7 +10,7 @@ use crate::{
 	Dimension, Dimensions, X, Y, Z,
 };
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Vector<const N: usize, T>([T; N]);
 
 unsafe impl<const N: usize, T: bytemuck::Zeroable> bytemuck::Zeroable for Vector<N, T> {}
@@ -155,7 +155,7 @@ impl<const N: usize, T> Vector<N, T> {
 		Self(data)
 	}
 
-	pub fn data(&self) -> [T; N]
+	pub fn data(self) -> [T; N]
 	where
 		T: Copy,
 	{
@@ -271,17 +271,6 @@ impl<const N: usize, T> std::convert::AsRef<[T]> for Vector<N, T> {
 impl<const N: usize, T> std::convert::AsMut<[T]> for Vector<N, T> {
 	fn as_mut(&mut self) -> &mut [T] {
 		&mut self.0
-	}
-}
-
-impl<const N: usize, T: PartialEq> std::cmp::PartialEq for Vector<N, T> {
-	fn eq(&self, other: &Self) -> bool {
-		for i in Dimensions(0..N) {
-			if self[i] != other[i] {
-				return false;
-			}
-		}
-		true
 	}
 }
 

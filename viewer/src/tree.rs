@@ -219,21 +219,31 @@ impl Node {
 			})
 	}
 
-	pub fn raycast(&self, start: Vector<3, f32>, direction: Vector<3, f32>, path: &Path) -> Option<NonZeroU32> {
+	pub fn raycast(
+		&self,
+		start: Vector<3, f32>,
+		direction: Vector<3, f32>,
+		path: &Path,
+		checked: &mut HashSet<NonZeroU32>,
+	) -> Option<NonZeroU32> {
 		match &self.data {
 			Data::Branch { children, segments: _ } => {
-				let (mut best, mut distance) = (None, f32::MAX);
-				for child in children.iter() {
-					let Some(child) = child else {
-						continue;
-					};
+				let mut order = Vec::new();
+				for child in children.iter().flatten() {
 					let Some(dist) = child.raycast_distance(start, direction) else {
 						continue;
 					};
+					order.push((child, dist));
+				}
+
+				order.sort_by(|(_, dist_a), (_, dist_b)| dist_a.total_cmp(dist_b));
+
+				let (mut best, mut distance) = (None, f32::MAX);
+				for (child, dist) in order {
 					if dist >= distance {
 						continue;
 					}
-					let Some(segment) = child.raycast(start, direction, path) else {
+					let Some(segment) = child.raycast(start, direction, path, checked) else {
 						continue;
 					};
 					best = Some(segment);
@@ -245,6 +255,10 @@ impl Node {
 				let mut best = None;
 				let mut best_dist = f32::MAX;
 				for &segment in segments {
+					if checked.contains(&segment) {
+						continue;
+					}
+
 					let mut path = path.to_path_buf();
 					path.push(format!("{}", segment));
 					path.push("points.data");
@@ -274,6 +288,8 @@ impl Node {
 							}
 						}
 					}
+
+					checked.insert(segment);
 				}
 				best
 			},
@@ -312,7 +328,8 @@ impl Tree {
 
 	pub fn raycast(&self, start: Vector<3, f32>, direction: Vector<3, f32>, path: &Path) -> Option<NonZeroU32> {
 		self.root.raycast_distance(start, direction)?;
-		self.root.raycast(start, direction, path)
+		let mut checked = HashSet::new();
+		self.root.raycast(start, direction, path, &mut checked)
 	}
 }
 

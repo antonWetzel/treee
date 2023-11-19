@@ -20,7 +20,6 @@ pub struct Game {
 	segment: Option<Segment>,
 	project: Project,
 	path: PathBuf,
-	segment_path: PathBuf,
 	project_time: std::time::SystemTime,
 
 	state: &'static State,
@@ -69,8 +68,6 @@ impl Game {
 		);
 		let interface = Interface::new(state, DEFAULT_BACKGROUND);
 
-		let mut segment_path = path.parent().unwrap().to_path_buf();
-		segment_path.push("segments");
 		Self {
 			ui,
 			eye_dome,
@@ -83,7 +80,6 @@ impl Game {
 			project,
 			project_time: std::fs::metadata(&path).unwrap().modified().unwrap(),
 			path,
-			segment_path,
 			segment: None,
 
 			state,
@@ -246,11 +242,13 @@ impl Game {
 			.tree
 			.camera
 			.ray_direction(self.mouse.position(), self.window.get_size());
-		if let Some(segment) = self.tree.raycast(start, direction, &self.segment_path) {
+		let mut segment_path = self.path.parent().unwrap().to_path_buf();
+		segment_path.push("segments");
+		if let Some(segment) = self.tree.raycast(start, direction, &segment_path) {
 			println!("Switch to Segment '{}'", segment);
 			self.segment = Some(Segment::new(
 				self.state,
-				self.segment_path.clone(),
+				segment_path,
 				self.tree.current_property(&self.project.properties),
 				segment,
 			));

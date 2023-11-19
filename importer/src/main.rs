@@ -3,6 +3,7 @@ mod calculations;
 mod level_of_detail;
 mod point;
 mod progress;
+mod quad_tree;
 mod segment;
 mod tree;
 mod writer;
@@ -73,7 +74,7 @@ fn import() -> Result<(), ImporterError> {
 
 	let mut progress = Progress::new("Import", progress_points as usize);
 
-	let mut segmenter = Segmenter::new((min - pos).map(|v| v as f32), (max - pos).map(|v| v as f32));
+	let mut segmenter = Segmenter::new((min - pos).map(|v| v as f32));
 
 	let (sender, reciever) = crossbeam::channel::bounded(2048);
 	rayon::join(
@@ -172,7 +173,7 @@ fn import() -> Result<(), ImporterError> {
 
 	let stage = Stage::new("Save Project");
 
-	let properties = ["slice", "sub_index", "curve"];
+	let properties = ["sub_index", "slice", "curve"];
 	let (tree, project) = tree.flatten(
 		&properties,
 		&segment_properties,
