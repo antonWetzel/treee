@@ -8,85 +8,47 @@
 			"type": "lldb",
 			"request": "launch",
 			"name": "Debug import",
-			"cargo": {
-				"args": [
-					"build",
-					"--bin=importer",
-					"--package=importer"
-				],
-				"filter": {
-					"name": "importer",
-					"kind": "bin"
-				}
-			},
+			"program": "${workspaceFolder}/target/debug/importer",
 			"sourceLanguages": [
 				"rust"
 			],
 			"cwd": "${workspaceFolder}/cwd",
+			"preLaunchTask": "cargo debug",
 		},
 		{
 			"type": "lldb",
 			"request": "launch",
 			"name": "Debug viewer",
-			"cargo": {
-				"args": [
-					"build",
-					"--bin=viewer",
-					"--package=viewer"
-				],
-				"filter": {
-					"name": "viewer",
-					"kind": "bin"
-				}
-			},
+			"program": "${workspaceFolder}/target/debug/viewer",
 			"sourceLanguages": [
 				"rust"
 			],
 			"cwd": "${workspaceFolder}/cwd",
 			"args": [],
+			"preLaunchTask": "cargo debug",
 		},
 		{
 			"type": "lldb",
 			"request": "launch",
 			"name": "Release import",
-			"cargo": {
-				"args": [
-					"build",
-					"--release",
-					"--bin=importer",
-					"--package=importer"
-				],
-				"filter": {
-					"name": "importer",
-					"kind": "bin"
-				}
-			},
+			"program": "${workspaceFolder}/target/release/importer",
 			"sourceLanguages": [
 				"rust"
 			],
 			"cwd": "${workspaceFolder}/cwd",
+			"preLaunchTask": "cargo release",
 		},
 		{
 			"type": "lldb",
 			"request": "launch",
 			"name": "Release viewer",
-			"cargo": {
-				"args": [
-					"build",
-					"--release",
-					"--bin=viewer",
-					"--package=viewer"
-				],
-				"filter": {
-					"name": "viewer",
-					"kind": "bin"
-				}
-			},
+			"program": "${workspaceFolder}/target/release/viewer",
 			"sourceLanguages": [
 				"rust"
 			],
 			"cwd": "${workspaceFolder}/cwd",
 			"args": [],
+			"preLaunchTask": "cargo release",
 		},
 	],
 }
