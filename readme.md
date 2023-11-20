@@ -17,6 +17,7 @@ Point cloud importer and viewer with focus on forest scans.
 	- phases
 		1. open input file
 		1. import points
+		1. segment into trees
 		1. calculate data from the points
 		1. crate project file
 		1. save data and level of detail
@@ -29,35 +30,29 @@ Point cloud importer and viewer with focus on forest scans.
 	- controls (work in progress)
 		- <kbd>wasd</kbd>/<kbd>↑←↓→</kbd>move camera
 		- <kbd>left mouse button</kbd> pan camera
-		- `Close`: Close application
 		- `Folder`: open project file
-		- `Bug`: toggle debug information
-			- hidden (default)
-			- visible
+		- `Bucket`: background color
+			- click for reset
+			- popup sliders for fine control
 		- `Color Palette`: toggle visualization color palette
 			- warm (default)
 			- cold
+			- green/brown
 		- `Information`: change visualization property
 			- height (default)
 			- inverse height
-		- `Invert`: toggle eye dome lightning
-			- active (default)
-			- inactive
-		- `Invert Popup Buttons`
-			- increase/decrease strength
-			- increase/decrease sensitivity
+		- `Invert`: eye dome lightning
+			- click to toggle
+			- popup slider for strength or color
 		- `Camera`: toggle camera controller
 			- orbital controls (default)
 			- first person
-		- `Level of Detail`: change level of detail calculation
-			- based on distance (default)
-			- equal level for all
-		- `Level of Detail Popup Button`
-			- increase/decrease quality
-		- `Slice`
-			- hover for sliders
-		- `Slice Popup Sliders`
-			- change min and max value for property
-			- points outside the range are hidden
-		- `Box`
-			- reset selected Segment
+		- `Layers`: level of detail
+			- click to change
+				- based on distance (default)
+				- equal level for all
+			- popup buttons to increase or decrease quality
+		- `Box`: segment reset
+			- click to reset selected Segment
+		- `Sliders`: view slice
+			- popup sliders to set min and max value
