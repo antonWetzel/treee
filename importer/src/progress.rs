@@ -43,7 +43,7 @@ impl<'a> Progress<'a> {
 		self.maybe_print();
 	}
 
-	const SUB_STEPS: &str = " ▏▎▍▌▋▊▉";
+	const SUB_STEPS: &'static str = " ▏▎▍▌▋▊▉";
 
 	fn print(name: &str, progress: usize, goal: usize, start: Instant) {
 		let (hours, minutes, seconds) = time(start);

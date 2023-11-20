@@ -182,7 +182,6 @@ fn import() -> Result<(), ImporterError> {
 		cache,
 	);
 
-	// todo: earlier check if output is empty
 	let writer = Writer::new(output, &project)?;
 
 	stage.finish();

@@ -95,7 +95,7 @@ impl Segmenter {
 			} else {
 				let idx = y;
 				if idx >= slices.len() {
-					slices.resize_with(idx + 1, || Vec::new());
+					slices.resize_with(idx + 1, Vec::new);
 				}
 				slices[idx].push((x, z));
 			}
