@@ -9,17 +9,33 @@ pub struct PointCloudState {
 	pipeline: wgpu::RenderPipeline,
 }
 
+//tan(60°)
+const TAN_60_DEGREES: f32 = 1.7320508075688767;
+
+// todo: better name
+const QUAD_DATA: [crate::PointEdge; 3] = [
+	crate::PointEdge {
+		position: Vector::new([-TAN_60_DEGREES, -1.0]),
+	},
+	crate::PointEdge {
+		position: Vector::new([TAN_60_DEGREES, -1.0]),
+	},
+	crate::PointEdge { position: Vector::new([0.0, 2.0]) },
+];
+
+// Triangle is a lot faster
+// const QUAD_DATA: [crate::PointEdge; 6] = [
+// 	crate::PointEdge { position: Vector::new([-1.0, -1.0]) },
+// 	crate::PointEdge { position: Vector::new([1.0, -1.0]) },
+// 	crate::PointEdge { position: Vector::new([1.0, 1.0]) },
+// 	crate::PointEdge { position: Vector::new([-1.0, -1.0]) },
+// 	crate::PointEdge { position: Vector::new([1.0, 1.0]) },
+// 	crate::PointEdge { position: Vector::new([-1.0, 1.0]) },
+// ];
+
 impl PointCloudState {
 	pub fn new(state: &impl Has<State>) -> Self {
 		let state = state.get();
-		const QUAD_DATA: [crate::PointEdge; 6] = [
-			crate::PointEdge { position: Vector::new([-1.0, -1.0]) },
-			crate::PointEdge { position: Vector::new([1.0, -1.0]) },
-			crate::PointEdge { position: Vector::new([1.0, 1.0]) },
-			crate::PointEdge { position: Vector::new([-1.0, -1.0]) },
-			crate::PointEdge { position: Vector::new([1.0, 1.0]) },
-			crate::PointEdge { position: Vector::new([-1.0, 1.0]) },
-		];
 
 		let shader = state
 			.device
@@ -175,7 +191,9 @@ impl PointCloud {
 				self.instances
 			);
 		}
-		point_cloud_pass.0.draw(0..6, 0..self.instances);
+		point_cloud_pass
+			.0
+			.draw(0..QUAD_DATA.len() as u32, 0..self.instances);
 	}
 }
 

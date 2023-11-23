@@ -1,3 +1,4 @@
+use image::buffer;
 use math::{Vector, X, Y, Z};
 use winit::platform::windows::WindowExtWindows;
 
@@ -104,12 +105,20 @@ impl Window {
 			.texture
 			.create_view(&wgpu::TextureViewDescriptor::default());
 
+		// let set = render_state
+		// 	.device
+		// 	.create_query_set(&wgpu::QuerySetDescriptor {
+		// 		label: None,
+		// 		ty: wgpu::QueryType::Timestamp,
+		// 		count: 2,
+		// 	});
 		let mut encoder = render_state
 			.device
 			.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("Render Encoder") });
 
 		let background = renderable.background();
 
+		// encoder.write_timestamp(&set, 0);
 		let mut render_pass = RenderPass::new(encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
 			label: Some("Render Pass"),
 			color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -139,6 +148,7 @@ impl Window {
 
 		renderable.render(&mut render_pass);
 		drop(render_pass);
+		// encoder.write_timestamp(&set, 1);
 
 		let view = output
 			.texture
@@ -160,7 +170,52 @@ impl Window {
 		renderable.post_process(&mut render_pass);
 		drop(render_pass);
 
+		// let buffer = render_state.device.create_buffer(&wgpu::BufferDescriptor {
+		// 	label: None,
+		// 	mapped_at_creation: false,
+		// 	size: 8 * 2,
+		// 	usage: wgpu::BufferUsages::QUERY_RESOLVE
+		// 		| wgpu::BufferUsages::STORAGE
+		// 		| wgpu::BufferUsages::COPY_SRC
+		// 		| wgpu::BufferUsages::COPY_DST,
+		// });
+
+		// encoder.resolve_query_set(&set, 0..2, &buffer, 0);
+
 		render_state.queue.submit(Some(encoder.finish()));
 		output.present();
+
+		// {
+		// 	let mut encoder = render_state
+		// 		.device
+		// 		.create_command_encoder(&Default::default());
+
+		// 	let map_buffer = render_state.device.create_buffer(&wgpu::BufferDescriptor {
+		// 		label: None,
+		// 		mapped_at_creation: false,
+		// 		size: 8 * 2,
+		// 		usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+		// 	});
+		// 	encoder.copy_buffer_to_buffer(&buffer, 0, &map_buffer, 0, 8 * 2);
+
+		// 	render_state.queue.submit(Some(encoder.finish()));
+
+		// 	let (sender, reciever) = std::sync::mpsc::channel();
+		// 	map_buffer
+		// 		.slice(..)
+		// 		.map_async(wgpu::MapMode::Read, |result| {
+		// 			sender.send(()).unwrap();
+		// 			drop(sender);
+		// 		});
+
+		// 	render_state.device.poll(wgpu::Maintain::Wait);
+
+		// 	for _ in reciever {}
+		// 	let data = map_buffer.slice(..).get_mapped_range();
+		// 	let data = bytemuck::cast_slice::<u8, u64>(&data);
+		// 	let diff = data[1] - data[0];
+		// 	let value = diff as f64 * 1e-9 * render_state.queue.get_timestamp_period() as f64;
+		// 	println!("{}", value);
+		// }
 	}
 }

@@ -2,6 +2,7 @@ use math::Vector;
 
 use crate::camera;
 
+#[derive(Debug)]
 pub enum Mode {
 	Normal { threshold: f32 },
 	Level { target: usize, max: usize },
