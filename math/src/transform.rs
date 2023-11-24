@@ -9,6 +9,8 @@ use crate::{
 	Dimensions, X, Y, Z,
 };
 
+use serde::{de::Visitor, Deserialize, Serialize};
+
 #[derive(Clone, Copy, Debug)]
 pub struct Transform<const N: usize, T> {
 	pub basis: Mat<N, T>,
@@ -319,5 +321,52 @@ impl<T> Transform<3, T> {
 		T: Mul<T, Output = T>,
 	{
 		*self = Self::rotatation(axis, angle) * *self;
+	}
+}
+
+#[derive(Serialize, Deserialize)]
+struct SerialzeHelper<const N: usize, T>
+where
+	for<'a> Vector<N, T>: Serialize + Deserialize<'a>,
+	for<'a> Mat<N, T>: Serialize + Deserialize<'a>,
+{
+	pub basis: Mat<N, T>,
+	pub position: Vector<N, T>,
+}
+
+impl<const N: usize, T> Serialize for Transform<N, T>
+where
+	for<'a> T: Serialize + Deserialize<'a>,
+	for<'a> Vector<N, T>: Serialize + Deserialize<'a>,
+	for<'a> Mat<N, T>: Serialize + Deserialize<'a>,
+{
+	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+	where
+		S: serde::Serializer,
+	{
+		let helper = std::mem::ManuallyDrop::new(SerialzeHelper {
+			basis: unsafe { std::ptr::read(&self.basis) },
+			position: unsafe { std::ptr::read(&self.position) },
+		});
+		helper.serialize(serializer)
+	}
+}
+
+impl<'de, const N: usize, T> Deserialize<'de> for Transform<N, T>
+where
+	for<'a> T: Serialize + Deserialize<'a>,
+	for<'a> Vector<N, T>: Serialize + Deserialize<'a>,
+	for<'a> Mat<N, T>: Serialize + Deserialize<'a>,
+{
+	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+	where
+		D: serde::Deserializer<'de>,
+	{
+		let helper = <SerialzeHelper<N, T>>::deserialize(deserializer)?;
+
+		Ok(Self {
+			basis: helper.basis,
+			position: helper.position,
+		})
 	}
 }

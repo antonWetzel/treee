@@ -1,7 +1,10 @@
+use std::fs::File;
+
 use math::Angle;
 use math::Transform;
 use math::Vector;
 use math::{X, Y, Z};
+use serde::{Deserialize, Serialize};
 
 use crate::lod;
 use crate::State;
@@ -124,8 +127,52 @@ impl Camera {
 		}
 		false
 	}
+
+	pub fn save(&self) {
+		let Some(path) = rfd::FileDialog::new()
+			.add_filter("Camera Data", &["camdata"])
+			.save_file()
+		else {
+			return;
+		};
+		let data = CameraData {
+			transform: self.transform,
+			controller: self.controller,
+			lod: self.lod,
+		};
+		let Ok(file) = File::create(path) else {
+			return;
+		};
+		bincode::serialize_into(file, &data).unwrap();
+	}
+
+	pub fn load(&mut self, state: &State) {
+		let Some(path) = rfd::FileDialog::new()
+			.add_filter("Camera Data", &["camdata"])
+			.pick_file()
+		else {
+			return;
+		};
+		let Ok(file) = File::open(path) else {
+			return;
+		};
+		let data = bincode::deserialize_from::<_, CameraData>(file).unwrap();
+
+		self.transform = data.transform;
+		self.controller = data.controller;
+		self.lod = data.lod;
+		self.gpu = render::Camera3DGPU::new(state, &self.cam, &self.transform);
+	}
 }
 
+#[derive(Serialize, Deserialize)]
+struct CameraData {
+	transform: Transform<3, f32>,
+	controller: Controller,
+	lod: lod::Mode,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy)]
 enum Controller {
 	FirstPerson { sensitivity: f32 },
 	Orbital { offset: f32 },

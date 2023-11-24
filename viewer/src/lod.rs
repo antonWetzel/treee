@@ -1,8 +1,9 @@
 use math::Vector;
+use serde::{Deserialize, Serialize};
 
 use crate::camera;
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
 pub enum Mode {
 	Normal { threshold: f32 },
 	Level { target: usize, max: usize },

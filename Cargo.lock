@@ -2235,6 +2235,7 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 name = "viewer"
 version = "0.1.0"
 dependencies = [
+ "bincode",
  "bytemuck",
  "common",
  "crossbeam-channel",
@@ -2243,6 +2244,7 @@ dependencies = [
  "pollster",
  "render",
  "rfd",
+ "serde",
  "thiserror",
  "ui",
 ]

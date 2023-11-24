@@ -340,6 +340,15 @@ impl render::Entry for Game {
 
 	fn key_changed(&mut self, _window_id: render::WindowId, key: input::KeyCode, key_state: input::State) {
 		self.keyboard.update(key, key_state);
+
+		match (key, key_state) {
+			(input::KeyCode::K, input::State::Pressed) => self.tree.camera.save(),
+			(input::KeyCode::L, input::State::Pressed) => {
+				self.tree.camera.load(self.state);
+				self.request_redraw()
+			},
+			_ => {},
+		}
 	}
 
 	fn modifiers_changed(&mut self, modifiers: input::Modifiers) {

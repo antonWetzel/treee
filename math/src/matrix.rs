@@ -5,6 +5,8 @@ use std::{
 
 use crate::{requirements::Zero, vector::Vector, Dimension, Dimension2D, Dimensions};
 
+use serde::{Deserialize, Serialize};
+
 #[derive(Clone, Copy, Debug)]
 pub struct Matrix<const A: usize, const B: usize, T>([Vector<B, T>; A]);
 
@@ -166,5 +168,29 @@ impl<const A: usize, const B: usize, T: std::fmt::Display> std::fmt::Display for
 impl<const A: usize, const B: usize, T> From<[Vector<B, T>; A]> for Matrix<A, B, T> {
 	fn from(value: [Vector<B, T>; A]) -> Self {
 		Self(value)
+	}
+}
+
+impl<const A: usize, const B: usize, T> Serialize for Matrix<A, B, T>
+where
+	[Vector<B, T>; A]: Serialize,
+{
+	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+	where
+		S: serde::Serializer,
+	{
+		self.0.serialize(serializer)
+	}
+}
+
+impl<'de, const A: usize, const B: usize, T> Deserialize<'de> for Matrix<A, B, T>
+where
+	[Vector<B, T>; A]: Deserialize<'de>,
+{
+	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+	where
+		D: serde::Deserializer<'de>,
+	{
+		Ok(Self(<[Vector<B, T>; A]>::deserialize(deserializer)?))
 	}
 }
