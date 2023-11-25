@@ -162,7 +162,9 @@ impl LoadedManager {
 	}
 
 	pub fn update(&mut self) -> bool {
-		let mut change = false;
+		if self.reciever.is_empty() {
+			return false;
+		}
 		for response in self.reciever.try_iter() {
 			match response {
 				Response::PointCloud(index, data) => {
@@ -187,9 +189,8 @@ impl LoadedManager {
 					self.property_available.remove(&index);
 				},
 			}
-			change = true;
 		}
-		change
+		true
 	}
 }
 

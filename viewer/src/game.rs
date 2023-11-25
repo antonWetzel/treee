@@ -38,6 +38,8 @@ pub struct Game {
 	background: Vector<3, f32>,
 
 	quit: bool,
+
+	render_time: f32,
 }
 
 impl Game {
@@ -91,6 +93,8 @@ impl Game {
 			background: DEFAULT_BACKGROUND,
 
 			quit: false,
+
+			render_time: 0.01,
 		}
 	}
 
@@ -276,7 +280,7 @@ impl render::Entry for Game {
 
 		self.ui.queue(self.state, &self.interface);
 
-		self.window.render(self.state, self);
+		self.render_time = self.window.render(self.state, self);
 	}
 
 	fn resize_window(&mut self, _window_id: render::WindowId, size: Vector<2, u32>) {
@@ -331,7 +335,7 @@ impl render::Entry for Game {
 			self.request_redraw();
 		}
 
-		if self.tree.loaded_manager.update() {
+		if self.tree.loaded_manager.update() || self.tree.camera.time(self.render_time) {
 			self.window.request_redraw();
 		}
 

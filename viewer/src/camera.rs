@@ -33,7 +33,7 @@ impl Camera {
 			transform,
 			cam: camera,
 			controller,
-			lod: lod::Mode::Normal { threshold: 1.0 },
+			lod: lod::Mode::Auto { threshold: 1.0 },
 		}
 	}
 
@@ -58,9 +58,30 @@ impl Camera {
 
 	pub fn change_lod(&mut self, max_level: usize) {
 		self.lod = match &self.lod {
+			lod::Mode::Normal { .. } => lod::Mode::Auto { threshold: 1.0 },
+			lod::Mode::Auto { .. } => lod::Mode::Level { target: 0, max: max_level },
 			lod::Mode::Level { .. } => lod::Mode::Normal { threshold: 1.0 },
-			lod::Mode::Normal { .. } => lod::Mode::Level { target: 0, max: max_level },
 		};
+		println!("Changed LOD to {:?}", self.lod);
+	}
+
+	pub fn time(&mut self, render_time: f32) -> bool {
+		match &mut self.lod {
+			lod::Mode::Auto { threshold } => {
+				if render_time > 0.01 {
+					*threshold /= 1.1;
+					println!("threshold {}", threshold);
+					true
+				} else if render_time < 0.002 {
+					*threshold *= 1.1;
+					println!("threshold {}", threshold);
+					true
+				} else {
+					false
+				}
+			},
+			_ => false,
+		}
 	}
 
 	pub fn change_controller(&mut self) {

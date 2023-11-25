@@ -6,6 +6,7 @@ use crate::camera;
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
 pub enum Mode {
 	Normal { threshold: f32 },
+	Auto { threshold: f32 },
 	Level { target: usize, max: usize },
 }
 
@@ -19,6 +20,7 @@ impl Mode {
 	pub fn change_detail(&mut self, amount: f32) {
 		match self {
 			Mode::Normal { threshold, .. } => *threshold *= 1.0 + amount / 10.0,
+			Mode::Auto { .. } => {},
 			Mode::Level { target, max } => {
 				if amount < 0.0 {
 					*target -= (*target > 0) as usize
@@ -33,7 +35,7 @@ impl Mode {
 impl Checker {
 	pub fn new(mode: &Mode) -> Self {
 		match *mode {
-			Mode::Normal { threshold } => Self::Normal { threshold },
+			Mode::Normal { threshold } | Mode::Auto { threshold, .. } => Self::Normal { threshold },
 			Mode::Level { target, .. } => Self::Level { current: 0, target },
 		}
 	}
