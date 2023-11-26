@@ -10,7 +10,7 @@ pub struct PointCloudState {
 }
 
 //tan(60°)
-const TAN_60_DEGREES: f32 = 1.7320508075688767;
+const TAN_60_DEGREES: f32 = 1.732_050_8;
 
 // todo: better name
 const QUAD_DATA: [crate::PointEdge; 3] = [

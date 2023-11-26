@@ -241,7 +241,10 @@ impl Game {
 		if self.segment.is_some() {
 			return;
 		}
-		let start = self.tree.camera.position();
+		let start = self
+			.tree
+			.camera
+			.ray_origin(self.mouse.position(), self.window.get_size());
 		let direction = self
 			.tree
 			.camera
@@ -289,7 +292,7 @@ impl render::Entry for Game {
 			return;
 		}
 		self.window.resized(self.state);
-		self.tree.camera.cam.aspect = self.window.get_aspect();
+		self.tree.camera.cam.set_aspect(self.window.get_aspect());
 		self.tree.camera.gpu = render::Camera3DGPU::new(
 			self.state,
 			&self.tree.camera.cam,
@@ -335,7 +338,11 @@ impl render::Entry for Game {
 			self.request_redraw();
 		}
 
-		if self.tree.loaded_manager.update() || self.tree.camera.time(self.render_time) {
+		if self.tree.loaded_manager.update()
+			|| (self.tree.loaded_manager.loaded() > 0
+				&& self.segment.is_none()
+				&& self.tree.camera.time(self.render_time))
+		{
 			self.window.request_redraw();
 		}
 

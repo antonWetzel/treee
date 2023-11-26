@@ -161,6 +161,10 @@ impl LoadedManager {
 		}
 	}
 
+	pub fn loaded(&self) -> usize {
+		self.available.len()
+	}
+
 	pub fn update(&mut self) -> bool {
 		if self.reciever.is_empty() {
 			return false;

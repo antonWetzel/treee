@@ -198,8 +198,7 @@ impl Window {
 			let data = map_buffer.slice(..).get_mapped_range();
 			let data = bytemuck::cast_slice::<u8, u64>(&data);
 			let diff = data[1] - data[0];
-			let value = diff as f32 * 1e-9 * render_state.queue.get_timestamp_period();
-			value
+			diff as f32 * 1e-9 * render_state.queue.get_timestamp_period()
 		}
 	}
 }

@@ -9,7 +9,7 @@ use crate::{
 	Dimensions, X, Y, Z,
 };
 
-use serde::{de::Visitor, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug)]
 pub struct Transform<const N: usize, T> {

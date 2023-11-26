@@ -9,7 +9,7 @@ use crate::{
 pub struct Projection;
 
 impl Projection {
-	pub fn create_perspective<T>(vertical_fov: T, aspect_ratio: T, near: T, far: T) -> Matrix<4, 4, T>
+	pub fn create_perspective<T>(aspect_ratio: T, vertical_fov: T, near: T, far: T) -> Matrix<4, 4, T>
 	where
 		T: FromF64,
 		T: Identity,
@@ -36,5 +36,30 @@ impl Projection {
 			Vector::from([T::ZERO, T::ZERO, c0, -T::IDENTITY]),
 			Vector::from([T::ZERO, T::ZERO, c1, T::ZERO]),
 		])
+	}
+
+	pub fn create_orthographic<T>(aspect: T, height: T, near: T, far: T) -> Matrix<4, 4, T>
+	where
+		T: FromF64,
+		T: Copy,
+		T: Zero,
+		T: Identity,
+		T: Sub<T, Output = T>,
+		T: Mul<T, Output = T>,
+		T: Div<T, Output = T>,
+	{
+		[
+			[
+				T::from_f64(2.0) / (height * aspect),
+				T::ZERO,
+				T::ZERO,
+				T::ZERO,
+			]
+			.into(),
+			[T::ZERO, T::from_f64(2.0) / height, T::ZERO, T::ZERO].into(),
+			[T::ZERO, T::ZERO, T::from_f64(2.0) / (near - far), T::ZERO].into(),
+			[T::ZERO, T::ZERO, T::ZERO, T::IDENTITY].into(),
+		]
+		.into()
 	}
 }

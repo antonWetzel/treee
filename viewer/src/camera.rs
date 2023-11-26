@@ -23,7 +23,20 @@ pub struct Camera {
 
 impl Camera {
 	pub fn new(state: &State, aspect: f32) -> Self {
-		let camera = render::Camera3D::new(aspect, FIELD_OF_VIEW, 0.1, 10_000.0);
+		let camera = render::Camera3D::Perspective {
+			aspect,
+			fovy: FIELD_OF_VIEW,
+			near: 0.1,
+			far: 10_000.0,
+		};
+
+		// todo: toggle switch
+		// let camera = render::Camera3D::Orthographic {
+		// 	aspect,
+		// 	height: 1000.0,
+		// 	near: 0.1,
+		// 	far: 10_000.0,
+		// };
 		let controller = Controller::Orbital { offset: 100.0 };
 		let position = [0.0, 0.0, 100.0].into();
 		let transform = Transform::translation(position);
@@ -48,7 +61,10 @@ impl Camera {
 	}
 
 	pub fn scroll(&mut self, value: f32, state: &State) {
-		self.controller.scroll(value, &mut self.transform);
+		match &mut self.cam {
+			render::Camera3D::Perspective { .. } => self.controller.scroll(value, &mut self.transform),
+			render::Camera3D::Orthographic { height, .. } => *height *= 1.0 + value / 10.0,
+		}
 		self.gpu = render::Camera3DGPU::new(state, &self.cam, &self.transform);
 	}
 
@@ -92,61 +108,40 @@ impl Camera {
 	}
 
 	pub fn inside_frustrum(&self, corner: Vector<3, f32>, size: f32) -> bool {
-		self.inside_frustrum_center(corner, size, self.position())
+		self.cam.inside(corner, size, self.transform)
 	}
 
 	pub fn inside_moved_frustrum(&self, corner: Vector<3, f32>, size: f32, difference: f32) -> bool {
-		let center = self.position() - self.transform.basis[Z] * difference;
-		self.inside_frustrum_center(corner, size, center)
+		self.cam.inside(
+			corner,
+			size,
+			self.transform * Transform::translation([0.0, 0.0, -difference].into()),
+		)
+	}
+
+	pub fn ray_origin(&self, position: Vector<2, f32>, window_size: Vector<2, f32>) -> Vector<3, f32> {
+		match self.cam {
+			render::Camera3D::Perspective { .. } => self.transform.position,
+			render::Camera3D::Orthographic { aspect, height, .. } => {
+				self.transform.position
+					+ self.transform.basis[X] * ((position[X] / window_size[X]) - 0.5) * (height * aspect)
+					- self.transform.basis[Y] * ((position[Y] / window_size[Y]) - 0.5) * height
+			},
+		}
 	}
 
 	pub fn ray_direction(&self, position: Vector<2, f32>, window_size: Vector<2, f32>) -> Vector<3, f32> {
-		let dist = window_size[Y] / (2.0 * Angle::degree(FIELD_OF_VIEW / 2.0).as_radians().tan());
-		let position = position - window_size / 2.0;
-		let intersection = -self.transform.basis[Z] * dist
-			+ self.transform.basis[X] * position[X]
-			+ -self.transform.basis[Y] * position[Y];
-		intersection.normalized()
-	}
-
-	fn inside_frustrum_center(&self, corner: Vector<3, f32>, size: f32, center: Vector<3, f32>) -> bool {
-		let offset = corner - center;
-		let points: [Vector<3, f32>; 8] = [
-			offset + [0.0, 0.0, 0.0].into(),
-			offset + [0.0, 0.0, size].into(),
-			offset + [0.0, size, 0.0].into(),
-			offset + [0.0, size, size].into(),
-			offset + [size, 0.0, 0.0].into(),
-			offset + [size, 0.0, size].into(),
-			offset + [size, size, 0.0].into(),
-			offset + [size, size, size].into(),
-		];
-		let screen_y = (self.cam.fovy / 2.0).tan();
-		let screen_x = screen_y * self.cam.aspect;
-		let x_dir = self.transform.basis[X];
-		let y_dir = self.transform.basis[Y];
-		let z_dir = -self.transform.basis[Z];
-		let normals = [
-			(z_dir + x_dir * screen_x).cross(y_dir),
-			(z_dir - x_dir * screen_x).cross(-y_dir),
-			(z_dir + y_dir * screen_y).cross(-x_dir),
-			(z_dir - y_dir * screen_y).cross(x_dir),
-		];
-		for normal in normals {
-			if !Self::inside_plane(normal, &points) {
-				return false;
-			}
+		match self.cam {
+			render::Camera3D::Perspective { .. } => {
+				let dist = window_size[Y] / (2.0 * Angle::degree(FIELD_OF_VIEW / 2.0).as_radians().tan());
+				let position = position - window_size / 2.0;
+				let intersection = -self.transform.basis[Z] * dist
+					+ self.transform.basis[X] * position[X]
+					+ -self.transform.basis[Y] * position[Y];
+				intersection.normalized()
+			},
+			render::Camera3D::Orthographic { .. } => -self.transform.basis[Z],
 		}
-		true
-	}
-
-	fn inside_plane(normal: Vector<3, f32>, points: &[Vector<3, f32>; 8]) -> bool {
-		for point in points {
-			if point.dot(normal) <= 0.0 {
-				return true;
-			}
-		}
-		false
 	}
 
 	pub fn save(&self) {

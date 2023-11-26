@@ -215,6 +215,29 @@ impl<const N: usize, T> Vector<N, T> {
 	pub fn map<U: Zero>(self, f: impl Fn(T) -> U) -> Vector<N, U> {
 		Vector(self.0.map(f))
 	}
+
+	pub fn max(mut self, other: Vector<N, T>) -> Vector<N, T>
+	where
+		T: PartialOrd + Copy,
+	{
+		for i in Dimensions(0..N) {
+			if other[i] > self[i] {
+				self[i] = other[i];
+			}
+		}
+		self
+	}
+	pub fn min(mut self, other: Vector<N, T>) -> Vector<N, T>
+	where
+		T: PartialOrd + Copy,
+	{
+		for i in Dimensions(0..N) {
+			if other[i] < self[i] {
+				self[i] = other[i];
+			}
+		}
+		self
+	}
 }
 
 impl<const N: usize, T> From<[T; N]> for Vector<N, T> {
