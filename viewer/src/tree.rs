@@ -213,7 +213,7 @@ impl Node {
 			.into_iter()
 			.map(|(corner, wall, dimension)| raycast_check(start, direction, corner, wall, dimension))
 			.fold(None, |acc, v| match (acc, v) {
-				(Some(acc), Some(v)) => Some(acc.max(v)),
+				(Some(acc), Some(v)) => Some(acc.min(v)),
 				(Some(v), None) | (None, Some(v)) => Some(v),
 				(None, None) => None,
 			})
@@ -225,7 +225,7 @@ impl Node {
 		direction: Vector<3, f32>,
 		path: &Path,
 		checked: &mut HashSet<NonZeroU32>,
-	) -> Option<NonZeroU32> {
+	) -> Option<(NonZeroU32, f32)> {
 		match &self.data {
 			Data::Branch { children, segments: _ } => {
 				let mut order = Vec::new();
@@ -236,20 +236,23 @@ impl Node {
 					order.push((child, dist));
 				}
 
-				order.sort_by(|(_, dist_a), (_, dist_b)| dist_a.total_cmp(dist_b));
+				order.sort_unstable_by(|(_, dist_a), (_, dist_b)| dist_a.total_cmp(dist_b));
 
-				let (mut best, mut distance) = (None, f32::MAX);
+				let mut best_distance = f32::MAX;
+				let mut best = None;
 				for (child, dist) in order {
-					if dist >= distance {
-						continue;
+					if dist >= best_distance {
+						break;
 					}
-					let Some(segment) = child.raycast(start, direction, path, checked) else {
+					let Some((segment, dist)) = child.raycast(start, direction, path, checked) else {
 						continue;
 					};
-					best = Some(segment);
-					distance = dist;
+					if dist < best_distance {
+						best_distance = dist;
+						best = Some(segment);
+					}
 				}
-				best
+				best.map(|best| (best, best_distance))
 			},
 			Data::Leaf { segments } => {
 				let mut best = None;
@@ -291,7 +294,7 @@ impl Node {
 
 					checked.insert(segment);
 				}
-				best
+				best.map(|best| (best, best_dist))
 			},
 		}
 	}
@@ -329,7 +332,9 @@ impl Tree {
 	pub fn raycast(&self, start: Vector<3, f32>, direction: Vector<3, f32>, path: &Path) -> Option<NonZeroU32> {
 		self.root.raycast_distance(start, direction)?;
 		let mut checked = HashSet::new();
-		self.root.raycast(start, direction, path, &mut checked)
+		self.root
+			.raycast(start, direction, path, &mut checked)
+			.map(|(seg, _)| seg)
 	}
 }
 
