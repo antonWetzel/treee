@@ -20,14 +20,9 @@ impl From<winit::event::MouseButton> for MouseButton {
 			winit::event::MouseButton::Left => MouseButton::Left,
 			winit::event::MouseButton::Right => MouseButton::Right,
 			winit::event::MouseButton::Middle => MouseButton::Middle,
-			winit::event::MouseButton::Other(value) => match value {
-				1 => MouseButton::Backward,
-				2 => MouseButton::Forward,
-				_ => {
-					println!("pressed unknown mouse button '{}'", value);
-					MouseButton::Unknown
-				},
-			},
+			winit::event::MouseButton::Back => MouseButton::Backward,
+			winit::event::MouseButton::Forward => MouseButton::Forward,
+			winit::event::MouseButton::Other(_) => MouseButton::Unknown,
 		}
 	}
 }

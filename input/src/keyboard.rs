@@ -40,5 +40,5 @@ impl Default for Keyboard {
 	}
 }
 
-pub type KeyCode = winit::event::VirtualKeyCode; //todo: maybe physical is better
-pub type Modifiers = winit::event::ModifiersState;
+pub type KeyCode = winit::keyboard::KeyCode;
+pub type Modifiers = winit::keyboard::ModifiersState;

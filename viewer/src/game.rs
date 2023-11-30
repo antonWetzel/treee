@@ -319,16 +319,16 @@ impl render::Entry for Game {
 	fn time(&mut self) {
 		let delta = self.time.elapsed();
 		let mut direction: Vector<2, f32> = [0.0, 0.0].into();
-		if self.keyboard.pressed(input::KeyCode::D) || self.keyboard.pressed(input::KeyCode::Right) {
+		if self.keyboard.pressed(input::KeyCode::KeyD) || self.keyboard.pressed(input::KeyCode::ArrowRight) {
 			direction[X] += 1.0;
 		}
-		if self.keyboard.pressed(input::KeyCode::S) || self.keyboard.pressed(input::KeyCode::Down) {
+		if self.keyboard.pressed(input::KeyCode::KeyS) || self.keyboard.pressed(input::KeyCode::ArrowDown) {
 			direction[Y] += 1.0;
 		}
-		if self.keyboard.pressed(input::KeyCode::A) || self.keyboard.pressed(input::KeyCode::Left) {
+		if self.keyboard.pressed(input::KeyCode::KeyA) || self.keyboard.pressed(input::KeyCode::ArrowLeft) {
 			direction[X] -= 1.0;
 		}
-		if self.keyboard.pressed(input::KeyCode::W) || self.keyboard.pressed(input::KeyCode::Up) {
+		if self.keyboard.pressed(input::KeyCode::KeyW) || self.keyboard.pressed(input::KeyCode::ArrowUp) {
 			direction[Y] -= 1.0;
 		}
 		let l = direction.length();
@@ -353,8 +353,8 @@ impl render::Entry for Game {
 		self.keyboard.update(key, key_state);
 
 		match (key, key_state) {
-			(input::KeyCode::K, input::State::Pressed) => self.tree.camera.save(),
-			(input::KeyCode::L, input::State::Pressed) => {
+			(input::KeyCode::KeyK, input::State::Pressed) => self.tree.camera.save(),
+			(input::KeyCode::KeyL, input::State::Pressed) => {
 				self.tree.camera.load(self.state);
 				self.request_redraw()
 			},
@@ -416,12 +416,8 @@ impl render::Entry for Game {
 		}
 	}
 
-	fn control_flow(&self) -> render::ControlFlow {
-		if self.quit {
-			render::ControlFlow::Exit
-		} else {
-			render::ControlFlow::WaitUntil(std::time::Instant::now() + std::time::Duration::from_millis(16))
-		}
+	fn exit(&self) -> bool {
+		self.quit
 	}
 }
 

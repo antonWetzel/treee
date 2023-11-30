@@ -14,7 +14,7 @@ pub trait Entry {
 	fn render(&mut self, window_id: WindowId);
 	fn modifiers_changed(&mut self, modifiers: input::Modifiers);
 
-	fn control_flow(&self) -> ControlFlow;
+	fn exit(&self) -> bool;
 }
 
 pub type ControlFlow = winit::event_loop::ControlFlow;

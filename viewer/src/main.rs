@@ -15,8 +15,8 @@ mod tree;
 enum ViewerError {
 	#[error("no file")]
 	NoFile,
-	#[error("unexpected exit code '{0}'")]
-	Exit(i32),
+	#[error("{0}")]
+	RenderError(#[from] render::RenderError),
 }
 
 fn main() -> Result<(), ViewerError> {
@@ -26,13 +26,12 @@ fn main() -> Result<(), ViewerError> {
 		.pick_file()
 		.ok_or(ViewerError::NoFile)?;
 
-	let (state, runner) = render::State::new().block_on();
+	let (state, runner) = render::State::new().block_on()?;
 	let state = State::new(state);
 	let state = Box::leak(Box::new(state));
 
 	let mut game = game::Game::new(state, path, &runner);
-	match runner.run(&mut game) {
-		0 => Ok(()),
-		code => Err(ViewerError::Exit(code))?,
-	}
+	runner.run(&mut game)?;
+
+	Ok(())
 }
