@@ -48,11 +48,10 @@ impl Game {
 
 		let window = render::Window::new(state, &runner.event_loop, &project.name);
 
-		window.set_window_icon(include_bytes!("../assets/png/tree-fill-small.png"));
+		window.set_window_icon(include_bytes!("../assets/png/tree-fill-big.png"));
 
-		if cfg!(windows) {
-			window.set_taskbar_icon(include_bytes!("../assets/png/tree-fill-big.png"));
-		}
+		#[cfg(windows)]
+		window.set_taskbar_icon(include_bytes!("../assets/png/tree-fill-small.png"));
 
 		let tree = Tree::new(
 			state,

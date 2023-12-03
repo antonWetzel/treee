@@ -1,5 +1,4 @@
 use math::{Vector, X, Y, Z};
-use winit::platform::windows::WindowExtWindows;
 
 use super::*;
 
@@ -83,6 +82,7 @@ impl Window {
 
 	#[cfg(target_os = "windows")]
 	pub fn set_taskbar_icon(&self, png: &[u8]) {
+		use winit::platform::windows::WindowExtWindows;
 		let img = image::load_from_memory(png).unwrap();
 		let icon = winit::window::Icon::from_rgba(img.to_rgba8().into_vec(), img.width(), img.height()).unwrap();
 		self.window.set_taskbar_icon(Some(icon));
