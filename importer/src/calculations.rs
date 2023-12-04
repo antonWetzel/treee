@@ -11,36 +11,6 @@ pub struct SegmentInformation {
 	pub crown_height: common::Value,
 }
 
-fn edge_adjust_factor(direction: f32) -> f32 {
-	// approximate in the range [0, 1] the inverse function of sin(pi*x^2) / (pi*x^2)
-	const LINEAR_WEIGHT: f32 = 0.44876004;
-	const POW_8_WEIGHT: f32 = 0.23475774;
-	1.0 - LINEAR_WEIGHT * direction - POW_8_WEIGHT * direction.powi(8)
-}
-
-fn size(neighbors: &[(f32, usize)], points: &[Vector<3, f32>]) -> f32 {
-	let position = points[neighbors[0].1];
-	let (mean, direction_value) = {
-		let mut mean = 0.0;
-		let mut direction = Vector::<3, f32>::new([0.0, 0.0, 0.0]);
-		for (_, neighbor) in neighbors[1..].iter().copied() {
-			let neighbor = points[neighbor];
-			let diff = position - neighbor;
-			let length = diff.length();
-			mean += length;
-			if length < 0.01 {
-				continue;
-			}
-			direction += diff / length;
-		}
-		(
-			mean / (neighbors.len() - 1) as f32,
-			direction.length() / (neighbors.len() - 1) as f32,
-		)
-	};
-	(1.0 / 3.0) * mean * edge_adjust_factor(direction_value)
-}
-
 pub fn calculate(data: Vec<Vector<3, f32>>, segment: NonZeroU32) -> (Vec<Point>, SegmentInformation) {
 	let neighbors_tree = NeighborsTree::new(&data);
 
@@ -132,11 +102,18 @@ pub fn calculate(data: Vec<Vector<3, f32>>, segment: NonZeroU32) -> (Vec<Point>,
 			let eigen_values = variance.fast_eigenvalues();
 			let eigen_vectors = variance.calculate_eigenvectors(eigen_values);
 
+			let size = neighbors[1..]
+				.iter()
+				.copied()
+				.map(|(dist, _)| dist)
+				.sum::<f32>();
+			let size = (1.0 / 3.0) * size / (neighbors.len() - 1) as f32;
+
 			Point {
 				render: render::Point {
 					position: data[i],
 					normal: eigen_vectors[Z],
-					size: size(neighbors, &data),
+					size,
 				},
 				segment,
 				slice: slices[((data[i][Y] - min) / slice_width) as usize],
