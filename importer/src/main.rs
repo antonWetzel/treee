@@ -6,6 +6,7 @@ mod progress;
 mod quad_tree;
 mod segment;
 mod tree;
+mod triangulation;
 mod writer;
 
 use std::num::NonZeroU32;
@@ -143,8 +144,8 @@ fn import() -> Result<(), ImporterError> {
 				.enumerate()
 				.map(|(index, segment)| {
 					let index = NonZeroU32::new(index as u32 + 1).unwrap();
-					let (points, information) = calculations::calculate(segment.points(), index);
-					sender.send((points, index)).unwrap();
+					let (points, information, mesh) = calculations::calculate(segment.points(), index);
+					sender.send((points, index, mesh)).unwrap();
 
 					[information.trunk_height, information.crown_height]
 				})
@@ -155,8 +156,8 @@ fn import() -> Result<(), ImporterError> {
 		},
 		|| {
 			let mut counter = 0;
-			for (points, segment) in reciever {
-				Writer::save_segment(&output, segment, &points);
+			for (points, segment, mesh) in reciever {
+				Writer::save_segment(&output, segment, &points, &mesh);
 				for point in points {
 					tree.insert(point, &mut cache);
 					counter += 1;

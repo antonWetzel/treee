@@ -161,6 +161,14 @@ impl<const N: usize, T> Vector<N, T> {
 	{
 		self.0
 	}
+
+	pub fn data_ref(&self) -> &[T; N] {
+		&self.0
+	}
+
+	pub fn data_mut(&mut self) -> &mut [T; N] {
+		&mut self.0
+	}
 }
 
 impl<const N: usize, T> Vector<N, T> {

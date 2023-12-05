@@ -64,12 +64,24 @@ impl Zero for i64 {
 	const ZERO: Self = 0;
 }
 
+impl Zero for isize {
+	const ZERO: Self = 0;
+}
+
 impl Zero for u32 {
 	const ZERO: Self = 0;
 }
 
 impl Zero for u64 {
 	const ZERO: Self = 0;
+}
+
+impl Zero for usize {
+	const ZERO: Self = 0;
+}
+
+impl<A: Zero, B: Zero> Zero for (A, B) {
+	const ZERO: Self = (A::ZERO, B::ZERO);
 }
 
 pub trait Trigonometry {

@@ -56,7 +56,7 @@ impl Writer {
 		self.points.save(index as usize, points);
 	}
 
-	pub fn save_segment(path: &Path, segment: NonZeroU32, data: &[point::Point]) {
+	pub fn save_segment(path: &Path, segment: NonZeroU32, data: &[point::Point], mesh: &[u32]) {
 		let mut path = path.to_path_buf();
 		path.push(format!("segments/{}", segment));
 		std::fs::create_dir_all(&path).unwrap();
@@ -109,5 +109,13 @@ impl Writer {
 				.write_all(bytemuck::cast_slice(&[point.curve]))
 				.unwrap();
 		}
+
+		path.set_file_name("mesh.data");
+		let mut mesh_file = std::fs::OpenOptions::new()
+			.write(true)
+			.create(true)
+			.open(&path)
+			.unwrap();
+		mesh_file.write_all(bytemuck::cast_slice(mesh)).unwrap();
 	}
 }

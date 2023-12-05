@@ -62,8 +62,8 @@ impl PointCloudState {
 					entry_point: "vs_main",
 					buffers: &[
 						Point::quad_description(),
-						Point::description(),
-						Point::property_description(),
+						Point::description(wgpu::VertexStepMode::Instance),
+						Point::property_description(wgpu::VertexStepMode::Instance),
 					],
 				},
 				fragment: Some(wgpu::FragmentState {
@@ -199,7 +199,7 @@ impl PointCloud {
 
 pub struct PointCloudProperty {
 	pub buffer: wgpu::Buffer,
-	length: u32,
+	pub length: u32,
 }
 
 impl PointCloudProperty {

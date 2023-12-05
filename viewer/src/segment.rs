@@ -1,4 +1,5 @@
 use std::{
+	fs::File,
 	io::Read,
 	num::NonZeroU32,
 	path::{Path, PathBuf},
@@ -6,17 +7,11 @@ use std::{
 
 use crate::state::State;
 
-const MAX_SIZE: usize = 1 << 15;
-
-enum Data<T> {
-	Single(T),
-	Split(Vec<T>),
-}
-
 pub struct Segment {
 	path: PathBuf,
-	point_cloud: Data<render::PointCloud>,
-	property: Data<render::PointCloudProperty>,
+	point_cloud: render::PointCloud,
+	property: render::PointCloudProperty,
+	mesh: render::Mesh,
 }
 
 impl Segment {
@@ -28,15 +23,15 @@ impl Segment {
 		file.read_exact(bytemuck::cast_slice_mut(&mut points))
 			.unwrap();
 
-		let point_cloud = if points.len() <= MAX_SIZE {
-			Data::Single(render::PointCloud::new(state, &points))
-		} else {
-			Data::Split(
-				points
-					.chunks(MAX_SIZE)
-					.map(|data| render::PointCloud::new(state, data))
-					.collect(),
-			)
+		let point_cloud = render::PointCloud::new(state, &points);
+		path.set_file_name("mesh.data");
+		let mesh = {
+			let mut file = File::open(&path).unwrap();
+			let size = file.metadata().map(|m| m.len() as usize).ok().unwrap();
+			let mut data = bytemuck::zeroed_vec::<u32>(size as usize / std::mem::size_of::<u32>());
+			file.read_exact(bytemuck::cast_slice_mut(&mut data))
+				.unwrap();
+			render::Mesh::new(state, &data)
 		};
 
 		path.set_file_name(format!("{}.data", property));
@@ -44,6 +39,7 @@ impl Segment {
 			property: Self::load_property(state, &path),
 			point_cloud,
 			path,
+			mesh,
 		}
 	}
 
@@ -52,34 +48,25 @@ impl Segment {
 		self.property = Self::load_property(state, &self.path);
 	}
 
-	fn load_property(state: &State, path: &Path) -> Data<render::PointCloudProperty> {
+	fn load_property(state: &State, path: &Path) -> render::PointCloudProperty {
 		let mut file = std::fs::OpenOptions::new().read(true).open(path).unwrap();
 		let length = file.metadata().unwrap().len();
 		let mut data = bytemuck::zeroed_vec::<u32>(length as usize / std::mem::size_of::<u32>());
 		file.read_exact(bytemuck::cast_slice_mut(&mut data))
 			.unwrap();
-		if data.len() <= MAX_SIZE {
-			Data::Single(render::PointCloudProperty::new(state, &data))
-		} else {
-			Data::Split(
-				data.chunks(MAX_SIZE)
-					.map(|data| render::PointCloudProperty::new(state, data))
-					.collect(),
-			)
-		}
+		render::PointCloudProperty::new(state, &data)
 	}
 }
 
 impl render::PointCloudRender for Segment {
 	fn render<'a>(&'a self, point_cloud_pass: &mut render::PointCloudPass<'a>) {
-		match (&self.point_cloud, &self.property) {
-			(Data::Single(point_cloud), Data::Single(property)) => point_cloud.render(point_cloud_pass, property),
-			(Data::Split(point_clouds), Data::Split(properties)) => {
-				for (point_cloud, property) in point_clouds.iter().zip(properties) {
-					point_cloud.render(point_cloud_pass, property);
-				}
-			},
-			_ => unreachable!(),
-		}
+		self.point_cloud.render(point_cloud_pass, &self.property);
+	}
+}
+
+impl render::MeshRender for Segment {
+	fn render<'a>(&'a self, mesh_pass: &mut render::MeshPass<'a>) {
+		self.mesh
+			.render(mesh_pass, &self.point_cloud, &self.property);
 	}
 }

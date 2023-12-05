@@ -427,14 +427,18 @@ impl render::RenderEntry for Game {
 
 	fn render<'a>(&'a self, render_pass: &mut render::RenderPass<'a>) {
 		if let Some(segment) = &self.segment {
+			// render_pass.render(
+			// 	segment,
+			// 	(
+			// 		self.state,
+			// 		&self.tree.camera.gpu,
+			// 		&self.tree.lookup,
+			// 		&self.tree.environment,
+			// 	),
+			// );
 			render_pass.render(
 				segment,
-				(
-					self.state,
-					&self.tree.camera.gpu,
-					&self.tree.lookup,
-					&self.tree.environment,
-				),
+				(self.state, &self.tree.camera.gpu, &self.tree.lookup),
 			);
 		} else {
 			render_pass.render(

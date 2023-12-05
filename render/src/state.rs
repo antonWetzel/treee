@@ -39,11 +39,13 @@ impl State {
 			.await
 			.unwrap();
 
+		let mut limits = wgpu::Limits::default();
+		limits.max_buffer_size = u64::MAX;
 		let (device, queue) = adapter
 			.request_device(
 				&wgpu::DeviceDescriptor {
 					features: wgpu::Features::TIMESTAMP_QUERY,
-					limits: wgpu::Limits::default(),
+					limits,
 					label: None,
 				},
 				None, // Trace path

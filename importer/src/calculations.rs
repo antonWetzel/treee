@@ -2,16 +2,16 @@ use std::num::NonZeroU32;
 
 use math::{Dimension, Mat, Vector, X, Y, Z};
 
-use crate::point::Point;
+use crate::{point::Point, triangulation::triangulate};
 
-pub const MAX_NEIGHBORS: usize = 64 - 1;
+pub const MAX_NEIGHBORS: usize = 32 - 1;
 
 pub struct SegmentInformation {
 	pub trunk_height: common::Value,
 	pub crown_height: common::Value,
 }
 
-pub fn calculate(data: Vec<Vector<3, f32>>, segment: NonZeroU32) -> (Vec<Point>, SegmentInformation) {
+pub fn calculate(data: Vec<Vector<3, f32>>, segment: NonZeroU32) -> (Vec<Point>, SegmentInformation, Vec<u32>) {
 	let neighbors_tree = NeighborsTree::new(&data);
 
 	let (min, max) = {
@@ -71,8 +71,7 @@ pub fn calculate(data: Vec<Vector<3, f32>>, segment: NonZeroU32) -> (Vec<Point>,
 
 	let res = (0..data.len())
 		.map(|i| {
-			let mut neighbors = [(0.0, 0); MAX_NEIGHBORS];
-			let neighbors = neighbors_tree.get(data[i], &mut neighbors);
+			let neighbors = neighbors_tree.get(i);
 
 			let mean = {
 				let mut mean = Vector::<3, f32>::new([0.0, 0.0, 0.0]);
@@ -137,6 +136,7 @@ pub fn calculate(data: Vec<Vector<3, f32>>, segment: NonZeroU32) -> (Vec<Point>,
 				percent: crown_heigth / height,
 			},
 		},
+		triangulate(&data, &neighbors_tree),
 	)
 }
 
@@ -150,18 +150,22 @@ impl k_nearest::Adapter<3, f32, Vector<3, f32>> for Adapter {
 	}
 }
 
-//todo: check if precalculated is better
-// pub struct Neighbors(Vec<(usize, [(f32, usize); MAX_NEIGHBORS])>);
-pub struct NeighborsTree(k_nearest::KDTree<3, f32, Vector<3, f32>, Adapter, k_nearest::EuclideanDistanceSquared>);
+pub struct NeighborsTree(Vec<(usize, Vector<MAX_NEIGHBORS, (f32, usize)>)>);
 
 impl NeighborsTree {
 	pub fn new(points: &[Vector<3, f32>]) -> Self {
-		Self(k_nearest::KDTree::new(points))
+		let tree =
+			<k_nearest::KDTree<3, f32, Vector<3, f32>, Adapter, k_nearest::EuclideanDistanceSquared>>::new(points);
+		let mut data = vec![(0usize, Vector::default()); points.len()];
+		for (data, point) in data.iter_mut().zip(points) {
+			data.0 = tree.k_nearest(point, data.1.data_mut(), 2.0);
+		}
+		Self(data)
 	}
 
-	pub fn get<'a>(&self, point: Vector<3, f32>, data: &'a mut [(f32, usize)]) -> &'a [(f32, usize)] {
-		let l = self.0.k_nearest(&point, data, 1000.0);
-		&data[0..l]
+	pub fn get(&self, index: usize) -> &[(f32, usize)] {
+		let value = &self.0[index];
+		&value.1.data_ref()[..value.0]
 	}
 }
 

@@ -30,18 +30,18 @@ impl Point {
 			attributes: &Self::QUAD_ATTRIBUTES,
 		}
 	}
-	pub fn description<'a>() -> wgpu::VertexBufferLayout<'a> {
+	pub fn description<'a>(step_mode: wgpu::VertexStepMode) -> wgpu::VertexBufferLayout<'a> {
 		wgpu::VertexBufferLayout {
 			array_stride: std::mem::size_of::<Point>() as wgpu::BufferAddress,
-			step_mode: wgpu::VertexStepMode::Instance,
+			step_mode,
 			attributes: &Self::ATTRIBUTES,
 		}
 	}
 
-	pub fn property_description<'a>() -> wgpu::VertexBufferLayout<'a> {
+	pub fn property_description<'a>(step_mode: wgpu::VertexStepMode) -> wgpu::VertexBufferLayout<'a> {
 		wgpu::VertexBufferLayout {
 			array_stride: std::mem::size_of::<u32>() as wgpu::BufferAddress,
-			step_mode: wgpu::VertexStepMode::Instance,
+			step_mode,
 			attributes: &Self::PROPERTY_ATTRIBUTES,
 		}
 	}
