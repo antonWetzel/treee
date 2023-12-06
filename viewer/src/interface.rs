@@ -26,6 +26,8 @@ pub enum InterfaceAction {
 
 	SliceUpdate(f32, f32),
 	SegmentReset,
+
+	ScaleUpdate(f32),
 }
 
 type Image = ui::Image<InterfaceAction>;
@@ -126,6 +128,7 @@ ui::Stack!(
 		segment: ui::Relative<ui::Horizontal,ui::Button<Image>>,
 
 		slice: ui::Popup<ui::Relative<ui::Horizontal,ui::Button<Image>>, ui::Area<ui::DoubleSlider<ui::Horizontal, Image, Image>>>,
+		scale: ui::Popup<ui::Relative<ui::Horizontal,ui::Button<Image>>, ui::Area<ui::Slider<ui::Horizontal, Image, Image>>>,
 	}
 );
 
@@ -381,6 +384,29 @@ impl Controls {
 						ui::Image::new(state, &dot),
 						ui::Image::new(state, &dot),
 						InterfaceAction::SliceUpdate,
+					),
+					ui::Anchor::new(
+						[ui::length!(w 1.0), ui::length!()].into(),
+						[ui::length!(w 3.0), ui::length!(h 1.0)].into(),
+					),
+				),
+				|| InterfaceAction::UpdateInterface,
+			),
+
+			scale: ui::Popup::new(
+				ui::Relative::square(ui::Button::new(
+					ui::Image::new(
+						state,
+						&render::Texture::new(state, include_bytes!("../assets/png/sliders.png")),
+					),
+					|| InterfaceAction::UpdateInterface,
+				)),
+				ui::Area::new(
+					ui::Slider::new(
+						ui::Image::new(state, &line_h),
+						ui::Image::new(state, &dot),
+						0.5,
+						InterfaceAction::ScaleUpdate,
 					),
 					ui::Anchor::new(
 						[ui::length!(w 1.0), ui::length!()].into(),

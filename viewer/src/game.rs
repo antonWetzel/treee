@@ -208,6 +208,17 @@ impl Game {
 					self.state,
 					(min * u32::MAX as f32) as u32,
 					(max * u32::MAX as f32) as u32,
+					self.tree.environment.scale,
+				);
+				self.window.request_redraw();
+			},
+
+			InterfaceAction::ScaleUpdate(scale) => {
+				self.tree.environment = render::PointCloudEnvironment::new(
+					self.state,
+					self.tree.environment.min,
+					self.tree.environment.max,
+					scale * 2.0,
 				);
 				self.window.request_redraw();
 			},

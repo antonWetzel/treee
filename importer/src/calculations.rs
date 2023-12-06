@@ -104,9 +104,9 @@ pub fn calculate(data: Vec<Vector<3, f32>>, segment: NonZeroU32) -> (Vec<Point>,
 			let size = neighbors[1..]
 				.iter()
 				.copied()
-				.map(|(dist, _)| dist)
+				.map(|(dist, _)| dist.sqrt())
 				.sum::<f32>();
-			let size = (1.0 / 3.0) * size / (neighbors.len() - 1) as f32;
+			let size = size / (neighbors.len() - 1) as f32 / 2.0;
 
 			Point {
 				render: render::Point {

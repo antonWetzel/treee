@@ -1,5 +1,5 @@
 use std::{
-	collections::{hash_map::Entry, HashMap, VecDeque},
+	collections::{HashMap, VecDeque},
 	ops::Not,
 };
 
@@ -86,7 +86,7 @@ fn start_triangulation(
 	let Some(nearest) = iter.next() else {
 		return;
 	};
-	assert_ne!(index, nearest);
+	// assert_ne!(index, nearest);
 
 	let point_a = data[index];
 	let point_b = data[nearest];
@@ -117,17 +117,109 @@ fn start_triangulation(
 	}
 
 	for edge in new_edges.iter() {
-		match edges.entry(*edge) {
-			Entry::Vacant(v) => drop(v.insert(1)),
-			Entry::Occupied(mut v) => *v.get_mut() += 1,
-		}
+		*edges.entry(*edge).or_default() += 1;
 	}
 
 	let mut active_edges = VecDeque::new();
 	for edge in new_edges.into_iter() {
 		active_edges.push_back(edge);
 	}
-	while let Some(_edge) = active_edges.pop_front() {
-		//expand
+	while let Some(edge) = active_edges.pop_front() {
+		expand(
+			data,
+			neighors_tree,
+			edges,
+			indices,
+			used,
+			edge,
+			&mut active_edges,
+		)
+	}
+}
+
+fn expand(
+	data: &[Vector<3, f32>],
+	neighors_tree: &NeighborsTree,
+	edges: &mut HashMap<Edge, usize>,
+	indices: &mut Vec<u32>,
+	used: &mut [bool],
+	edge: Edge,
+	active_edges: &mut VecDeque<Edge>,
+) {
+	if edges[&edge] >= 2 {
+		return;
+	}
+
+	let point_a = data[edge.active_1];
+	let point_b = data[edge.active_2];
+	let inside = data[edge.inside];
+
+	let alpha = inside - point_a;
+	let beta = point_b - point_a;
+	let up = alpha.cross(beta);
+	let out = up.cross(beta).normalized();
+
+	let neighbors = neighors_tree.get(edge.active_1);
+
+	let (Some(third), _, _) = neighbors
+		.iter()
+		.skip(1)
+		.copied()
+		.map(|(_, idx)| idx)
+		.filter(|&idx| idx != edge.active_2)
+		.fold(
+			(None, MAX_PROJECTION_OVERLAP, f32::MAX),
+			|(third, best, best_diagonal), idx| {
+				let point_c = data[idx];
+				let ca = (point_a - point_c).normalized();
+				let cb = (point_b - point_c).normalized();
+
+				let c_up = ca.cross(cb);
+				let c_in = beta.cross(c_up);
+
+				if out.dot(c_in) >= 0.0 {
+					return (third, best, best_diagonal);
+				}
+				let projection = ca.dot(cb);
+				if projection > best {
+					return (third, best, best_diagonal);
+				}
+
+				let diagonal = if projection == best {
+					let diagonal = (point_a - point_c)
+						.length()
+						.max((point_b - point_c).length());
+					if diagonal >= best_diagonal {
+						return (third, best, best_diagonal);
+					}
+					diagonal
+				} else {
+					f32::MAX
+				};
+
+				// todo: check third neighbor of second
+				// todo: check first and second neighbor of third
+
+				(Some(idx), projection, diagonal)
+			},
+		)
+	else {
+		return;
+	};
+
+	for idx in [edge.active_1, edge.active_2, third] {
+		indices.push(idx as u32);
+	}
+	used[third] = true;
+
+	let new_edges = [
+		Edge::new(third, edge.active_2, edge.active_1),
+		Edge::new(edge.active_1, third, edge.active_2),
+	];
+	*edges.entry(edge).or_default() += 1;
+
+	for edge in new_edges {
+		*edges.entry(edge).or_default() += 1;
+		active_edges.push_back(edge);
 	}
 }

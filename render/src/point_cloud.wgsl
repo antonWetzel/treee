@@ -3,6 +3,7 @@ struct CameraUniform {
 };
 
 struct Environment {
+    scale: f32,
     min: u32,
     max: u32,
 }
@@ -52,8 +53,8 @@ fn vs_main(
 
     out.clip_position = camera.view_proj * vec4<f32>(
         instance_in.position +
-            vertex_in.position.x * instance_in.size * 2.0 * a +
-            vertex_in.position.y * instance_in.size * 2.0 * b,
+            vertex_in.position.x * instance_in.size * environment.scale * a +
+            vertex_in.position.y * instance_in.size * environment.scale * b,
         1.0,
     );
     out.value = property_in.value;

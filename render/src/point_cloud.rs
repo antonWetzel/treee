@@ -230,19 +230,23 @@ impl PointCloudProperty {
 
 pub struct PointCloudEnvironment {
 	bind_group: wgpu::BindGroup,
+	pub min: u32,
+	pub max: u32,
+	pub scale: f32,
 }
 
 impl PointCloudEnvironment {
-	pub fn new(state: &impl Has<State>, min: u32, max: u32) -> Self {
+	pub fn new(state: &impl Has<State>, min: u32, max: u32, scale: f32) -> Self {
 		#[repr(C)]
 		#[derive(Debug, Copy, Clone, bytemuck::Zeroable, bytemuck::Pod)]
 		struct Uniform {
+			scale: f32,
 			min: u32,
 			max: u32,
 			pad: [u32; 2],
 		}
 
-		let uniform = Uniform { min, max, pad: [0, 0] };
+		let uniform = Uniform { scale, min, max, pad: [0, 0] };
 		let buffer = state
 			.get()
 			.device
@@ -263,7 +267,7 @@ impl PointCloudEnvironment {
 				}],
 				label: Some("point cloud environment bindgroup"),
 			});
-		Self { bind_group }
+		Self { bind_group, min, max, scale }
 	}
 
 	pub fn get_layout(state: &impl Has<State>) -> wgpu::BindGroupLayout {
