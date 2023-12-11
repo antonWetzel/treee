@@ -33,7 +33,9 @@ pub struct Game {
 	ui: render::UI<'static>,
 	eye_dome: render::EyeDome,
 	eye_dome_active: bool,
+
 	interface: Interface,
+	interface_active: bool,
 
 	background: Vector<3, f32>,
 
@@ -74,6 +76,8 @@ impl Game {
 			eye_dome,
 			eye_dome_active: true,
 			interface,
+			interface_active: true,
+
 			paused: false,
 
 			window,
@@ -293,7 +297,9 @@ impl render::Entry for Game {
 
 		self.ui.queue(self.state, &self.interface);
 
-		self.render_time = self.window.render(self.state, self);
+		if let Some(time) = self.window.render(self.state, self) {
+			self.render_time = time;
+		}
 	}
 
 	fn resize_window(&mut self, _window_id: render::WindowId, size: Vector<2, u32>) {
@@ -368,6 +374,19 @@ impl render::Entry for Game {
 				self.tree.camera.load(self.state);
 				self.request_redraw()
 			},
+			(input::KeyCode::KeyP, input::State::Pressed) => {
+				let Some(path) = rfd::FileDialog::new()
+					.add_filter("PNG", &["png"])
+					.save_file()
+				else {
+					return;
+				};
+				let before = self.interface_active;
+				self.interface_active = false;
+				self.window.screen_shot(self.state, self, path);
+				self.interface_active = before;
+			},
+
 			_ => {},
 		}
 	}
@@ -468,7 +487,9 @@ impl render::RenderEntry for Game {
 		if self.eye_dome_active {
 			render_pass.render(&self.eye_dome, ());
 		}
-		render_pass.render(&self.interface, (&self.ui, self.state));
+		if self.interface_active {
+			render_pass.render(&self.interface, (&self.ui, self.state));
+		}
 	}
 }
 
