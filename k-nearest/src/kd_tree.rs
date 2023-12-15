@@ -2,6 +2,15 @@ use std::cmp::Ordering;
 
 use crate::{best_set::BestSet, Adapter, Metric};
 
+#[derive(Clone, Copy)]
+pub struct Entry<Value> {
+	pub distance: Value,
+	pub index: usize,
+}
+
+unsafe impl<Value: bytemuck::Pod> bytemuck::Pod for Entry<Value> {}
+unsafe impl<Value: bytemuck::Zeroable> bytemuck::Zeroable for Entry<Value> {}
+
 pub struct KDTree<const N: usize, Value, Point, Ada, Met>
 where
 	Value: Copy + Default + PartialOrd,
@@ -66,16 +75,11 @@ where
 		}
 	}
 
-	pub fn k_nearest(&self, point: &Point, data: &mut [(Value, usize)], max_distance: Value) -> usize {
+	pub fn k_nearest(&self, point: &Point, data: &mut [Entry<Value>], max_distance: Value) -> usize {
 		self.nearest_to_position(&Ada::get_all(point), data, max_distance)
 	}
 
-	pub fn nearest_to_position(
-		&self,
-		position: &[Value; N],
-		data: &mut [(Value, usize)],
-		max_distance: Value,
-	) -> usize {
+	pub fn nearest_to_position(&self, position: &[Value; N], data: &mut [Entry<Value>], max_distance: Value) -> usize {
 		let mut best_set = BestSet::new(max_distance, data);
 		Self::search_nearest(&self.tree, position, 0, &mut best_set);
 		best_set.result()
@@ -87,7 +91,7 @@ where
 			for &(point, point_index) in tree {
 				let diff = Met::distance(&point, position);
 				if diff < best_set.distance() {
-					best_set.insert((diff, point_index));
+					best_set.insert(Entry { distance: diff, index: point_index });
 				}
 			}
 			return;
@@ -98,7 +102,7 @@ where
 		let (point, point_index) = tree[middle];
 		let diff = Met::distance(&point, position);
 		if diff < best_set.distance() {
-			best_set.insert((diff, point_index));
+			best_set.insert(Entry { distance: diff, index: point_index });
 		}
 
 		//always recurse into the section with the point

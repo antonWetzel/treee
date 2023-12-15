@@ -8,7 +8,7 @@ use std::{
 
 pub struct Cache<T> {
 	active: HashMap<usize, (Vec<T>, usize)>,
-	stored: HashMap<usize, File>,
+	stored: HashMap<usize, (File, usize)>,
 	current: usize,
 	max_active: usize,
 }
@@ -20,6 +20,7 @@ pub struct CacheIndex(usize);
 pub struct CacheEntry<T> {
 	file: Option<File>,
 	active: Vec<T>,
+	length: usize,
 }
 
 impl<T> Cache<T> {
@@ -77,22 +78,29 @@ impl<T> Cache<T> {
 		match self.stored.get_mut(&oldest_index) {
 			None => {
 				let mut file = tempfile::tempfile().unwrap();
+				let l = entry.len();
 				write_to(&mut file, entry);
-				self.stored.insert(oldest_index, file);
+				self.stored.insert(oldest_index, (file, l));
 			},
-			Some(file) => write_to(file, entry),
+			Some((file, length)) => {
+				*length += entry.len();
+				write_to(file, entry);
+			},
 		}
 	}
 
 	pub fn read(&mut self, index: CacheIndex) -> CacheEntry<T> {
-		CacheEntry {
-			file: self.stored.remove(&index.0),
-			active: self
-				.active
-				.remove(&index.0)
-				.map(|v| v.0)
-				.unwrap_or_default(),
-		}
+		let active = self
+			.active
+			.remove(&index.0)
+			.map(|v| v.0)
+			.unwrap_or_default();
+		let (file, length) = if let Some((file, length)) = self.stored.remove(&index.0) {
+			(Some(file), length + active.len())
+		} else {
+			(None, active.len())
+		};
+		CacheEntry { length, file, active }
 	}
 }
 
@@ -117,10 +125,14 @@ impl<T> CacheEntry<T> {
 	}
 
 	pub fn is_empty(&self) -> bool {
-		self.active.is_empty() && self.file.is_none()
+		self.length() == 0
 	}
 
 	pub fn active(&self) -> bool {
 		self.active.is_empty().not()
+	}
+
+	pub fn length(&self) -> usize {
+		self.length
 	}
 }

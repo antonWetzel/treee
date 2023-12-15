@@ -21,6 +21,10 @@ impl Segment {
 	pub fn points(self) -> Vec<Vector<3, f32>> {
 		self.data.read()
 	}
+
+	pub fn length(&self) -> usize {
+		self.data.length()
+	}
 }
 
 fn discretize(point: Vector<3, f32>, min: Vector<3, f32>) -> Vector<3, usize> {
@@ -107,7 +111,7 @@ impl Segmenter {
 		for (y, slice) in slices.into_iter().enumerate().rev() {
 			slice
 				.par_iter()
-				.map(|&(x, z)| lookup.get([x, y, z].into(), 60))
+				.map(|&(x, z)| lookup.get([x, y, z].into(), 40))
 				.collect_into_vec(&mut segments);
 
 			for ((x, z), &index) in slice.into_iter().zip(&segments) {
@@ -124,7 +128,7 @@ impl Segmenter {
 
 		Segments {
 			segments: Vec::new(),
-			cache: Cache::new(256),
+			cache: Cache::new(32),
 			min: self.min,
 			indices,
 		}

@@ -11,8 +11,19 @@ pub struct SegmentInformation {
 	pub crown_height: common::Value,
 }
 
-pub fn calculate(data: Vec<Vector<3, f32>>, segment: NonZeroU32) -> (Vec<Point>, SegmentInformation, Vec<u32>) {
+pub fn calculate(mut data: Vec<Vector<3, f32>>, segment: NonZeroU32) -> (Vec<Point>, SegmentInformation, Vec<u32>) {
 	let neighbors_tree = NeighborsTree::new(&data);
+
+	for i in 0..data.len() {
+		let neighbors = neighbors_tree.get(i);
+		let mut mean = data[i];
+		let mut count = 1;
+		for idx in neighbors.iter().skip(1) {
+			mean += data[idx.index];
+			count += 1;
+		}
+		data[i] = mean / count as f32;
+	}
 
 	let (min, max) = {
 		let mut min = data[0][Y];
@@ -75,15 +86,15 @@ pub fn calculate(data: Vec<Vector<3, f32>>, segment: NonZeroU32) -> (Vec<Point>,
 
 			let mean = {
 				let mut mean = Vector::<3, f32>::new([0.0, 0.0, 0.0]);
-				for (_, neighbor) in neighbors {
-					mean += data[*neighbor];
+				for entry in neighbors {
+					mean += data[entry.index];
 				}
 				mean / neighbors.len() as f32
 			};
 			let variance = {
 				let mut variance = Mat::<3, f32>::default();
-				for (_, neigbhor) in neighbors {
-					let difference = data[*neigbhor] - mean;
+				for entry in neighbors {
+					let difference = data[entry.index] - mean;
 					for x in X.to(Z) {
 						for y in X.to(Z) {
 							variance[x + y] += difference[x] * difference[y];
@@ -104,7 +115,7 @@ pub fn calculate(data: Vec<Vector<3, f32>>, segment: NonZeroU32) -> (Vec<Point>,
 			let size = neighbors[1..]
 				.iter()
 				.copied()
-				.map(|(dist, _)| dist.sqrt())
+				.map(|entry| entry.distance.sqrt())
 				.sum::<f32>();
 			let size = size / (neighbors.len() - 1) as f32 / 2.0;
 
@@ -150,22 +161,38 @@ impl k_nearest::Adapter<3, f32, Vector<3, f32>> for Adapter {
 	}
 }
 
-pub struct NeighborsTree(Vec<(usize, Vector<MAX_NEIGHBORS, (f32, usize)>)>);
+pub struct NeighborsTree {
+	lengths: Vec<usize>,
+	// data: Vec<Vector<MAX_NEIGHBORS, k_nearest::Entry<f32>>>,
+	data: memmap2::MmapMut,
+}
 
 impl NeighborsTree {
+	const OFFSET: usize = std::mem::size_of::<Vector<MAX_NEIGHBORS, k_nearest::Entry<f32>>>();
+
 	pub fn new(points: &[Vector<3, f32>]) -> Self {
 		let tree =
 			<k_nearest::KDTree<3, f32, Vector<3, f32>, Adapter, k_nearest::EuclideanDistanceSquared>>::new(points);
-		let mut data = vec![(0usize, Vector::default()); points.len()];
-		for (data, point) in data.iter_mut().zip(points) {
-			data.0 = tree.k_nearest(point, data.1.data_mut(), 2.0);
+		let mut data = memmap2::MmapOptions::new()
+			.len(Self::OFFSET * points.len())
+			.map_anon()
+			.unwrap();
+		let mut lengths = Vec::with_capacity(points.len());
+
+		for i in 0..points.len() {
+			let slice = &mut data[(i * Self::OFFSET)..((i + 1) * Self::OFFSET)];
+			let slice = bytemuck::cast_slice_mut(slice);
+			let l = tree.k_nearest(&points[i], slice, 2.0);
+			lengths.push(l);
 		}
-		Self(data)
+
+		Self { lengths, data }
 	}
 
-	pub fn get(&self, index: usize) -> &[(f32, usize)] {
-		let value = &self.0[index];
-		&value.1.data_ref()[..value.0]
+	pub fn get(&self, index: usize) -> &[k_nearest::Entry<f32>] {
+		let slice = &self.data[(index * Self::OFFSET)..((index + 1) * Self::OFFSET)];
+		let slice = bytemuck::cast_slice(slice);
+		&slice[..self.lengths[index]]
 	}
 }
 

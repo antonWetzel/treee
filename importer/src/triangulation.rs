@@ -1,31 +1,25 @@
-use std::{
-	collections::{HashMap, VecDeque},
-	ops::Not,
-};
+use std::collections::HashSet;
 
 use math::Vector;
 
 use crate::calculations::NeighborsTree;
 
+const MAX_CONNECTIONS: usize = 12;
+const ALMOST_MAX_CONECTIONS: usize = 10;
+
+// const NEIGHBOR_LIMIT: usize = 12;
+const MAX_DISTANCE: f32 = 0.1;
 const MAX_PROJECTION_OVERLAP: f32 = 2.0;
 
 pub fn triangulate(data: &[Vector<3, f32>], neighors_tree: &NeighborsTree) -> Vec<u32> {
-	let mut edges = HashMap::new();
-	let mut used = vec![false; data.len()];
+	let mut used = vec![0; data.len()];
 
 	let mut indices = Vec::new();
 	for index in 0..data.len() {
-		if used[index] {
+		if used[index] != 0 {
 			continue;
 		}
-		start_triangulation(
-			data,
-			neighors_tree,
-			index,
-			&mut edges,
-			&mut indices,
-			&mut used,
-		);
+		start_triangulation(data, neighors_tree, index, &mut indices, &mut used);
 	}
 	indices
 }
@@ -71,9 +65,8 @@ fn start_triangulation(
 	data: &[Vector<3, f32>],
 	neighors_tree: &NeighborsTree,
 	index: usize,
-	edges: &mut HashMap<Edge, usize>,
 	indices: &mut Vec<u32>,
-	used: &mut [bool],
+	used: &mut [usize],
 ) {
 	let neighbors = neighors_tree.get(index);
 
@@ -81,8 +74,8 @@ fn start_triangulation(
 		.iter()
 		.skip(1)
 		.copied()
-		.map(|(_, idx)| idx)
-		.filter(|idx| used[*idx].not());
+		.map(|entry| entry.index)
+		.filter(|&idx| used[idx] == 0);
 	let Some(nearest) = iter.next() else {
 		return;
 	};
@@ -112,44 +105,32 @@ fn start_triangulation(
 	];
 
 	for idx in [index, nearest, third] {
-		used[idx] = true;
+		used[idx] += 1;
 		indices.push(idx as u32);
 	}
 
-	for edge in new_edges.iter() {
-		*edges.entry(*edge).or_default() += 1;
-	}
+	let mut edges = HashSet::new();
 
-	let mut active_edges = VecDeque::new();
 	for edge in new_edges.into_iter() {
-		active_edges.push_back(edge);
+		edges.insert(edge);
 	}
-	while let Some(edge) = active_edges.pop_front() {
-		expand(
-			data,
-			neighors_tree,
-			edges,
-			indices,
-			used,
-			edge,
-			&mut active_edges,
-		)
+	while let Some(edge) = edges.iter().copied().next() {
+		edges.remove(&edge);
+		expand(data, neighors_tree, &mut edges, indices, used, edge)
 	}
 }
 
 fn expand(
 	data: &[Vector<3, f32>],
 	neighors_tree: &NeighborsTree,
-	edges: &mut HashMap<Edge, usize>,
+	edges: &mut HashSet<Edge>,
 	indices: &mut Vec<u32>,
-	used: &mut [bool],
+	used: &mut [usize],
 	edge: Edge,
-	active_edges: &mut VecDeque<Edge>,
 ) {
-	if edges[&edge] >= 2 {
+	if used[edge.active_1] >= MAX_CONNECTIONS || used[edge.active_2] >= MAX_CONNECTIONS {
 		return;
 	}
-
 	let point_a = data[edge.active_1];
 	let point_b = data[edge.active_2];
 	let inside = data[edge.inside];
@@ -165,8 +146,11 @@ fn expand(
 		.iter()
 		.skip(1)
 		.copied()
-		.map(|(_, idx)| idx)
+		.filter(|entry| entry.distance < MAX_DISTANCE * MAX_DISTANCE)
+		// .take(NEIGHBOR_LIMIT)
+		.map(|entry| entry.index)
 		.filter(|&idx| idx != edge.active_2)
+		.filter(|&idx| used[idx] < MAX_CONNECTIONS)
 		.fold(
 			(None, MAX_PROJECTION_OVERLAP, f32::MAX),
 			|(third, best, best_diagonal), idx| {
@@ -209,17 +193,22 @@ fn expand(
 
 	for idx in [edge.active_1, edge.active_2, third] {
 		indices.push(idx as u32);
+		used[idx] += 1;
 	}
-	used[third] = true;
 
-	let new_edges = [
-		Edge::new(third, edge.active_2, edge.active_1),
-		Edge::new(edge.active_1, third, edge.active_2),
-	];
-	*edges.entry(edge).or_default() += 1;
+	let edge_1 = Edge::new(third, edge.active_2, edge.active_1);
+	if edges.contains(&edge_1) {
+		edges.remove(&edge_1);
+		used[edge.active_2] = used[edge.active_2].max(ALMOST_MAX_CONECTIONS);
+	} else {
+		edges.insert(edge_1);
+	}
 
-	for edge in new_edges {
-		*edges.entry(edge).or_default() += 1;
-		active_edges.push_back(edge);
+	let edge_2 = Edge::new(edge.active_1, third, edge.active_2);
+	if edges.contains(&edge_2) {
+		edges.remove(&edge_2);
+		used[edge.active_1] = used[edge.active_1].max(ALMOST_MAX_CONECTIONS);
+	} else {
+		edges.insert(edge_2);
 	}
 }

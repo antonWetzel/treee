@@ -12,3 +12,4 @@ categories = ["algorithms"]
 
 [dependencies]
 math.workspace = true
+bytemuck.workspace = true

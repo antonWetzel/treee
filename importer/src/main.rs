@@ -24,6 +24,8 @@ use crate::{cache::Cache, progress::Stage, segment::Segmenter};
 
 const IMPORT_PROGRESS_SCALE: u64 = 10_000;
 
+const MIN_SEGMENT_SIZE: usize = 100;
+
 #[derive(Error, Debug)]
 pub enum ImporterError {
 	#[error("No input file")]
@@ -139,20 +141,30 @@ fn import() -> Result<(), ImporterError> {
 	let segment_properties = ["trunk", "crown"];
 	let (segment_values, _) = rayon::join(
 		|| {
-			let vec = segments
-				.into_par_iter()
-				.enumerate()
-				.map(|(index, segment)| {
-					let index = NonZeroU32::new(index as u32 + 1).unwrap();
-					let (points, information, mesh) = calculations::calculate(segment.points(), index);
-					sender.send((points, index, mesh)).unwrap();
+			rayon::ThreadPoolBuilder::new()
+				.num_threads(4)
+				.build()
+				.unwrap()
+				.install(|| {
+					let vec = segments
+						.into_par_iter()
+						.enumerate()
+						.map(|(index, segment)| {
+							let index = NonZeroU32::new(index as u32 + 1).unwrap();
+							if segment.length() < MIN_SEGMENT_SIZE {
+								return None;
+							}
+							let (points, information, mesh) = calculations::calculate(segment.points(), index);
+							sender.send((points, index, mesh)).unwrap();
 
-					[information.trunk_height, information.crown_height]
+							Some([information.trunk_height, information.crown_height])
+						})
+						.flatten()
+						.flatten()
+						.collect();
+					drop(sender);
+					vec
 				})
-				.flatten()
-				.collect();
-			drop(sender);
-			vec
 		},
 		|| {
 			let mut counter = 0;

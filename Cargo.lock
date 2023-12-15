@@ -1042,6 +1042,7 @@ dependencies = [
  "k-nearest",
  "las",
  "math",
+ "memmap2",
  "num_cpus",
  "rand",
  "rayon",
@@ -1126,6 +1127,7 @@ dependencies = [
 name = "k-nearest"
 version = "0.2.0"
 dependencies = [
+ "bytemuck",
  "math",
 ]
 
