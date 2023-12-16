@@ -246,6 +246,16 @@ impl<const N: usize, T> Vector<N, T> {
 		}
 		self
 	}
+
+	pub fn distance(self, other: Vector<N, T>) -> T
+	where
+		T: Copy + Zero + Sqrt,
+		T: Add<T, Output = T>,
+		T: Sub<T, Output = T>,
+		T: Mul<T, Output = T>,
+	{
+		(self - other).length()
+	}
 }
 
 impl<const N: usize, T> From<[T; N]> for Vector<N, T> {

@@ -167,30 +167,27 @@ impl Window {
 		);
 		state.queue.submit(Some(encoder.finish()));
 
-		let image = {
-			let buffer_slice = buffer.slice(..);
+		let buffer_slice = buffer.slice(..);
 
-			let (tx, rx) = std::sync::mpsc::channel::<wgpu::Buffer>();
-			buffer_slice.map_async(wgpu::MapMode::Read, move |_result| {
-				let buffer = rx.recv().unwrap();
-				let data = buffer.slice(..).get_mapped_range();
-				let mut image = image::RgbaImage::from_raw(
-					texture_width,
-					texture_height,
-					data.into_iter().copied().collect(),
-				)
-				.unwrap();
-				drop(data);
+		let (tx, rx) = std::sync::mpsc::channel::<wgpu::Buffer>();
+		buffer_slice.map_async(wgpu::MapMode::Read, move |_result| {
+			let buffer = rx.recv().unwrap();
+			let data = buffer.slice(..).get_mapped_range();
+			let mut image = image::RgbaImage::from_raw(
+				texture_width,
+				texture_height,
+				data.iter().copied().collect(),
+			)
+			.unwrap();
+			drop(data);
 
-				for pixel in image.pixels_mut() {
-					pixel.0.swap(0, 2); // hack because input uses BGRA, not RGBA
-				}
-				image.save(path).unwrap();
-				buffer.unmap();
-			});
-			tx.send(buffer).unwrap();
-		};
-		image
+			for pixel in image.pixels_mut() {
+				pixel.0.swap(0, 2); // hack because input uses BGRA, not RGBA
+			}
+			image.save(path).unwrap();
+			buffer.unmap();
+		});
+		tx.send(buffer).unwrap();
 	}
 
 	fn render_to(
@@ -216,7 +213,7 @@ impl Window {
 		let mut render_pass = RenderPass::new(encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
 			label: Some("Render Pass"),
 			color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-				view: &view,
+				view,
 				resolve_target: None,
 				ops: wgpu::Operations {
 					load: wgpu::LoadOp::Clear(wgpu::Color {
@@ -246,7 +243,7 @@ impl Window {
 		let mut render_pass = RenderPass::new(encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
 			label: Some("eye dome"),
 			color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-				view: &view,
+				view,
 				resolve_target: None,
 				ops: wgpu::Operations {
 					load: wgpu::LoadOp::Load,

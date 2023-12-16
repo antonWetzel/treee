@@ -5,7 +5,7 @@
 
 ## Code example
 
-```rust
+```rust,ignore
 const MAX_NEIGHBORS: usize = 16;
 const MAX_DISTANCE: f32 = 1.0;
 
@@ -44,7 +44,7 @@ fn example(points: &[Point]) {
 
 ## For a Point with values as members
 
-```rust
+```rust,ignore
 struct Point {
 	x: f32,
 	y: f32,
@@ -67,7 +67,7 @@ impl k_nearest::Adapter<3, f32, Point> for Adapter {
 
 ## For a point with values as array
 
-```rust
+```rust,ignore
 struct Point([f32; 3]);
 
 struct Adapter;
@@ -86,7 +86,7 @@ impl k_nearest::Adapter<3, f32, Point> for Adapter {
 
 ## Metric
 
-```rust
+```rust,ignore
 // use euclidean distance
 //   the resulting distances are all squared
 type Metric = k_nearest::EuclideanDistanceSquared;

@@ -11,19 +11,8 @@ pub struct SegmentInformation {
 	pub crown_height: common::Value,
 }
 
-pub fn calculate(mut data: Vec<Vector<3, f32>>, segment: NonZeroU32) -> (Vec<Point>, SegmentInformation, Vec<u32>) {
+pub fn calculate(data: Vec<Vector<3, f32>>, segment: NonZeroU32) -> (Vec<Point>, SegmentInformation, Vec<u32>) {
 	let neighbors_tree = NeighborsTree::new(&data);
-
-	for i in 0..data.len() {
-		let neighbors = neighbors_tree.get(i);
-		let mut mean = data[i];
-		let mut count = 1;
-		for idx in neighbors.iter().skip(1) {
-			mean += data[idx.index];
-			count += 1;
-		}
-		data[i] = mean / count as f32;
-	}
 
 	let (min, max) = {
 		let mut min = data[0][Y];
@@ -147,11 +136,11 @@ pub fn calculate(mut data: Vec<Vector<3, f32>>, segment: NonZeroU32) -> (Vec<Poi
 				percent: crown_heigth / height,
 			},
 		},
-		triangulate(&data, &neighbors_tree),
+		triangulate(&data),
 	)
 }
 
-struct Adapter;
+pub struct Adapter;
 impl k_nearest::Adapter<3, f32, Vector<3, f32>> for Adapter {
 	fn get(point: &Vector<3, f32>, dimension: Dimension) -> f32 {
 		point[dimension]
@@ -182,7 +171,7 @@ impl NeighborsTree {
 		for i in 0..points.len() {
 			let slice = &mut data[(i * Self::OFFSET)..((i + 1) * Self::OFFSET)];
 			let slice = bytemuck::cast_slice_mut(slice);
-			let l = tree.k_nearest(&points[i], slice, 2.0);
+			let l = tree.k_nearest(&points[i], slice, 2.0f32.powi(2));
 			lengths.push(l);
 		}
 

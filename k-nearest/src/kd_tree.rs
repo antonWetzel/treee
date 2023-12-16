@@ -1,8 +1,11 @@
 use std::cmp::Ordering;
 
-use crate::{best_set::BestSet, Adapter, Metric};
+use crate::{
+	best_set::{BestSet, DynamicSet, EmptySet, FixedSet},
+	Adapter, Metric,
+};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Entry<Value> {
 	pub distance: Value,
 	pub index: usize,
@@ -79,13 +82,30 @@ where
 		self.nearest_to_position(&Ada::get_all(point), data, max_distance)
 	}
 
+	pub fn nearest(&self, point: &Point, max_distance: Value) -> Vec<Entry<Value>> {
+		let mut best_set = DynamicSet::new(max_distance);
+		Self::search_nearest(&self.tree, &Ada::get_all(point), 0, &mut best_set);
+		best_set.result()
+	}
+
 	pub fn nearest_to_position(&self, position: &[Value; N], data: &mut [Entry<Value>], max_distance: Value) -> usize {
-		let mut best_set = BestSet::new(max_distance, data);
+		let mut best_set = FixedSet::new(max_distance, data);
 		Self::search_nearest(&self.tree, position, 0, &mut best_set);
 		best_set.result()
 	}
 
-	fn search_nearest(tree: &[([Value; N], usize)], position: &[Value; N], dim: usize, best_set: &mut BestSet<Value>) {
+	pub fn empty(&self, point: &Point, max_distance: Value) -> bool {
+		let mut best_set = EmptySet::new(max_distance);
+		Self::search_nearest(&self.tree, &Ada::get_all(point), 0, &mut best_set);
+		best_set.empty()
+	}
+
+	fn search_nearest(
+		tree: &[([Value; N], usize)],
+		position: &[Value; N],
+		dim: usize,
+		best_set: &mut impl BestSet<Value>,
+	) {
 		//linear search small sections
 		if tree.len() < 32 {
 			for &(point, point_index) in tree {

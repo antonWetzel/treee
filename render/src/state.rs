@@ -39,13 +39,14 @@ impl State {
 			.await
 			.unwrap();
 
-		let mut limits = wgpu::Limits::default();
-		limits.max_buffer_size = u64::MAX;
 		let (device, queue) = adapter
 			.request_device(
 				&wgpu::DeviceDescriptor {
-					features: wgpu::Features::TIMESTAMP_QUERY,
-					limits,
+					features: wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::POLYGON_MODE_LINE,
+					limits: wgpu::Limits {
+						max_buffer_size: u64::MAX,
+						..Default::default()
+					},
 					label: None,
 				},
 				None, // Trace path
@@ -79,6 +80,8 @@ pub struct Runner {
 
 impl Runner {
 	pub fn run<T: Entry>(self, game: &mut T) -> Result<(), RenderError> {
+		self.event_loop
+			.set_control_flow(winit::event_loop::ControlFlow::Poll);
 		self.event_loop.run(|event, event_loop| {
 			match event {
 				winit::event::Event::WindowEvent { event, window_id } => match event {

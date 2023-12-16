@@ -42,6 +42,7 @@ impl MeshState {
 					entry_point: "fs_main",
 					targets: &[Some(wgpu::ColorTargetState {
 						format: state.surface_format,
+						// blend: Some(wgpu::BlendState::ALPHA_BLENDING),
 						blend: Some(wgpu::BlendState::REPLACE),
 						write_mask: wgpu::ColorWrites::ALL,
 					})],
@@ -51,7 +52,8 @@ impl MeshState {
 					strip_index_format: None,
 					front_face: wgpu::FrontFace::Ccw,
 					cull_mode: None,
-					polygon_mode: wgpu::PolygonMode::Fill,
+					polygon_mode: wgpu::PolygonMode::Line,
+					// polygon_mode: wgpu::PolygonMode::Fill,
 					unclipped_depth: false,
 					conservative: false,
 				},
@@ -133,6 +135,6 @@ impl Mesh {
 		mesh_pass
 			.0
 			.set_index_buffer(self.buffer.slice(..), wgpu::IndexFormat::Uint32);
-		mesh_pass.0.draw_indexed(0..self.instances as u32, 0, 0..1);
+		mesh_pass.0.draw_indexed(0..self.instances, 0, 0..1);
 	}
 }

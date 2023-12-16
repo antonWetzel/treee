@@ -28,7 +28,7 @@ impl Segment {
 		let mesh = {
 			let mut file = File::open(&path).unwrap();
 			let size = file.metadata().map(|m| m.len() as usize).ok().unwrap();
-			let mut data = bytemuck::zeroed_vec::<u32>(size as usize / std::mem::size_of::<u32>());
+			let mut data = bytemuck::zeroed_vec::<u32>(size / std::mem::size_of::<u32>());
 			file.read_exact(bytemuck::cast_slice_mut(&mut data))
 				.unwrap();
 			render::Mesh::new(state, &data)

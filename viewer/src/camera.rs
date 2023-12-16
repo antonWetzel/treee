@@ -86,11 +86,11 @@ impl Camera {
 			lod::Mode::Auto { threshold } => {
 				if render_time > 0.01 {
 					*threshold /= 1.1;
-					println!("threshold {}", threshold);
 					true
 				} else if render_time < 0.002 {
-					*threshold *= 1.1;
-					println!("threshold {}", threshold);
+					if *threshold <= 1000.0 {
+						*threshold *= 1.1
+					}
 					true
 				} else {
 					false

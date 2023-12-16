@@ -54,7 +54,7 @@ impl<'a> Progress<'a> {
 			size -= 30;
 		}
 
-		let used = progress * size * sub_length / goal;
+		let used = progress * size * sub_length / goal.max(1);
 		let left = used / sub_length;
 		let (left, sub, right) = if left < size {
 			(
