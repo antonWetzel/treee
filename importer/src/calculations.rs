@@ -1,15 +1,18 @@
 use std::num::NonZeroU32;
 
-use math::{Dimension, Mat, Vector, X, Y, Z};
+use math::{ Dimension, Mat, Vector, X, Y, Z };
 
-use crate::{point::Point, triangulation::triangulate};
+use crate::{ point::Point, triangulation::triangulate };
+
 
 pub const MAX_NEIGHBORS: usize = 32 - 1;
+
 
 pub struct SegmentInformation {
 	pub trunk_height: common::Value,
 	pub crown_height: common::Value,
 }
+
 
 pub fn calculate(data: Vec<Vector<3, f32>>, segment: NonZeroU32) -> (Vec<Point>, SegmentInformation, Vec<u32>) {
 	let neighbors_tree = NeighborsTree::new(&data);
@@ -71,7 +74,10 @@ pub fn calculate(data: Vec<Vector<3, f32>>, segment: NonZeroU32) -> (Vec<Point>,
 
 	let res = (0..data.len())
 		.map(|i| {
-			let neighbors = neighbors_tree.get(i);
+			let mut neighbors = unsafe {
+				std::mem::zeroed()
+			};
+			let neighbors = neighbors_tree.get(i, &data, &mut neighbors);
 
 			let mean = {
 				let mut mean = Vector::<3, f32>::new([0.0, 0.0, 0.0]);
@@ -140,50 +146,46 @@ pub fn calculate(data: Vec<Vector<3, f32>>, segment: NonZeroU32) -> (Vec<Point>,
 	)
 }
 
+
 pub struct Adapter;
+
+
 impl k_nearest::Adapter<3, f32, Vector<3, f32>> for Adapter {
 	fn get(point: &Vector<3, f32>, dimension: Dimension) -> f32 {
 		point[dimension]
 	}
-	fn get_all(point: &Vector<3, f32>) -> [f32; 3] {
+
+
+	fn get_all(point: &Vector<3, f32>) -> [ f32; 3 ] {
 		point.data()
 	}
 }
 
+
 pub struct NeighborsTree {
-	lengths: Vec<usize>,
-	// data: Vec<Vector<MAX_NEIGHBORS, k_nearest::Entry<f32>>>,
-	data: memmap2::MmapMut,
+	tree: k_nearest::KDTree<3, f32, Vector<3, f32>, Adapter, k_nearest::EuclideanDistanceSquared>,
 }
+
 
 impl NeighborsTree {
-	const OFFSET: usize = std::mem::size_of::<Vector<MAX_NEIGHBORS, k_nearest::Entry<f32>>>();
+	pub fn new(points: &[ Vector<3, f32> ]) -> Self {
+		let tree = <k_nearest::KDTree<3, f32, Vector<3, f32>, Adapter, k_nearest::EuclideanDistanceSquared>>::new(points);
 
-	pub fn new(points: &[Vector<3, f32>]) -> Self {
-		let tree =
-			<k_nearest::KDTree<3, f32, Vector<3, f32>, Adapter, k_nearest::EuclideanDistanceSquared>>::new(points);
-		let mut data = memmap2::MmapOptions::new()
-			.len(Self::OFFSET * points.len())
-			.map_anon()
-			.unwrap();
-		let mut lengths = Vec::with_capacity(points.len());
-
-		for i in 0..points.len() {
-			let slice = &mut data[(i * Self::OFFSET)..((i + 1) * Self::OFFSET)];
-			let slice = bytemuck::cast_slice_mut(slice);
-			let l = tree.k_nearest(&points[i], slice, 2.0f32.powi(2));
-			lengths.push(l);
-		}
-
-		Self { lengths, data }
+		Self { tree }
 	}
 
-	pub fn get(&self, index: usize) -> &[k_nearest::Entry<f32>] {
-		let slice = &self.data[(index * Self::OFFSET)..((index + 1) * Self::OFFSET)];
-		let slice = bytemuck::cast_slice(slice);
-		&slice[..self.lengths[index]]
+
+	pub fn get<'a>(
+		&self,
+		index: usize,
+		data: &[ Vector<3, f32> ],
+		location: &'a mut [ k_nearest::Entry<f32>; MAX_NEIGHBORS ],
+	) -> &'a [ k_nearest::Entry<f32> ] {
+		let l = self.tree.k_nearest(&data[index], &mut location[..], 1.0);
+		&location[0..l]
 	}
 }
+
 
 pub fn map_to_u32(value: f32) -> u32 {
 	(value * u32::MAX as f32) as u32

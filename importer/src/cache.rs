@@ -1,10 +1,11 @@
 use std::{
 	collections::HashMap,
 	fs::File,
-	io::{Read, Seek, Write},
+	io::{ Read, Seek, Write },
 	mem::MaybeUninit,
 	ops::Not,
 };
+
 
 pub struct Cache<T> {
 	active: HashMap<usize, (Vec<T>, usize)>,
@@ -13,8 +14,10 @@ pub struct Cache<T> {
 	max_active: usize,
 }
 
+
 #[derive(Debug)]
 pub struct CacheIndex(usize);
+
 
 #[derive(Debug)]
 pub struct CacheEntry<T> {
@@ -22,6 +25,7 @@ pub struct CacheEntry<T> {
 	active: Vec<T>,
 	length: usize,
 }
+
 
 impl<T> Cache<T> {
 	pub fn new(max_active: usize) -> Self {
@@ -33,15 +37,17 @@ impl<T> Cache<T> {
 		}
 	}
 
+
 	pub fn new_entry(&mut self) -> CacheIndex {
 		self.current += 1;
 		CacheIndex(self.current)
 	}
 
+
 	pub fn add_point(&mut self, index: &CacheIndex, point: T) {
 		self.current += 1;
 		match self.active.get_mut(&index.0) {
-			None => {},
+			None => { },
 			Some(entry) => {
 				entry.0.push(point);
 				entry.1 = self.current;
@@ -51,6 +57,7 @@ impl<T> Cache<T> {
 		self.evict();
 		self.active.insert(index.0, (vec![point], self.current));
 	}
+
 
 	fn evict(&mut self) {
 		if self.active.len() < self.max_active {
@@ -65,6 +72,7 @@ impl<T> Cache<T> {
 			}
 		}
 
+
 		fn write_to<T>(file: &mut File, data: Vec<T>) {
 			unsafe {
 				let view = std::slice::from_raw_parts(
@@ -74,6 +82,8 @@ impl<T> Cache<T> {
 				file.write_all(view).unwrap();
 			}
 		}
+
+
 		let entry = self.active.remove(&oldest_index).unwrap().0;
 		match self.stored.get_mut(&oldest_index) {
 			None => {
@@ -89,6 +99,7 @@ impl<T> Cache<T> {
 		}
 	}
 
+
 	pub fn read(&mut self, index: CacheIndex) -> CacheEntry<T> {
 		let active = self
 			.active
@@ -103,6 +114,7 @@ impl<T> Cache<T> {
 		CacheEntry { length, file, active }
 	}
 }
+
 
 impl<T> CacheEntry<T> {
 	pub fn read(mut self) -> Vec<T> {
@@ -124,13 +136,16 @@ impl<T> CacheEntry<T> {
 		}
 	}
 
+
 	pub fn is_empty(&self) -> bool {
 		self.length() == 0
 	}
 
+
 	pub fn active(&self) -> bool {
 		self.active.is_empty().not()
 	}
+
 
 	pub fn length(&self) -> usize {
 		self.length

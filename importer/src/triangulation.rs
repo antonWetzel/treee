@@ -7,7 +7,7 @@ use math::{Vector, X, Y, Z};
 
 use crate::calculations::Adapter;
 
-const ALPHA: f32 = 1.0;
+const ALPHA: f32 = 3.0;
 
 type Tree = k_nearest::KDTree<3, f32, Vector<3, f32>, Adapter, k_nearest::EuclideanDistanceSquared>;
 
@@ -15,20 +15,16 @@ pub fn triangulate(data: &[Vector<3, f32>]) -> Vec<u32> {
 	let mut used = vec![false; data.len()];
 
 	let tree = Tree::new(data);
-	let mut indices = Vec::new();
-	let mut found = HashSet::new();
 
 	//assume one connected segmnent
 	let Some(seed) = seed(data, &used, &tree) else {
-		return indices;
+		return Vec::new();
 	};
-
-	indices.push(seed[X] as u32);
-	indices.push(seed[Y] as u32);
-	indices.push(seed[Z] as u32);
+	let mut indices = vec![seed[X] as u32, seed[Y] as u32, seed[Z] as u32];
 	used[seed[X]] = true;
 	used[seed[Y]] = true;
 	used[seed[Z]] = true;
+	let mut found = HashSet::new();
 
 	let mut edges = [
 		(Edge::new(seed[X], seed[Z]), seed[Y]),
@@ -43,9 +39,10 @@ pub fn triangulate(data: &[Vector<3, f32>]) -> Vec<u32> {
 		found.insert(edge);
 		let (first, second) = (edge.active_1, edge.active_2);
 		if let Some(third) = find_third(data, first, second, &tree, old) {
-			if third == old {
-				continue;
-			}
+			// checked in `find_third`
+			// if third == old {
+			// 	continue;
+			// }
 
 			indices.push(first as u32);
 			indices.push(second as u32);
@@ -55,11 +52,13 @@ pub fn triangulate(data: &[Vector<3, f32>]) -> Vec<u32> {
 				(Edge::new(first, third), second),
 				(Edge::new(third, second), first),
 			] {
-				if edges.contains_key(&edge.0) {
+				if let std::collections::hash_map::Entry::Vacant(e) = edges.entry(edge.0) {
+					if found.contains(&edge.0).not() {
+						e.insert(edge.1);
+					}
+				} else {
 					edges.remove(&edge.0);
 					found.insert(edge.0);
-				} else if found.contains(&edge.0).not() {
-					edges.insert(edge.0, edge.1);
 				}
 			}
 		}
@@ -124,6 +123,14 @@ fn seed(data: &[Vector<3, f32>], used: &[bool], tree: &Tree) -> Option<Vector<3,
 				if tree.empty(&center, (ALPHA - 0.001).powi(2)) {
 					return Some([first, second.index, third.index].into());
 				}
+
+				let Some(center) = sphere_location(data[second.index], data[first], data[third.index]) else {
+					continue;
+				};
+
+				if tree.empty(&center, (ALPHA - 0.001).powi(2)) {
+					return Some([second.index, first, third.index].into());
+				}
 			}
 		}
 	}
@@ -147,7 +154,7 @@ fn find_third(data: &[Vector<3, f32>], first: usize, second: usize, tree: &Tree,
 	for third in nearest
 		.iter()
 		.skip(1)
-		.filter(|entry| entry.index != first && entry.index != second)
+		.filter(|entry| entry.index != first && entry.index != second && entry.index != old)
 	{
 		let Some(center_2) = sphere_location(data[first], data[second], data[third.index]) else {
 			continue;
@@ -169,6 +176,7 @@ fn find_third(data: &[Vector<3, f32>], first: usize, second: usize, tree: &Tree,
 	best
 }
 
+/// https://stackoverflow.com/a/34326390
 fn sphere_location(
 	point_a: Vector<3, f32>,
 	point_b: Vector<3, f32>,
