@@ -1,42 +1,53 @@
 use std::ops::Not;
 
-use math::{Dimension, Vector, X, Y};
+use math::{ Dimension, Vector, X, Y };
 
-use crate::{length, Anchor, Area, Element, Horizontal, Length, State, Vertical};
+use crate::{ length, Anchor, Area, Element, Horizontal, Length, State, Vertical };
+
 
 pub trait SliderDirection {
 	const AXIS_0: Dimension;
 	const AXIS_1: Dimension;
 
+
 	fn length(v_0: f32, v_1: f32) -> Length;
+
+
 	fn combine(v_0: Length, v_1: Length) -> Vector<2, Length>;
 }
+
 
 impl SliderDirection for Horizontal {
 	const AXIS_0: Dimension = X;
 	const AXIS_1: Dimension = Y;
 
+
 	fn length(v_0: f32, v_1: f32) -> Length {
 		length!(w v_0, h v_1)
 	}
+
 
 	fn combine(v_0: Length, v_1: Length) -> Vector<2, Length> {
 		[v_0, v_1].into()
 	}
 }
 
+
 impl SliderDirection for Vertical {
 	const AXIS_0: Dimension = Y;
 	const AXIS_1: Dimension = X;
+
 
 	fn length(v_0: f32, v_1: f32) -> Length {
 		length!(w v_1, h v_0)
 	}
 
+
 	fn combine(v_0: Length, v_1: Length) -> Vector<2, Length> {
 		[v_1, v_0].into()
 	}
 }
+
 
 pub struct Slider<D: SliderDirection, Background: Element, Marker: Element> {
 	background: Background,
@@ -45,6 +56,7 @@ pub struct Slider<D: SliderDirection, Background: Element, Marker: Element> {
 	active: bool,
 	phantom: std::marker::PhantomData<D>,
 }
+
 
 impl<D: SliderDirection, Background: Element, Marker: Element> Slider<D, Background, Marker> {
 	pub fn new(background: Background, marker: Marker, default: f32, event: fn(f32) -> Background::Event) -> Self {
@@ -63,6 +75,7 @@ impl<D: SliderDirection, Background: Element, Marker: Element> Slider<D, Backgro
 		}
 	}
 
+
 	pub fn set_marker(&mut self, state: &impl State, percent: f32) {
 		self.marker.anchor = Anchor::square(
 			D::combine(D::length(percent, 0.25 - percent), D::length(0.0, 0.25)),
@@ -72,11 +85,13 @@ impl<D: SliderDirection, Background: Element, Marker: Element> Slider<D, Backgro
 	}
 }
 
+
 impl<D: SliderDirection, Background: Element, Marker: Element> render::UIElement for Slider<D, Background, Marker> {
 	fn render<'a>(&'a self, ui_pass: &mut render::UIPass<'a>) {
 		self.background.render(ui_pass);
 		self.marker.render(ui_pass);
 	}
+
 
 	fn collect<'a>(&'a self, collector: &mut render::UICollector<'a>) {
 		self.background.collect(collector);
@@ -84,26 +99,32 @@ impl<D: SliderDirection, Background: Element, Marker: Element> render::UIElement
 	}
 }
 
+
 impl<D: SliderDirection, Background: Element, Marker: Element> Element for Slider<D, Background, Marker> {
 	type Event = Background::Event;
+
 
 	fn inside(&self, position: math::Vector<2, f32>) -> bool {
 		self.active || self.background.inside(position)
 	}
 
+
 	fn bounding_rect(&self) -> crate::Rect {
 		self.background.bounding_rect()
 	}
+
 
 	fn resize(&mut self, state: &impl State, rect: crate::Rect) {
 		self.background.resize(state, rect);
 		self.marker.resize(state, self.background.bounding_rect());
 	}
 
+
 	fn click(&mut self, _state: &impl State, _position: math::Vector<2, f32>) -> Option<Self::Event> {
 		self.active = true;
 		None
 	}
+
 
 	fn release(&mut self, _position: math::Vector<2, f32>) -> bool {
 		if self.active.not() {
@@ -112,6 +133,7 @@ impl<D: SliderDirection, Background: Element, Marker: Element> Element for Slide
 		self.active = false;
 		true
 	}
+
 
 	fn hover(&mut self, state: &impl State, position: math::Vector<2, f32>, pressed: bool) -> Option<Self::Event> {
 		if !pressed {
@@ -131,6 +153,7 @@ impl<D: SliderDirection, Background: Element, Marker: Element> Element for Slide
 	}
 }
 
+
 pub struct DoubleSlider<D: SliderDirection, Background: Element, Marker: Element> {
 	background: Background,
 	lower: Area<Marker>,
@@ -139,6 +162,7 @@ pub struct DoubleSlider<D: SliderDirection, Background: Element, Marker: Element
 	active: bool,
 	phantom: std::marker::PhantomData<D>,
 }
+
 
 impl<D: SliderDirection, Background: Element, Marker: Element> DoubleSlider<D, Background, Marker> {
 	pub fn new(background: Background, lower: Marker, upper: Marker, event: fn(f32, f32) -> Background::Event) -> Self {
@@ -165,6 +189,7 @@ impl<D: SliderDirection, Background: Element, Marker: Element> DoubleSlider<D, B
 	}
 }
 
+
 impl<D: SliderDirection, Background: Element, Marker: Element> render::UIElement
 	for DoubleSlider<D, Background, Marker>
 {
@@ -174,6 +199,7 @@ impl<D: SliderDirection, Background: Element, Marker: Element> render::UIElement
 		self.upper.render(ui_pass);
 	}
 
+
 	fn collect<'a>(&'a self, collector: &mut render::UICollector<'a>) {
 		self.background.collect(collector);
 		self.lower.collect(collector);
@@ -181,16 +207,20 @@ impl<D: SliderDirection, Background: Element, Marker: Element> render::UIElement
 	}
 }
 
+
 impl<D: SliderDirection, Background: Element, Marker: Element> Element for DoubleSlider<D, Background, Marker> {
 	type Event = Background::Event;
+
 
 	fn inside(&self, position: math::Vector<2, f32>) -> bool {
 		self.active || self.background.inside(position)
 	}
 
+
 	fn bounding_rect(&self) -> crate::Rect {
 		self.background.bounding_rect()
 	}
+
 
 	fn resize(&mut self, state: &impl State, rect: crate::Rect) {
 		self.background.resize(state, rect);
@@ -198,10 +228,13 @@ impl<D: SliderDirection, Background: Element, Marker: Element> Element for Doubl
 		self.upper.resize(state, self.background.bounding_rect());
 	}
 
+
 	fn click(&mut self, _state: &impl State, _position: math::Vector<2, f32>) -> Option<Self::Event> {
 		self.active = true;
 		None
 	}
+
+
 	fn release(&mut self, _position: math::Vector<2, f32>) -> bool {
 		if self.active.not() {
 			return false;
@@ -209,6 +242,7 @@ impl<D: SliderDirection, Background: Element, Marker: Element> Element for Doubl
 		self.active = false;
 		true
 	}
+
 
 	fn hover(&mut self, state: &impl State, position: math::Vector<2, f32>, pressed: bool) -> Option<Self::Event> {
 		if !pressed {

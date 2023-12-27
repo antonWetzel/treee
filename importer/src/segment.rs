@@ -1,31 +1,35 @@
 use std::{
 	cmp::Ordering,
-	collections::{HashMap, HashSet},
+	collections::{ HashMap, HashSet },
 	num::NonZeroUsize,
 	ops::Not,
 };
 
-use math::{Vector, X, Y, Z};
+use math::{ Vector, X, Y, Z };
 use rayon::prelude::*;
 
 use crate::{
-	cache::{Cache, CacheEntry, CacheIndex},
+	cache::{ Cache, CacheEntry, CacheIndex },
 	quad_tree::QuadTree,
 };
+
 
 pub struct Segment {
 	data: CacheEntry<Vector<3, f32>>,
 }
+
 
 impl Segment {
 	pub fn points(self) -> Vec<Vector<3, f32>> {
 		self.data.read()
 	}
 
+
 	pub fn length(&self) -> usize {
 		self.data.length()
 	}
 }
+
 
 fn discretize(point: Vector<3, f32>, min: Vector<3, f32>) -> Vector<3, usize> {
 	let x = ((point[X] - min[X]) / 0.05) as usize;
@@ -34,19 +38,23 @@ fn discretize(point: Vector<3, f32>, min: Vector<3, f32>) -> Vector<3, usize> {
 	[x, y, z].into()
 }
 
+
 pub struct Segmenter {
 	data: HashSet<Vector<3, usize>>,
 	min: Vector<3, f32>,
 }
+
 
 impl Segmenter {
 	pub fn new(min: Vector<3, f32>) -> Self {
 		Self { data: HashSet::new(), min }
 	}
 
+
 	pub fn add_point(&mut self, point: Vector<3, f32>) {
 		self.data.insert(discretize(point, self.min));
 	}
+
 
 	pub fn segments(self) -> Segments {
 		let mut ground = HashMap::<_, usize>::new();
@@ -135,6 +143,7 @@ impl Segmenter {
 	}
 }
 
+
 pub struct Segments {
 	cache: Cache<Vector<3, f32>>,
 	segments: Vec<CacheIndex>,
@@ -142,6 +151,7 @@ pub struct Segments {
 	indices: HashMap<(usize, usize, usize), NonZeroUsize>,
 	min: Vector<3, f32>,
 }
+
 
 impl Segments {
 	pub fn add_point(&mut self, point: Vector<3, f32>) {
@@ -158,6 +168,7 @@ impl Segments {
 
 		self.cache.add_point(&self.segments[idx], point);
 	}
+
 
 	pub fn segments(mut self) -> Vec<Segment> {
 		let mut res = self

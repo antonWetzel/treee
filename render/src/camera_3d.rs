@@ -1,7 +1,8 @@
-use math::{Mat, Projection, Transform, Vector, W, X, Y, Z};
+use math::{ Mat, Projection, Transform, Vector, W, X, Y, Z };
 use wgpu::util::DeviceExt;
 
-use crate::{Has, State};
+use crate::{ Has, State };
+
 
 #[derive(Clone, Copy)]
 pub enum Camera3D {
@@ -19,6 +20,7 @@ pub enum Camera3D {
 	},
 }
 
+
 impl Camera3D {
 	pub fn projection(&self) -> Mat<4, f32> {
 		match *self {
@@ -29,12 +31,14 @@ impl Camera3D {
 		}
 	}
 
+
 	pub fn aspect(&self) -> f32 {
 		match *self {
 			Self::Perspective { aspect, .. } => aspect,
 			Self::Orthographic { aspect, .. } => aspect,
 		}
 	}
+
 
 	pub fn fovy(&self) -> f32 {
 		match *self {
@@ -43,12 +47,14 @@ impl Camera3D {
 		}
 	}
 
+
 	pub fn set_aspect(&mut self, value: f32) {
 		match self {
 			Self::Perspective { aspect, .. } => *aspect = value,
 			Self::Orthographic { aspect, .. } => *aspect = value,
 		}
 	}
+
 
 	pub fn inside(&self, corner: Vector<3, f32>, size: f32, transform: Transform<3, f32>) -> bool {
 		let matrix = self.projection() * transform.inverse().as_matrix();
@@ -62,8 +68,8 @@ impl Camera3D {
 			corner + [size, size, 0.0].into(),
 			corner + [size, size, size].into(),
 		]
-		.map(|point| matrix * Vector::new([point[X], point[Y], point[Z], 1.0]))
-		.map(|point| Vector::new([point[X], point[Y], point[Z]]) / point[W]);
+			.map(|point| matrix * Vector::new([point[X], point[Y], point[Z], 1.0]))
+			.map(|point| Vector::new([point[X], point[Y], point[Z]]) / point[W]);
 
 		let mut max = points[0];
 		let mut min = points[0];
@@ -75,9 +81,11 @@ impl Camera3D {
 	}
 }
 
+
 pub struct Camera3DGPU {
 	bind_group: wgpu::BindGroup,
 }
+
 
 impl Camera3DGPU {
 	pub fn new(state: &impl Has<State>, camera: &crate::Camera3D, transform: &Transform<3, f32>) -> Self {
@@ -108,6 +116,7 @@ impl Camera3DGPU {
 		Self { bind_group }
 	}
 
+
 	pub fn get_layout(state: &impl Has<State>) -> wgpu::BindGroupLayout {
 		state
 			.get()
@@ -127,10 +136,12 @@ impl Camera3DGPU {
 			})
 	}
 
+
 	pub fn get_bind_group(&self) -> &wgpu::BindGroup {
 		&self.bind_group
 	}
 }
+
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -138,5 +149,8 @@ struct Uniform {
 	pub view_proj: Mat<4, f32>,
 }
 
-unsafe impl bytemuck::Zeroable for Uniform {}
-unsafe impl bytemuck::Pod for Uniform {}
+
+unsafe impl bytemuck::Zeroable for Uniform { }
+
+
+unsafe impl bytemuck::Pod for Uniform { }

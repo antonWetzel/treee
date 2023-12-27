@@ -1,13 +1,23 @@
 use wgpu::util::DeviceExt;
 
 use crate::{
-	depth_texture::DepthTexture, Camera3DGPU, Has, Lookup, Point, PointCloud, PointCloudProperty, Render, RenderPass,
+	depth_texture::DepthTexture,
+	Camera3DGPU,
+	Has,
+	Lookup,
+	Point,
+	PointCloud,
+	PointCloudProperty,
+	Render,
+	RenderPass,
 	State,
 };
+
 
 pub struct MeshState {
 	pipeline: wgpu::RenderPipeline,
 }
+
 
 impl MeshState {
 	pub fn new(state: &impl Has<State>) -> Self {
@@ -76,12 +86,15 @@ impl MeshState {
 	}
 }
 
+
 #[repr(transparent)]
 pub struct MeshPass<'a>(wgpu::RenderPass<'a>);
+
 
 pub trait MeshRender {
 	fn render<'a>(&'a self, mesh_pass: &mut MeshPass<'a>);
 }
+
 
 impl<'a, T, S: Has<MeshState>> Render<'a, (&'a S, &'a Camera3DGPU, &'a Lookup)> for T
 where
@@ -92,16 +105,20 @@ where
 		render_pass.set_pipeline(&state.pipeline);
 		render_pass.set_bind_group(0, camera.get_bind_group(), &[]);
 		render_pass.set_bind_group(1, lookup.get_bind_group(), &[]);
-		let mesh_pass = unsafe { std::mem::transmute::<_, &mut MeshPass<'a>>(render_pass) };
+		let mesh_pass = unsafe {
+			std::mem::transmute::<_, &mut MeshPass<'a>>(render_pass)
+		};
 		self.render(mesh_pass);
 	}
 }
+
 
 #[derive(Debug)]
 pub struct Mesh {
 	pub buffer: wgpu::Buffer,
 	pub instances: u32,
 }
+
 
 impl Mesh {
 	pub fn new(state: &impl Has<State>, indices: &[u32]) -> Self {
@@ -116,6 +133,7 @@ impl Mesh {
 
 		Self { buffer, instances: indices.len() as u32 }
 	}
+
 
 	pub fn render<'a>(
 		&'a self,

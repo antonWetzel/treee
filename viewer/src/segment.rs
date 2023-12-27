@@ -2,10 +2,11 @@ use std::{
 	fs::File,
 	io::Read,
 	num::NonZeroU32,
-	path::{Path, PathBuf},
+	path::{ Path, PathBuf },
 };
 
 use crate::state::State;
+
 
 pub struct Segment {
 	path: PathBuf,
@@ -13,6 +14,7 @@ pub struct Segment {
 	property: render::PointCloudProperty,
 	mesh: render::Mesh,
 }
+
 
 impl Segment {
 	pub fn new(state: &State, mut path: PathBuf, property: &str, index: NonZeroU32) -> Self {
@@ -43,10 +45,12 @@ impl Segment {
 		}
 	}
 
+
 	pub fn change_property(&mut self, state: &State, property: &str) {
 		self.path.set_file_name(format!("{}.data", property));
 		self.property = Self::load_property(state, &self.path);
 	}
+
 
 	fn load_property(state: &State, path: &Path) -> render::PointCloudProperty {
 		let mut file = std::fs::OpenOptions::new().read(true).open(path).unwrap();
@@ -58,11 +62,13 @@ impl Segment {
 	}
 }
 
+
 impl render::PointCloudRender for Segment {
 	fn render<'a>(&'a self, point_cloud_pass: &mut render::PointCloudPass<'a>) {
 		self.point_cloud.render(point_cloud_pass, &self.property);
 	}
 }
+
 
 impl render::MeshRender for Segment {
 	fn render<'a>(&'a self, mesh_pass: &mut render::MeshPass<'a>) {

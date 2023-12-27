@@ -2,8 +2,10 @@ pub struct DepthTexture {
 	pub view: wgpu::TextureView,
 }
 
+
 impl DepthTexture {
 	pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+
 
 	pub fn new(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration, label: &str) -> Self {
 		let size = wgpu::Extent3d {

@@ -2,16 +2,17 @@ use std::collections::HashSet;
 use std::num::NonZeroU32;
 use std::sync::Mutex;
 
-use common::{IndexData, IndexNode, Project, MAX_LEAF_SIZE};
+use common::{ IndexData, IndexNode, Project, MAX_LEAF_SIZE };
 use crossbeam::atomic::AtomicCell;
 use math::Vector;
-use math::{X, Z};
+use math::{ X, Z };
 use rayon::prelude::*;
 
-use crate::cache::{Cache, CacheEntry, CacheIndex};
-use crate::point::{Point, PointsCollection};
+use crate::cache::{ Cache, CacheEntry, CacheIndex };
+use crate::point::{ Point, PointsCollection };
 use crate::progress::Progress;
-use crate::{level_of_detail, Writer};
+use crate::{ level_of_detail, Writer };
+
 
 #[derive(Debug)]
 pub enum Data {
@@ -25,12 +26,14 @@ pub enum Data {
 	},
 }
 
+
 #[derive(Debug)]
 pub struct Node {
 	corner: Vector<3, f32>,
 	size: f32,
 	data: Data,
 }
+
 
 impl Node {
 	fn new_branch(corner: Vector<3, f32>, size: f32) -> Self {
@@ -40,6 +43,7 @@ impl Node {
 			data: Data::Branch { children: Box::default() },
 		}
 	}
+
 
 	fn new_leaf(corner: Vector<3, f32>, size: f32, cache: &mut Cache<Point>) -> Self {
 		Node {
@@ -52,6 +56,7 @@ impl Node {
 			},
 		}
 	}
+
 
 	fn insert_position(&mut self, point: Point, cache: &mut Cache<Point>) {
 		fn insert_into_children(
@@ -83,6 +88,7 @@ impl Node {
 			}
 		}
 
+
 		fn update_value<T>(value: &mut T, update: impl FnOnce(T) -> T) {
 			unsafe {
 				let v = std::ptr::read(value);
@@ -90,6 +96,7 @@ impl Node {
 				std::ptr::write(value, v);
 			}
 		}
+
 
 		update_value(&mut self.data, |data| match data {
 			Data::Branch { mut children, .. } => {
@@ -113,6 +120,7 @@ impl Node {
 			},
 		});
 	}
+
 
 	fn flatten(self, nodes: &mut Vec<FLatNode>, cache: &mut Cache<Point>) -> (IndexNode, u32) {
 		let (flat_data, index_data, depth) = match self.data {
@@ -160,18 +168,22 @@ impl Node {
 	}
 }
 
+
 pub struct Tree {
 	root: Node,
 }
+
 
 impl Tree {
 	pub fn new(corner: Vector<3, f32>, size: f32) -> Self {
 		Self { root: Node::new_branch(corner, size) }
 	}
 
+
 	pub fn insert(&mut self, point: Point, cache: &mut Cache<Point>) {
 		self.root.insert_position(point, cache);
 	}
+
 
 	pub fn flatten(
 		self,
@@ -200,6 +212,7 @@ impl Tree {
 	}
 }
 
+
 #[derive(Debug)]
 pub enum FlatData {
 	Leaf {
@@ -211,6 +224,7 @@ pub enum FlatData {
 	},
 }
 
+
 #[derive(Debug)]
 pub struct FLatNode {
 	corner: Vector<3, f32>,
@@ -219,10 +233,12 @@ pub struct FLatNode {
 	index: u32,
 }
 
+
 #[derive(Debug)]
 pub struct FlatTree {
 	nodes: Vec<FLatNode>,
 }
+
 
 impl FlatTree {
 	pub fn save(self, writer: Writer) {
@@ -247,6 +263,7 @@ impl FlatTree {
 		progress.into_inner().unwrap().finish();
 	}
 }
+
 
 impl FLatNode {
 	fn save(self, data: &[AtomicCell<Option<PointsCollection>>], writer: &Mutex<Writer>) -> PointsCollection {

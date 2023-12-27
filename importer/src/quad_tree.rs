@@ -1,6 +1,7 @@
 use std::hash::Hash;
 
-use math::{Vector, X, Y, Z};
+use math::{ Vector, X, Y, Z };
+
 
 #[derive(Debug)]
 pub struct QuadTree<T>
@@ -12,14 +13,17 @@ where
 	size: usize,
 }
 
+
 impl<T: Eq + Copy + Hash> QuadTree<T> {
 	pub fn new(min: Vector<2, usize>, size: usize) -> Self {
 		Self { root: Node::Leaf(None), min, size }
 	}
 
+
 	pub fn set(&mut self, position: Vector<3, usize>, value: T) {
 		self.root.set(position, value, self.min, self.size);
 	}
+
 
 	pub fn get(&self, position: Vector<3, usize>, max_distance: usize) -> Option<T> {
 		self.root
@@ -27,6 +31,7 @@ impl<T: Eq + Copy + Hash> QuadTree<T> {
 			.map(|(value, _)| value)
 	}
 }
+
 
 #[derive(Debug)]
 enum Node<T>
@@ -36,6 +41,7 @@ where
 	Branch(Box<[Node<T>; 4]>),
 	Leaf(Option<(T, usize)>),
 }
+
 
 impl<T: Eq + Copy + Hash> Node<T> {
 	pub fn set(&mut self, position: Vector<3, usize>, value: T, mut min: Vector<2, usize>, mut size: usize) {
@@ -80,6 +86,7 @@ impl<T: Eq + Copy + Hash> Node<T> {
 			},
 		}
 	}
+
 
 	pub fn get_nearest(
 		&self,

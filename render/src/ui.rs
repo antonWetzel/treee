@@ -1,15 +1,18 @@
-use crate::{Has, Render, RenderPass, State, Texture, Vertex2D};
-use math::{Transform, Vector, X, Y};
-use wgpu::{util::DeviceExt, SurfaceConfiguration};
+use crate::{ Has, Render, RenderPass, State, Texture, Vertex2D };
+use math::{ Transform, Vector, X, Y };
+use wgpu::{ util::DeviceExt, SurfaceConfiguration };
 use wgpu_text::{
-	glyph_brush::{ab_glyph::FontRef, BuiltInLineBreaker, HorizontalAlign, Layout, Section, Text, VerticalAlign},
-	BrushBuilder, TextBrush,
+	glyph_brush::{ ab_glyph::FontRef, BuiltInLineBreaker, HorizontalAlign, Layout, Section, Text, VerticalAlign },
+	BrushBuilder,
+	TextBrush,
 };
+
 
 pub struct UIState {
 	pipeline: wgpu::RenderPipeline,
 	sampler: wgpu::Sampler,
 }
+
 
 impl UIState {
 	pub fn new(state: &impl Has<State>) -> Self {
@@ -78,15 +81,18 @@ impl UIState {
 		Self { sampler, pipeline }
 	}
 
+
 	pub fn sampler(&self) -> &wgpu::Sampler {
 		&self.sampler
 	}
 }
 
+
 pub struct UI<'a> {
 	brush: TextBrush<FontRef<'a>>,
 	projection: wgpu::BindGroup,
 }
+
 
 impl<'a> UI<'a> {
 	pub fn new(state: &impl Has<State>, config: &SurfaceConfiguration, font_bytes: &'a [u8]) -> Self {
@@ -101,12 +107,14 @@ impl<'a> UI<'a> {
 		}
 	}
 
+
 	pub fn resize(&mut self, state: &impl Has<State>, config: &SurfaceConfiguration) {
 		let state: &State = state.get();
 		self.brush
 			.resize_view(config.width as f32, config.height as f32, &state.queue);
 		self.projection = Self::create_projection(state, config);
 	}
+
 
 	pub fn queue(&mut self, state: &impl Has<State>, target: &impl UIElement) {
 		let state = state.get();
@@ -116,6 +124,7 @@ impl<'a> UI<'a> {
 			.queue(&state.device, &state.queue, collector.data)
 			.unwrap();
 	}
+
 
 	fn create_projection(state: &impl Has<State>, config: &SurfaceConfiguration) -> wgpu::BindGroup {
 		let state: &State = state.get();
@@ -143,6 +152,7 @@ impl<'a> UI<'a> {
 			})
 	}
 
+
 	pub fn get_projection_layout(state: &impl Has<State>) -> wgpu::BindGroupLayout {
 		state
 			.get()
@@ -163,8 +173,10 @@ impl<'a> UI<'a> {
 	}
 }
 
+
 #[repr(transparent)]
 pub struct UIPass<'a>(RenderPass<'a>);
+
 
 impl<'a> UIPass<'a> {
 	pub fn render(&mut self, value: &'a impl UIElement) {
@@ -172,11 +184,15 @@ impl<'a> UIPass<'a> {
 	}
 }
 
+
 pub trait UIElement {
 	fn render<'a>(&'a self, ui_pass: &mut UIPass<'a>);
+
+
 	#[allow(unused)]
 	fn collect<'a>(&'a self, collector: &mut UICollector<'a>);
 }
+
 
 impl<'a, T, S: Has<UIState>> Render<'a, (&'a UI<'a>, &'a S)> for T
 where
@@ -187,14 +203,18 @@ where
 		ui.brush.draw(render_pass);
 		render_pass.set_pipeline(&state.pipeline);
 		render_pass.set_bind_group(0, &ui.projection, &[]);
-		let ui_pass = unsafe { std::mem::transmute::<_, &mut UIPass<'a>>(render_pass) };
+		let ui_pass = unsafe {
+			std::mem::transmute::<_, &mut UIPass<'a>>(render_pass)
+		};
 		self.render(ui_pass);
 	}
 }
 
+
 pub struct UICollector<'a> {
 	data: Vec<Section<'a>>,
 }
+
 
 impl<'a> UICollector<'a> {
 	pub fn add_element(&mut self, element: &'a UIText) {
@@ -219,8 +239,10 @@ impl<'a> UICollector<'a> {
 	}
 }
 
+
 pub type UIHorizontalAlign = HorizontalAlign;
 pub type UIVerticalAlign = VerticalAlign;
+
 
 pub struct UIText {
 	pub position: Vector<2, f32>,
@@ -229,6 +251,7 @@ pub struct UIText {
 	pub vertical: VerticalAlign,
 	pub horizontal: HorizontalAlign,
 }
+
 
 impl UIText {
 	pub fn new(
@@ -248,17 +271,22 @@ impl UIText {
 	}
 }
 
+
 impl UIElement for UIText {
-	fn render<'a>(&'a self, _ui_pass: &mut UIPass<'a>) {}
+	fn render<'a>(&'a self, _ui_pass: &mut UIPass<'a>) { }
+
+
 	fn collect<'a>(&'a self, collector: &mut UICollector<'a>) {
 		collector.add_element(self)
 	}
 }
 
+
 pub struct UIImage {
 	bind_group: wgpu::BindGroup,
 	buffer: wgpu::Buffer,
 }
+
 
 impl UIImage {
 	pub fn new(
@@ -275,9 +303,11 @@ impl UIImage {
 		}
 	}
 
+
 	pub fn update(&mut self, state: &(impl Has<State> + Has<UIState>), position: Vector<2, f32>, size: Vector<2, f32>) {
 		self.buffer = Self::gpu_buffer(state.get(), position, size);
 	}
+
 
 	fn gpu_buffer(state: &State, position: Vector<2, f32>, size: Vector<2, f32>) -> wgpu::Buffer {
 		let vertices = [
@@ -317,6 +347,7 @@ impl UIImage {
 			})
 	}
 
+
 	fn gpu_bind_group(state: &State, ui_state: &UIState, texture: &Texture) -> wgpu::BindGroup {
 		state.device.create_bind_group(&wgpu::BindGroupDescriptor {
 			layout: &Self::get_layout(state),
@@ -337,6 +368,7 @@ impl UIImage {
 			label: Some("diffuse_bind_group"),
 		})
 	}
+
 
 	pub fn get_layout(state: &impl Has<State>) -> wgpu::BindGroupLayout {
 		state
@@ -366,11 +398,14 @@ impl UIImage {
 	}
 }
 
+
 impl UIElement for UIImage {
 	fn render<'a>(&'a self, ui_pass: &mut UIPass<'a>) {
 		ui_pass.0.set_vertex_buffer(0, self.buffer.slice(..));
 		ui_pass.0.set_bind_group(1, &self.bind_group, &[]);
 		ui_pass.0.draw(0..6, 0..1);
 	}
-	fn collect<'a>(&'a self, _collector: &mut UICollector<'a>) {}
+
+
+	fn collect<'a>(&'a self, _collector: &mut UICollector<'a>) { }
 }

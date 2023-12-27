@@ -1,6 +1,7 @@
-use math::{Vector, X, Y, Z};
+use math::{ Vector, X, Y, Z };
 
 use crate::state::State;
+
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum InterfaceAction {
@@ -30,10 +31,12 @@ pub enum InterfaceAction {
 	ScaleUpdate(f32),
 }
 
+
 type Image = ui::Image<InterfaceAction>;
 type Text = ui::Text<InterfaceAction>;
 
 type UpDownButton = ui::Split<ui::Horizontal, ui::Button<Image>, ui::Button<Image>>;
+
 
 ui::Collection!(
 	type Event = InterfaceAction;
@@ -44,6 +47,7 @@ ui::Collection!(
 		info: ui::Hide<ui::Area<Text>>,
 	}
 );
+
 
 impl Interface {
 	pub fn new(state: &State, background: Vector<3, f32>) -> Self {
@@ -72,6 +76,7 @@ impl Interface {
 		}
 	}
 
+
 	pub fn reset_background(&mut self, state: &State, background: Vector<3, f32>) {
 		self.controls
 			.background
@@ -93,6 +98,7 @@ impl Interface {
 			.set_marker(state, background[Z]);
 	}
 
+
 	pub fn enable_segment_info(&mut self, names: &[String], properties: &[common::Value]) {
 		self.info.update_text(
 			names
@@ -104,10 +110,12 @@ impl Interface {
 		self.info.active = true;
 	}
 
+
 	pub fn disable_segment_info(&mut self) {
 		self.info.active = false;
 	}
 }
+
 
 ui::Stack!(
 	type Event = InterfaceAction;
@@ -132,6 +140,7 @@ ui::Stack!(
 	}
 );
 
+
 ui::Stack!(
 	type Event = InterfaceAction;
 
@@ -143,6 +152,7 @@ ui::Stack!(
 		blue: ui::Relative<ui::Horizontal, ui::Split<ui::Vertical, Text, ui::Slider<ui::Horizontal, Image, Image>>>,
 	}
 );
+
 
 impl RGB {
 	pub fn new(
@@ -210,6 +220,7 @@ impl RGB {
 	}
 }
 
+
 ui::Stack!(
 	type Event = InterfaceAction;
 
@@ -220,6 +231,7 @@ ui::Stack!(
 		rgb: RGB,
 	}
 );
+
 
 impl EyeDome {
 	pub fn new(state: &State, line_h: &render::Texture, line_v: &render::Texture, dot: &render::Texture) -> Self {
@@ -245,6 +257,7 @@ impl EyeDome {
 		}
 	}
 }
+
 
 impl Controls {
 	pub fn new(state: &State, background: Vector<3, f32>) -> Self {

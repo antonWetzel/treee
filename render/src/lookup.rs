@@ -1,11 +1,13 @@
-use math::{X, Y};
+use math::{ X, Y };
 use wgpu::util::DeviceExt;
 
-use crate::{Has, State, Texture};
+use crate::{ Has, State, Texture };
+
 
 pub struct Lookup {
 	bind_group: wgpu::BindGroup,
 }
+
 
 impl Lookup {
 	pub fn new_png(state: &impl Has<State>, data: &[u8]) -> Self {
@@ -48,9 +50,11 @@ impl Lookup {
 		Self { bind_group }
 	}
 
+
 	pub fn get_bind_group(&self) -> &wgpu::BindGroup {
 		&self.bind_group
 	}
+
 
 	pub fn get_layout(state: &impl Has<State>) -> wgpu::BindGroupLayout {
 		state

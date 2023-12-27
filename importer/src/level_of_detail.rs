@@ -1,10 +1,12 @@
-use math::{Vector, X, Y, Z};
+use math::{ Vector, X, Y, Z };
 
 use crate::point::PointsCollection;
+
 
 const GRID_SIZE: usize = 64;
 const GRID_SIZE_3: usize = GRID_SIZE * GRID_SIZE * GRID_SIZE;
 const POINT_SCALE: f32 = 0.95;
+
 
 #[derive(Clone, Copy)]
 struct Cell {
@@ -17,6 +19,7 @@ struct Cell {
 	sub_index: u32,
 	curve: u32,
 }
+
 
 pub fn grid(children: Vec<PointsCollection>, corner: Vector<3, f32>, size: f32) -> PointsCollection {
 	let mut grid = Vec::<Cell>::new();
@@ -77,6 +80,7 @@ pub fn grid(children: Vec<PointsCollection>, corner: Vector<3, f32>, size: f32) 
 	res
 }
 
+
 fn approximate_theta(dist: f32) -> f32 {
 	// exact calculation
 	//   theta = acos((a*a + b*b + c*c) / (2 * a * b))
@@ -86,6 +90,7 @@ fn approximate_theta(dist: f32) -> f32 {
 	const QUADRATIC_SCALE: f32 = 0.1;
 	LINEAR_SCALE * dist + QUADRATIC_SCALE * dist * dist
 }
+
 
 fn fast_spherical_linear_interpolation(start: Vector<3, f32>, end: Vector<3, f32>, percent: f32) -> Vector<3, f32> {
 	const SAME_DIRECTION_THRESHOLD: f32 = 0.999;

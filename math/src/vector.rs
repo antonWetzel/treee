@@ -1,41 +1,57 @@
 use std::{
 	mem::MaybeUninit,
-	ops::{Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Neg, Sub, SubAssign},
+	ops::{ Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Neg, Sub, SubAssign },
 };
 
-use serde::{Deserialize, Serialize};
+use serde::{ Deserialize, Serialize };
 
 use crate::{
-	requirements::{Sqrt, Zero},
-	Dimension, Dimensions, X, Y, Z,
+	requirements::{ Sqrt, Zero },
+	Dimension,
+	Dimensions,
+	X,
+	Y,
+	Z,
 };
+
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Vector<const N: usize, T>([T; N]);
 
-unsafe impl<const N: usize, T: bytemuck::Zeroable> bytemuck::Zeroable for Vector<N, T> {}
-unsafe impl<const N: usize, T: bytemuck::Pod> bytemuck::Pod for Vector<N, T> {}
+
+unsafe impl<const N: usize, T: bytemuck::Zeroable> bytemuck::Zeroable for Vector<N, T> { }
+
+
+unsafe impl<const N: usize, T: bytemuck::Pod> bytemuck::Pod for Vector<N, T> { }
+
 
 impl<const N: usize, T> std::default::Default for Vector<N, T>
 where
 	T: Zero,
 {
 	fn default() -> Self {
-		let mut data: [MaybeUninit<T>; N] = unsafe { MaybeUninit::uninit().assume_init() };
+		let mut data: [MaybeUninit<T>; N] = unsafe {
+			MaybeUninit::uninit().assume_init()
+		};
 		for value in data.iter_mut() {
 			value.write(T::ZERO);
 		}
-		unsafe { (*(&data as *const _ as *const MaybeUninit<_>)).assume_init_read() }
+		unsafe {
+			(*(&data as *const _ as *const MaybeUninit<_>)).assume_init_read()
+		}
 	}
 }
 
+
 impl<const N: usize, T> Index<Dimension> for Vector<N, T> {
 	type Output = T;
+
 
 	fn index(&self, index: Dimension) -> &T {
 		&self.0[index.0]
 	}
 }
+
 
 impl<const N: usize, T> IndexMut<Dimension> for Vector<N, T> {
 	fn index_mut(&mut self, index: Dimension) -> &mut T {
@@ -43,11 +59,13 @@ impl<const N: usize, T> IndexMut<Dimension> for Vector<N, T> {
 	}
 }
 
+
 impl<const N: usize, T: Add<Output = T>> Add for Vector<N, T>
 where
 	T: Copy,
 {
 	type Output = Self;
+
 
 	fn add(mut self, other: Self) -> Self {
 		for i in Dimensions(0..N) {
@@ -56,6 +74,7 @@ where
 		self
 	}
 }
+
 
 impl<const N: usize, T: Add<Output = T>> AddAssign for Vector<N, T>
 where
@@ -66,11 +85,13 @@ where
 	}
 }
 
+
 impl<const N: usize, T: Sub<Output = T>> Sub for Vector<N, T>
 where
 	T: Copy,
 {
 	type Output = Self;
+
 
 	fn sub(mut self, other: Self) -> Self {
 		for i in Dimensions(0..N) {
@@ -79,6 +100,7 @@ where
 		self
 	}
 }
+
 
 impl<const N: usize, T: Sub<Output = T>> SubAssign for Vector<N, T>
 where
@@ -89,11 +111,13 @@ where
 	}
 }
 
+
 impl<const N: usize, T: Neg<Output = T>> Neg for Vector<N, T>
 where
 	T: Copy,
 {
 	type Output = Self;
+
 
 	fn neg(mut self) -> Self {
 		for i in Dimensions(0..N) {
@@ -102,6 +126,7 @@ where
 		self
 	}
 }
+
 
 impl<const N: usize, T: Mul<Output = T>> MulAssign<T> for Vector<N, T>
 where
@@ -114,6 +139,7 @@ where
 	}
 }
 
+
 impl<const N: usize, T> Mul<T> for Vector<N, T>
 where
 	T: Mul<Output = T>,
@@ -121,11 +147,13 @@ where
 {
 	type Output = Self;
 
+
 	fn mul(mut self, other: T) -> Self {
 		self *= other;
 		self
 	}
 }
+
 
 impl<const N: usize, T: Div<Output = T>> DivAssign<T> for Vector<N, T>
 where
@@ -138,11 +166,13 @@ where
 	}
 }
 
+
 impl<const N: usize, T: Div<Output = T>> Div<T> for Vector<N, T>
 where
 	T: Copy,
 {
 	type Output = Self;
+
 
 	fn div(mut self, other: T) -> Self {
 		self /= other;
@@ -150,10 +180,12 @@ where
 	}
 }
 
+
 impl<const N: usize, T> Vector<N, T> {
 	pub const fn new(data: [T; N]) -> Self {
 		Self(data)
 	}
+
 
 	pub fn data(self) -> [T; N]
 	where
@@ -162,14 +194,17 @@ impl<const N: usize, T> Vector<N, T> {
 		self.0
 	}
 
+
 	pub fn data_ref(&self) -> &[T; N] {
 		&self.0
 	}
+
 
 	pub fn data_mut(&mut self) -> &mut [T; N] {
 		&mut self.0
 	}
 }
+
 
 impl<const N: usize, T> Vector<N, T> {
 	pub fn dot(self, other: Self) -> T
@@ -186,6 +221,7 @@ impl<const N: usize, T> Vector<N, T> {
 		res
 	}
 
+
 	pub fn length_squared(self) -> T
 	where
 		T: Zero,
@@ -197,6 +233,7 @@ impl<const N: usize, T> Vector<N, T> {
 		self.dot(self)
 	}
 
+
 	pub fn length(self) -> T
 	where
 		T: Zero,
@@ -207,6 +244,7 @@ impl<const N: usize, T> Vector<N, T> {
 	{
 		self.length_squared().sqrt()
 	}
+
 
 	pub fn normalized(&self) -> Self
 	where
@@ -220,9 +258,11 @@ impl<const N: usize, T> Vector<N, T> {
 		*self / self.length()
 	}
 
+
 	pub fn map<U: Zero>(self, f: impl Fn(T) -> U) -> Vector<N, U> {
 		Vector(self.0.map(f))
 	}
+
 
 	pub fn max(mut self, other: Vector<N, T>) -> Vector<N, T>
 	where
@@ -235,6 +275,8 @@ impl<const N: usize, T> Vector<N, T> {
 		}
 		self
 	}
+
+
 	pub fn min(mut self, other: Vector<N, T>) -> Vector<N, T>
 	where
 		T: PartialOrd + Copy,
@@ -247,6 +289,7 @@ impl<const N: usize, T> Vector<N, T> {
 		self
 	}
 
+
 	pub fn distance(self, other: Vector<N, T>) -> T
 	where
 		T: Copy + Zero + Sqrt,
@@ -258,11 +301,13 @@ impl<const N: usize, T> Vector<N, T> {
 	}
 }
 
+
 impl<const N: usize, T> From<[T; N]> for Vector<N, T> {
 	fn from(value: [T; N]) -> Self {
 		Self(value)
 	}
 }
+
 
 impl<const N: usize, T: std::fmt::Display> std::fmt::Display for Vector<N, T> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -278,6 +323,7 @@ impl<const N: usize, T: std::fmt::Display> std::fmt::Display for Vector<N, T> {
 	}
 }
 
+
 impl<T: Mul<Output = T> + Sub<Output = T>> Vector<3, T> {
 	pub fn cross(self, other: Self) -> Self
 	where
@@ -291,11 +337,13 @@ impl<T: Mul<Output = T> + Sub<Output = T>> Vector<3, T> {
 	}
 }
 
+
 impl<const N: usize, T> std::convert::AsRef<[T; N]> for Vector<N, T> {
 	fn as_ref(&self) -> &[T; N] {
 		&self.0
 	}
 }
+
 
 impl<const N: usize, T> std::convert::AsMut<[T; N]> for Vector<N, T> {
 	fn as_mut(&mut self) -> &mut [T; N] {
@@ -303,17 +351,20 @@ impl<const N: usize, T> std::convert::AsMut<[T; N]> for Vector<N, T> {
 	}
 }
 
+
 impl<const N: usize, T> std::convert::AsRef<[T]> for Vector<N, T> {
 	fn as_ref(&self) -> &[T] {
 		&self.0
 	}
 }
 
+
 impl<const N: usize, T> std::convert::AsMut<[T]> for Vector<N, T> {
 	fn as_mut(&mut self) -> &mut [T] {
 		&mut self.0
 	}
 }
+
 
 impl<const N: usize, T> Serialize for Vector<N, T>
 where
@@ -326,6 +377,7 @@ where
 		self.0.serialize(serializer)
 	}
 }
+
 
 impl<'de, const N: usize, T> Deserialize<'de> for Vector<N, T>
 where

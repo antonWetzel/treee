@@ -1,22 +1,28 @@
 use image::GenericImageView;
 use math::Vector;
 
-use crate::{Has, State};
+use crate::{ Has, State };
+
 
 pub struct Texture {
 	pub size: Vector<2, u32>,
 	pub gpu: wgpu::Texture,
 }
+
+
 pub type TextureDimension = wgpu::TextureDimension;
+
 
 impl Texture {
 	pub fn new(state: &impl Has<State>, data: &[u8]) -> Self {
 		Self::new_xd(state, data, wgpu::TextureDimension::D2)
 	}
 
+
 	pub fn new_1d(state: &impl Has<State>, data: &[u8]) -> Self {
 		Self::new_xd(state, data, wgpu::TextureDimension::D1)
 	}
+
 
 	fn new_xd(state: &impl Has<State>, data: &[u8], dimension: TextureDimension) -> Self {
 		let img = image::load_from_memory(data).unwrap();

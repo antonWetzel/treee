@@ -13,6 +13,7 @@ mod ui;
 mod vertex_2d;
 mod window;
 
+
 pub use camera_3d::*;
 pub use depth_texture::*;
 pub use entry::*;
@@ -29,20 +30,23 @@ pub use ui::*;
 pub use vertex_2d::*;
 pub use window::*;
 
+
 pub trait RenderEntry {
 	fn background(&self) -> Vector<3, f32>;
 
+
 	fn render<'a>(&'a self, render_pass: &mut RenderPass<'a>);
+
 
 	fn post_process<'a>(&'a self, render_pass: &mut RenderPass<'a>);
 }
+
 
 pub trait Has<T> {
 	fn get(&self) -> &T;
 }
 
+
 impl<T> Has<T> for T {
-	fn get(&self) -> &T {
-		self
-	}
+	fn get(&self) -> &T { self }
 }

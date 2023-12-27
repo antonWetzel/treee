@@ -1,10 +1,13 @@
-use std::ops::{Add, Mul, Sub};
+use std::ops::{ Add, Mul, Sub };
 
 use crate::{
-	requirements::{FromF64, Identity},
+	requirements::{ FromF64, Identity },
 	vector::Vector,
-	X, Y, Z,
+	X,
+	Y,
+	Z,
 };
+
 
 #[derive(Clone, Copy)]
 pub struct Quaternion<T> {
@@ -13,6 +16,7 @@ pub struct Quaternion<T> {
 	pub y: T,
 	pub z: T,
 }
+
 
 impl<T> Mul<Vector<3, T>> for Quaternion<T>
 where
@@ -24,6 +28,7 @@ where
 	T: Mul<T, Output = T>,
 {
 	type Output = Vector<3, T>;
+
 
 	fn mul(self, vec: Vector<3, T>) -> Self::Output {
 		let num = self.x * T::from_f64(2.0);
@@ -43,6 +48,6 @@ where
 			(num7 + num12) * vec[X] + (T::IDENTITY - (num4 + num6)) * vec[Y] + (num9 - num10) * vec[Z],
 			(num8 - num11) * vec[X] + (num9 + num10) * vec[Y] + (T::IDENTITY - (num4 + num5)) * vec[Z],
 		]
-		.into()
+			.into()
 	}
 }

@@ -1,10 +1,12 @@
 use std::path::PathBuf;
 
-use math::{Vector, X, Y, Z};
+use math::{ Vector, X, Y, Z };
 
 use super::*;
 
+
 pub type WindowId = winit::window::WindowId;
+
 
 pub struct Window {
 	window: winit::window::Window,
@@ -12,6 +14,7 @@ pub struct Window {
 	surface: wgpu::Surface,
 	depth_texture: DepthTexture,
 }
+
 
 impl Window {
 	pub fn new<T: Into<String>>(
@@ -26,7 +29,9 @@ impl Window {
 			.build(window_target)
 			.unwrap();
 		let size = window.inner_size();
-		let surface = unsafe { state.instance.create_surface(&window) }.unwrap();
+		let surface = unsafe {
+			state.instance.create_surface(&window)
+		}.unwrap();
 		let surface_caps = surface.get_capabilities(&state.adapter);
 		let surface_format = *surface_caps
 			.formats
@@ -49,32 +54,41 @@ impl Window {
 		Self { window, surface, depth_texture, config }
 	}
 
+
 	pub fn get_aspect(&self) -> f32 {
 		self.config.width as f32 / self.config.height as f32
 	}
+
+
 	pub fn get_size(&self) -> Vector<2, f32> {
 		[self.config.width as f32, self.config.height as f32].into()
 	}
+
 
 	pub fn set_title(&self, title: &str) {
 		self.window.set_title(title)
 	}
 
+
 	pub fn id(&self) -> WindowId {
 		self.window.id()
 	}
+
 
 	pub fn request_redraw(&self) {
 		self.window.request_redraw();
 	}
 
+
 	pub fn config(&self) -> &wgpu::SurfaceConfiguration {
 		&self.config
 	}
 
+
 	pub fn depth_texture(&self) -> &DepthTexture {
 		&self.depth_texture
 	}
+
 
 	pub fn set_window_icon(&self, png: &[u8]) {
 		let img = image::load_from_memory(png).unwrap();
@@ -82,13 +96,17 @@ impl Window {
 		self.window.set_window_icon(Some(icon));
 	}
 
+
 	#[cfg(target_os = "windows")]
 	pub fn set_taskbar_icon(&self, png: &[u8]) {
 		use winit::platform::windows::WindowExtWindows;
+
+
 		let img = image::load_from_memory(png).unwrap();
 		let icon = winit::window::Icon::from_rgba(img.to_rgba8().into_vec(), img.width(), img.height()).unwrap();
 		self.window.set_taskbar_icon(Some(icon));
 	}
+
 
 	pub fn resized(&mut self, state: &impl Has<State>) {
 		let state = state.get();
@@ -99,10 +117,12 @@ impl Window {
 		self.depth_texture = DepthTexture::new(&state.device, &self.config, "depth");
 	}
 
+
 	pub fn screen_shot(&self, state: &'static impl Has<State>, renderable: &impl RenderEntry, path: PathBuf) {
 		fn ceil_to_multiple(value: u32, base: u32) -> u32 {
 			(value + (base - 1)) / base * base
 		}
+
 
 		let state: &State = state.get();
 		let (texture_width, texture_height, format) = {
@@ -178,17 +198,18 @@ impl Window {
 				texture_height,
 				data.iter().copied().collect(),
 			)
-			.unwrap();
+				.unwrap();
 			drop(data);
 
 			for pixel in image.pixels_mut() {
 				pixel.0.swap(0, 2); // hack because input uses BGRA, not RGBA
-			}
+				}
 			image.save(path).unwrap();
 			buffer.unmap();
 		});
 		tx.send(buffer).unwrap();
 	}
+
 
 	fn render_to(
 		&self,
@@ -280,7 +301,7 @@ impl Window {
 
 		render_state.queue.submit(Some(encoder.finish()));
 		{
-			map_buffer.slice(..).map_async(wgpu::MapMode::Read, |_| {});
+			map_buffer.slice(..).map_async(wgpu::MapMode::Read, |_| { });
 
 			render_state.device.poll(wgpu::Maintain::Wait);
 
@@ -290,6 +311,7 @@ impl Window {
 			diff as f32 * 1e-9 * render_state.queue.get_timestamp_period()
 		}
 	}
+
 
 	pub fn render(&self, state: &'static impl Has<State>, renderable: &impl RenderEntry) -> Option<f32> {
 		let output = self.surface.get_current_texture().ok()?;

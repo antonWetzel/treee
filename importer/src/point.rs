@@ -1,5 +1,6 @@
 use std::num::NonZeroU32;
 
+
 #[derive(Debug)]
 pub struct Point {
 	pub render: render::Point,
@@ -10,6 +11,7 @@ pub struct Point {
 	pub curve: u32,
 }
 
+
 pub struct PointsCollection {
 	pub render: Vec<render::Point>,
 
@@ -17,6 +19,7 @@ pub struct PointsCollection {
 	pub sub_index: Vec<u32>,
 	pub curve: Vec<u32>,
 }
+
 
 impl PointsCollection {
 	pub fn new() -> Self {
@@ -28,6 +31,7 @@ impl PointsCollection {
 			curve: Vec::new(),
 		}
 	}
+
 
 	pub fn add(&mut self, render: render::Point, slice: u32, sub_index: u32, curve: u32) {
 		self.render.push(render);

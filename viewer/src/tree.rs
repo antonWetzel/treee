@@ -2,15 +2,16 @@ use std::collections::HashSet;
 use std::io::Read;
 use std::num::NonZeroU32;
 use std::ops::Not;
-use std::path::{Path, PathBuf};
+use std::path::{ Path, PathBuf };
 
 use crate::loaded_manager::LoadedManager;
 use crate::state::State;
-use crate::{camera, lod};
+use crate::{ camera, lod };
 
 use common::IndexNode;
-use common::{IndexData, Project};
-use math::{Dimension, Vector, X, Y, Z};
+use common::{ IndexData, Project };
+use math::{ Dimension, Vector, X, Y, Z };
+
 
 #[derive(Clone, Copy)]
 enum LookupName {
@@ -18,6 +19,7 @@ enum LookupName {
 	Cold,
 	Wood,
 }
+
 
 impl LookupName {
 	pub fn next(self) -> Self {
@@ -28,6 +30,7 @@ impl LookupName {
 		}
 	}
 
+
 	pub fn data(self) -> &'static [u8] {
 		match self {
 			LookupName::Warm => include_bytes!("../assets/grad_warm.png"),
@@ -36,6 +39,7 @@ impl LookupName {
 		}
 	}
 }
+
 
 pub struct Tree {
 	pub root: Node,
@@ -48,12 +52,14 @@ pub struct Tree {
 	property_index: usize,
 }
 
+
 pub struct Node {
 	data: Data,
 	pub corner: Vector<3, f32>,
 	pub size: f32,
 	index: usize,
 }
+
 
 pub enum Data {
 	Branch {
@@ -65,6 +71,7 @@ pub enum Data {
 	},
 }
 
+
 impl Node {
 	pub fn new(node: &IndexNode) -> Self {
 		let data = match &node.data {
@@ -74,8 +81,7 @@ impl Node {
 				for (i, child) in index_children
 					.iter()
 					.enumerate()
-					.filter_map(|(i, child)| child.as_ref().map(|c| (i, c)))
-				{
+					.filter_map(|(i, child)| child.as_ref().map(|c| (i, c))) {
 					let node = Node::new(child);
 					node.get_segments(&mut segments);
 					children[i] = Some(node);
@@ -94,6 +100,7 @@ impl Node {
 		}
 	}
 
+
 	fn get_segments(&self, set: &mut HashSet<NonZeroU32>) {
 		match &self.data {
 			Data::Branch { children: _, segments } => {
@@ -108,6 +115,7 @@ impl Node {
 			},
 		}
 	}
+
 
 	pub fn render<'a>(
 		&'a self,
@@ -139,6 +147,7 @@ impl Node {
 		}
 	}
 
+
 	pub fn can_render_children(
 		children: &[Option<Node>; 8],
 		loaded_manager: &LoadedManager,
@@ -155,6 +164,7 @@ impl Node {
 		}
 		count < 1
 	}
+
 
 	pub fn update(&mut self, view_checker: lod::Checker, camera: &camera::Camera, loaded_manager: &mut LoadedManager) {
 		if !camera.inside_moved_frustrum(self.corner, self.size, -100.0) {
@@ -184,6 +194,7 @@ impl Node {
 		}
 	}
 
+
 	pub fn clear(&self, loaded_manager: &mut LoadedManager) {
 		if !loaded_manager.is_requested(self.index) {
 			return;
@@ -195,9 +206,10 @@ impl Node {
 					child.clear(loaded_manager);
 				}
 			},
-			Data::Leaf { segments: _ } => {},
+			Data::Leaf { segments: _ } => { },
 		}
 	}
+
 
 	pub fn raycast_distance(&self, start: Vector<3, f32>, direction: Vector<3, f32>) -> Option<f32> {
 		let size = Vector::new([self.size, self.size, self.size]);
@@ -218,6 +230,7 @@ impl Node {
 				(None, None) => None,
 			})
 	}
+
 
 	pub fn raycast(
 		&self,
@@ -269,8 +282,8 @@ impl Node {
 						continue;
 					};
 					let length = file.metadata().unwrap().len();
-					let mut data =
-						bytemuck::zeroed_vec::<render::Point>(length as usize / std::mem::size_of::<render::Point>());
+					let mut data
+						= bytemuck::zeroed_vec::<render::Point>(length as usize / std::mem::size_of::<render::Point>());
 					file.read_exact(bytemuck::cast_slice_mut(&mut data))
 						.unwrap();
 
@@ -300,6 +313,7 @@ impl Node {
 	}
 }
 
+
 impl Tree {
 	pub fn new(state: &'static State, project: &Project, path: PathBuf, aspect: f32, property: &str) -> Self {
 		let lookup_name = LookupName::Warm;
@@ -314,10 +328,12 @@ impl Tree {
 		}
 	}
 
+
 	pub fn next_lookup(&mut self, state: &'static State) {
 		self.lookup_name = self.lookup_name.next();
 		self.lookup = render::Lookup::new_png(state, self.lookup_name.data());
 	}
+
 
 	pub fn next_property(&mut self, properties: &[String]) {
 		self.property_index = (self.property_index + 1) % properties.len();
@@ -325,9 +341,11 @@ impl Tree {
 			.change_property(&properties[self.property_index], self.property_index);
 	}
 
+
 	pub fn current_property<'a>(&self, properties: &'a [String]) -> &'a str {
 		&properties[self.property_index]
 	}
+
 
 	pub fn raycast(&self, start: Vector<3, f32>, direction: Vector<3, f32>, path: &Path) -> Option<NonZeroU32> {
 		self.root.raycast_distance(start, direction)?;
@@ -337,6 +355,7 @@ impl Tree {
 			.map(|(seg, _)| seg)
 	}
 }
+
 
 fn raycast_check(
 	start: Vector<3, f32>,
@@ -373,6 +392,7 @@ fn raycast_check(
 
 	Some(dist)
 }
+
 
 impl render::PointCloudRender for Tree {
 	fn render<'a>(&'a self, point_cloud_pass: &mut render::PointCloudPass<'a>) {

@@ -2,6 +2,7 @@ use math::Vector;
 
 use super::*;
 
+
 pub struct State {
 	pub(crate) device: wgpu::Device,
 	pub(crate) queue: wgpu::Queue,
@@ -10,7 +11,10 @@ pub struct State {
 	pub(crate) surface_format: wgpu::TextureFormat,
 }
 
+
 pub type RenderError = winit::error::EventLoopError;
+
+
 impl State {
 	pub async fn new() -> Result<(Self, Runner), RenderError> {
 		env_logger::init();
@@ -28,7 +32,9 @@ impl State {
 			gles_minor_version: wgpu::Gles3MinorVersion::default(),
 		});
 
-		let surface = unsafe { instance.create_surface(&window) }.unwrap();
+		let surface = unsafe {
+			instance.create_surface(&window)
+		}.unwrap();
 
 		let adapter = instance
 			.request_adapter(&wgpu::RequestAdapterOptions {
@@ -74,9 +80,11 @@ impl State {
 	}
 }
 
+
 pub struct Runner {
 	pub event_loop: winit::event_loop::EventLoop<()>,
 }
+
 
 impl Runner {
 	pub fn run<T: Entry>(self, game: &mut T) -> Result<(), RenderError> {
@@ -92,7 +100,7 @@ impl Runner {
 					winit::event::WindowEvent::ScaleFactorChanged { .. } => todo!(),
 					winit::event::WindowEvent::KeyboardInput { event, .. } => match event.physical_key {
 						winit::keyboard::PhysicalKey::Code(key) => game.key_changed(window_id, key, event.state),
-						winit::keyboard::PhysicalKey::Unidentified(_) => {},
+						winit::keyboard::PhysicalKey::Unidentified(_) => { },
 					},
 					winit::event::WindowEvent::MouseInput { state: button_state, button, .. } => {
 						game.mouse_button_changed(window_id, (button).into(), button_state)
@@ -110,10 +118,10 @@ impl Runner {
 					},
 					winit::event::WindowEvent::ModifiersChanged(modifiers) => game.modifiers_changed(modifiers.state()),
 					winit::event::WindowEvent::RedrawRequested => game.render(window_id),
-					_ => {},
+					_ => { },
 				},
 				winit::event::Event::AboutToWait => game.time(),
-				_ => {},
+				_ => { },
 			}
 
 			if game.exit() {

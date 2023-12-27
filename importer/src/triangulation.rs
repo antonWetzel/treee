@@ -1,15 +1,18 @@
 use std::{
-	collections::{HashMap, HashSet},
+	collections::{ HashMap, HashSet },
 	ops::Not,
 };
 
-use math::{Vector, X, Y, Z};
+use math::{ Vector, X, Y, Z };
 
 use crate::calculations::Adapter;
 
+
 const ALPHA: f32 = 3.0;
 
+
 type Tree = k_nearest::KDTree<3, f32, Vector<3, f32>, Adapter, k_nearest::EuclideanDistanceSquared>;
+
 
 pub fn triangulate(data: &[Vector<3, f32>]) -> Vec<u32> {
 	let mut used = vec![false; data.len()];
@@ -31,8 +34,8 @@ pub fn triangulate(data: &[Vector<3, f32>]) -> Vec<u32> {
 		(Edge::new(seed[Z], seed[Y]), seed[X]),
 		(Edge::new(seed[Y], seed[X]), seed[Z]),
 	]
-	.into_iter()
-	.collect::<HashMap<_, _>>();
+		.into_iter()
+		.collect::<HashMap<_, _>>();
 
 	while let Some(edge) = edges.keys().next().copied() {
 		let old = edges.remove(&edge).unwrap();
@@ -66,11 +69,13 @@ pub fn triangulate(data: &[Vector<3, f32>]) -> Vec<u32> {
 	indices
 }
 
+
 #[derive(Clone, Copy)]
 struct Edge {
 	active_1: usize,
 	active_2: usize,
 }
+
 
 impl Edge {
 	fn new(active_1: usize, active_2: usize) -> Self {
@@ -78,7 +83,9 @@ impl Edge {
 	}
 }
 
-impl std::cmp::Eq for Edge {}
+
+impl std::cmp::Eq for Edge { }
+
 
 impl std::cmp::PartialEq for Edge {
 	fn eq(&self, other: &Self) -> bool {
@@ -86,6 +93,7 @@ impl std::cmp::PartialEq for Edge {
 			|| self.active_1 == other.active_2 && self.active_2 == other.active_1
 	}
 }
+
 
 impl std::hash::Hash for Edge {
 	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -99,6 +107,7 @@ impl std::hash::Hash for Edge {
 	}
 }
 
+
 fn seed(data: &[Vector<3, f32>], used: &[bool], tree: &Tree) -> Option<Vector<3, usize>> {
 	for (first, point) in data.iter().enumerate().filter(|&(idx, _)| used[idx].not()) {
 		let nearest = tree.nearest(point, (2.0 * ALPHA).powi(2));
@@ -109,13 +118,11 @@ fn seed(data: &[Vector<3, f32>], used: &[bool], tree: &Tree) -> Option<Vector<3,
 			.iter()
 			.enumerate()
 			.skip(1)
-			.filter(|(_, entry)| used[entry.index].not())
-		{
+			.filter(|(_, entry)| used[entry.index].not()) {
 			for third in nearest
 				.iter()
 				.skip(second_index + 1)
-				.filter(|entry| used[entry.index].not())
-			{
+				.filter(|entry| used[entry.index].not()) {
 				let Some(center) = sphere_location(data[first], data[second.index], data[third.index]) else {
 					continue;
 				};
@@ -137,6 +144,7 @@ fn seed(data: &[Vector<3, f32>], used: &[bool], tree: &Tree) -> Option<Vector<3,
 	None
 }
 
+
 fn find_third(data: &[Vector<3, f32>], first: usize, second: usize, tree: &Tree, old: usize) -> Option<usize> {
 	let a = data[first];
 	let b = data[old];
@@ -154,8 +162,7 @@ fn find_third(data: &[Vector<3, f32>], first: usize, second: usize, tree: &Tree,
 	for third in nearest
 		.iter()
 		.skip(1)
-		.filter(|entry| entry.index != first && entry.index != second && entry.index != old)
-	{
+		.filter(|entry| entry.index != first && entry.index != second && entry.index != old) {
 		let Some(center_2) = sphere_location(data[first], data[second], data[third.index]) else {
 			continue;
 		};
@@ -175,6 +182,7 @@ fn find_third(data: &[Vector<3, f32>], first: usize, second: usize, tree: &Tree,
 	}
 	best
 }
+
 
 /// https://stackoverflow.com/a/34326390
 fn sphere_location(

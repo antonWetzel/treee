@@ -156,7 +156,7 @@ impl k_nearest::Adapter<3, f32, Vector<3, f32>> for Adapter {
 	}
 
 
-	fn get_all(point: &Vector<3, f32>) -> [ f32; 3 ] {
+	fn get_all(point: &Vector<3, f32>) -> [f32; 3] {
 		point.data()
 	}
 }
@@ -168,7 +168,7 @@ pub struct NeighborsTree {
 
 
 impl NeighborsTree {
-	pub fn new(points: &[ Vector<3, f32> ]) -> Self {
+	pub fn new(points: &[Vector<3, f32>]) -> Self {
 		let tree = <k_nearest::KDTree<3, f32, Vector<3, f32>, Adapter, k_nearest::EuclideanDistanceSquared>>::new(points);
 
 		Self { tree }
@@ -178,9 +178,9 @@ impl NeighborsTree {
 	pub fn get<'a>(
 		&self,
 		index: usize,
-		data: &[ Vector<3, f32> ],
-		location: &'a mut [ k_nearest::Entry<f32>; MAX_NEIGHBORS ],
-	) -> &'a [ k_nearest::Entry<f32> ] {
+		data: &[Vector<3, f32>],
+		location: &'a mut [k_nearest::Entry<f32>; MAX_NEIGHBORS],
+	) -> &'a [k_nearest::Entry<f32>] {
 		let l = self.tree.k_nearest(&data[index], &mut location[..], 1.0);
 		&location[0..l]
 	}

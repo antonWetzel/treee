@@ -56,6 +56,7 @@ macro_rules! Collection {
 	};
 }
 
+
 #[macro_export]
 macro_rules! Stack {
 	(

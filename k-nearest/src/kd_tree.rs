@@ -1,9 +1,11 @@
 use std::cmp::Ordering;
 
 use crate::{
-	best_set::{BestSet, DynamicSet, EmptySet, FixedSet},
-	Adapter, Metric,
+	best_set::{ BestSet, DynamicSet, EmptySet, FixedSet },
+	Adapter,
+	Metric,
 };
+
 
 #[derive(Clone, Copy, Debug)]
 pub struct Entry<Value> {
@@ -11,8 +13,12 @@ pub struct Entry<Value> {
 	pub index: usize,
 }
 
-unsafe impl<Value: bytemuck::Pod> bytemuck::Pod for Entry<Value> {}
-unsafe impl<Value: bytemuck::Zeroable> bytemuck::Zeroable for Entry<Value> {}
+
+unsafe impl<Value: bytemuck::Pod> bytemuck::Pod for Entry<Value> { }
+
+
+unsafe impl<Value: bytemuck::Zeroable> bytemuck::Zeroable for Entry<Value> { }
+
 
 pub struct KDTree<const N: usize, Value, Point, Ada, Met>
 where
@@ -23,6 +29,7 @@ where
 	tree: Vec<([Value; N], usize)>,
 	phantom: std::marker::PhantomData<(Point, Ada, Met)>,
 }
+
 
 impl<const N: usize, Value, Point, Ada, Met> KDTree<N, Value, Point, Ada, Met>
 where
@@ -40,9 +47,10 @@ where
 		KDTree { tree, phantom: std::marker::PhantomData }
 	}
 
+
+	// choose middle with bias to the right, so recursion is deeper on the left
+	//   bias direction must match median finding scheme
 	fn create_tree(dim: usize, tree: &mut [([Value; N], usize)]) {
-		// choose middle with bias to the right, so recursion is deeper on the left
-		//   bias direction must match median finding scheme
 		let middle = tree.len() / 2;
 		Self::partition(middle, dim, tree);
 		let next_dim = (dim + 1) % N;
@@ -53,6 +61,7 @@ where
 			Self::create_tree(next_dim, &mut tree[(middle + 1)..]);
 		}
 	}
+
 
 	fn partition(target: usize, dim: usize, positions: &mut [([Value; N], usize)]) {
 		let mut lower = 0;
@@ -78,9 +87,11 @@ where
 		}
 	}
 
+
 	pub fn k_nearest(&self, point: &Point, data: &mut [Entry<Value>], max_distance: Value) -> usize {
 		self.nearest_to_position(&Ada::get_all(point), data, max_distance)
 	}
+
 
 	pub fn nearest(&self, point: &Point, max_distance: Value) -> Vec<Entry<Value>> {
 		let mut best_set = DynamicSet::new(max_distance);
@@ -88,17 +99,20 @@ where
 		best_set.result()
 	}
 
+
 	pub fn nearest_to_position(&self, position: &[Value; N], data: &mut [Entry<Value>], max_distance: Value) -> usize {
 		let mut best_set = FixedSet::new(max_distance, data);
 		Self::search_nearest(&self.tree, position, 0, &mut best_set);
 		best_set.result()
 	}
 
+
 	pub fn empty(&self, point: &Point, max_distance: Value) -> bool {
 		let mut best_set = EmptySet::new(max_distance);
 		Self::search_nearest(&self.tree, &Ada::get_all(point), 0, &mut best_set);
 		best_set.empty()
 	}
+
 
 	fn search_nearest(
 		tree: &[([Value; N], usize)],

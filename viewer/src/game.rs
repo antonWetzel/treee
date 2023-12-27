@@ -1,18 +1,20 @@
 use std::path::PathBuf;
 
 use common::Project;
-use math::{Vector, X, Y, Z};
+use math::{ Vector, X, Y, Z };
 use ui::Element;
 
 use crate::{
-	interface::{Interface, InterfaceAction},
+	interface::{ Interface, InterfaceAction },
 	lod,
 	segment::Segment,
 	state::State,
 	tree::Tree,
 };
 
+
 const DEFAULT_BACKGROUND: Vector<3, f32> = Vector::new([0.1, 0.2, 0.3]);
+
 
 pub struct Game {
 	window: render::Window,
@@ -44,6 +46,7 @@ pub struct Game {
 	render_time: f32,
 }
 
+
 impl Game {
 	pub fn new(state: &'static State, path: PathBuf, runner: &render::Runner) -> Self {
 		let project = Project::from_file(&path);
@@ -52,8 +55,7 @@ impl Game {
 
 		window.set_window_icon(include_bytes!("../assets/png/tree-fill-big.png"));
 
-		#[cfg(windows)]
-		window.set_taskbar_icon(include_bytes!("../assets/png/tree-fill-small.png"));
+		#[cfg(windows)] window.set_taskbar_icon(include_bytes!("../assets/png/tree-fill-small.png"));
 
 		let tree = Tree::new(
 			state,
@@ -101,9 +103,11 @@ impl Game {
 		}
 	}
 
+
 	fn request_redraw(&mut self) {
 		self.window.request_redraw();
 	}
+
 
 	fn change_project(&mut self) {
 		let Some(path) = rfd::FileDialog::new()
@@ -116,6 +120,7 @@ impl Game {
 		self.reload(self.current_poject_time());
 	}
 
+
 	fn check_reload(&mut self) {
 		let project_time = self.current_poject_time();
 		if self.project_time == project_time {
@@ -127,12 +132,14 @@ impl Game {
 		self.reload(project_time);
 	}
 
+
 	fn current_poject_time(&self) -> std::time::SystemTime {
 		self.path
 			.metadata()
 			.map(|meta| meta.modified().unwrap_or(self.project_time))
 			.unwrap_or(self.project_time)
 	}
+
 
 	fn reload(&mut self, project_time: std::time::SystemTime) {
 		self.project_time = project_time;
@@ -147,6 +154,7 @@ impl Game {
 		self.window.set_title(&self.project.name);
 		self.request_redraw();
 	}
+
 
 	fn handle_interface_action(&mut self, action: InterfaceAction) {
 		match action {
@@ -251,6 +259,7 @@ impl Game {
 		}
 	}
 
+
 	fn raycast(&mut self) {
 		if self.segment.is_some() {
 			return;
@@ -282,6 +291,7 @@ impl Game {
 	}
 }
 
+
 impl render::Entry for Game {
 	fn render(&mut self, _window_id: render::WindowId) {
 		if self.paused {
@@ -301,6 +311,7 @@ impl render::Entry for Game {
 			self.render_time = time;
 		}
 	}
+
 
 	fn resize_window(&mut self, _window_id: render::WindowId, size: Vector<2, u32>) {
 		self.paused = size[X] == 0 || size[Y] == 0;
@@ -328,9 +339,11 @@ impl render::Entry for Game {
 		);
 	}
 
+
 	fn close_window(&mut self, _window_id: render::WindowId) {
 		self.quit = true;
 	}
+
 
 	fn time(&mut self) {
 		let delta = self.time.elapsed();
@@ -365,6 +378,7 @@ impl render::Entry for Game {
 		self.check_reload();
 	}
 
+
 	fn key_changed(&mut self, _window_id: render::WindowId, key: input::KeyCode, key_state: input::State) {
 		self.keyboard.update(key, key_state);
 
@@ -387,18 +401,21 @@ impl render::Entry for Game {
 				self.interface_active = before;
 			},
 
-			_ => {},
+			_ => { },
 		}
 	}
+
 
 	fn modifiers_changed(&mut self, modifiers: input::Modifiers) {
 		self.keyboard.update_modifiers(modifiers);
 	}
 
+
 	fn mouse_wheel(&mut self, delta: f32) {
 		self.tree.camera.scroll(delta, self.state);
 		self.request_redraw();
 	}
+
 
 	fn mouse_button_changed(
 		&mut self,
@@ -427,9 +444,10 @@ impl render::Entry for Game {
 					self.request_redraw();
 				}
 			},
-			_ => {},
+			_ => { },
 		}
 	}
+
 
 	fn mouse_moved(&mut self, _window_id: render::WindowId, position: Vector<2, f32>) {
 		let delta = self.mouse.delta(position);
@@ -445,32 +463,35 @@ impl render::Entry for Game {
 		}
 	}
 
+
 	fn exit(&self) -> bool {
 		self.quit
 	}
 }
+
 
 impl render::RenderEntry for Game {
 	fn background(&self) -> Vector<3, f32> {
 		self.background
 	}
 
+
 	fn render<'a>(&'a self, render_pass: &mut render::RenderPass<'a>) {
 		if let Some(segment) = &self.segment {
-			// render_pass.render(
-			// 	segment,
-			// 	(
-			// 		self.state,
-			// 		&self.tree.camera.gpu,
-			// 		&self.tree.lookup,
-			// 		&self.tree.environment,
-			// 	),
-			// );
-			render_pass.render(
-				segment,
-				(self.state, &self.tree.camera.gpu, &self.tree.lookup),
-			);
-		} else {
+		// render_pass.render(
+		// 	segment,
+		// 	(
+		// 		self.state,
+		// 		&self.tree.camera.gpu,
+		// 		&self.tree.lookup,
+		// 		&self.tree.environment,
+		// 	),
+		// );
+		render_pass.render(
+			segment,
+			(self.state, &self.tree.camera.gpu, &self.tree.lookup),
+		);
+	} else {
 			render_pass.render(
 				&self.tree,
 				(
@@ -483,6 +504,7 @@ impl render::RenderEntry for Game {
 		}
 	}
 
+
 	fn post_process<'a>(&'a self, render_pass: &mut render::RenderPass<'a>) {
 		if self.eye_dome_active {
 			render_pass.render(&self.eye_dome, ());
@@ -493,14 +515,17 @@ impl render::RenderEntry for Game {
 	}
 }
 
+
 struct Time {
 	last: std::time::Instant,
 }
+
 
 impl Time {
 	pub fn new() -> Self {
 		Self { last: std::time::Instant::now() }
 	}
+
 
 	pub fn elapsed(&mut self) -> std::time::Duration {
 		let delta = self.last.elapsed();

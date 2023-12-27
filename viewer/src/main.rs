@@ -2,6 +2,7 @@ use pollster::FutureExt;
 use state::State;
 use thiserror::Error;
 
+
 mod camera;
 mod game;
 mod interface;
@@ -11,6 +12,7 @@ mod segment;
 mod state;
 mod tree;
 
+
 #[derive(Debug, Error)]
 enum ViewerError {
 	#[error("no file")]
@@ -18,6 +20,7 @@ enum ViewerError {
 	#[error("{0}")]
 	RenderError(#[from] render::RenderError),
 }
+
 
 fn main() -> Result<(), ViewerError> {
 	let path = rfd::FileDialog::new()

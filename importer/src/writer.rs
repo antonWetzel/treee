@@ -1,11 +1,12 @@
 use common::Project;
 use std::{
-	io::{BufWriter, Write},
+	io::{ BufWriter, Write },
 	num::NonZeroU32,
-	path::{Path, PathBuf},
+	path::{ Path, PathBuf },
 };
 
-use crate::{point, ImporterError};
+use crate::{ point, ImporterError };
+
 
 pub struct Writer {
 	pub points: common::DataFile<render::Point>,
@@ -13,6 +14,7 @@ pub struct Writer {
 	pub curve: common::DataFile<u32>,
 	pub sub_index: common::DataFile<u32>,
 }
+
 
 impl Writer {
 	pub fn setup(path: &Path) -> Result<(), ImporterError> {
@@ -30,6 +32,7 @@ impl Writer {
 		std::fs::create_dir_all(path).unwrap();
 		Ok(())
 	}
+
 
 	pub fn new(mut path: PathBuf, project: &Project) -> Result<Self, ImporterError> {
 		let size = project.root.index as usize + 1;
@@ -52,9 +55,11 @@ impl Writer {
 		Ok(Self { points, slice, curve, sub_index })
 	}
 
+
 	pub fn save(&mut self, index: u32, points: &[render::Point]) {
 		self.points.save(index as usize, points);
 	}
+
 
 	pub fn save_segment(path: &Path, segment: NonZeroU32, data: &[point::Point], mesh: &[u32]) {
 		let mut path = path.to_path_buf();

@@ -1,11 +1,15 @@
-use math::{X, Y};
+use math::{ X, Y };
 
-use crate::{Element, Horizontal, Rect, State, Vertical};
+use crate::{ Element, Horizontal, Rect, State, Vertical };
+
 
 pub trait SplitDirection {
 	fn first(rect: Rect, sep: f32) -> Rect;
+
+
 	fn second(rect: Rect, sep: f32) -> Rect;
 }
+
 
 impl SplitDirection for Horizontal {
 	fn first(mut rect: Rect, sep: f32) -> Rect {
@@ -13,11 +17,13 @@ impl SplitDirection for Horizontal {
 		rect
 	}
 
+
 	fn second(mut rect: Rect, sep: f32) -> Rect {
 		rect.min[Y] += (rect.max[Y] - rect.min[Y]) * sep;
 		rect
 	}
 }
+
 
 impl SplitDirection for Vertical {
 	fn first(mut rect: Rect, sep: f32) -> Rect {
@@ -25,11 +31,13 @@ impl SplitDirection for Vertical {
 		rect
 	}
 
+
 	fn second(mut rect: Rect, sep: f32) -> Rect {
 		rect.min[X] += (rect.max[X] - rect.min[X]) * sep;
 		rect
 	}
 }
+
 
 pub struct Split<D: SplitDirection, First: Element, Second: Element>
 where
@@ -40,6 +48,7 @@ where
 	sep: f32,
 	phantom: std::marker::PhantomData<D>,
 }
+
 
 impl<D: SplitDirection, First: Element, Second: Element> Split<D, First, Second>
 where
@@ -55,6 +64,7 @@ where
 	}
 }
 
+
 impl<D: SplitDirection, First: Element, Second: Element> render::UIElement for Split<D, First, Second>
 where
 	First::Event: From<Second::Event>,
@@ -64,11 +74,13 @@ where
 		self.second.render(ui_pass);
 	}
 
+
 	fn collect<'a>(&'a self, collector: &mut render::UICollector<'a>) {
 		self.first.collect(collector);
 		self.second.collect(collector);
 	}
 }
+
 
 impl<D: SplitDirection, First: Element, Second: Element> Element for Split<D, First, Second>
 where
@@ -76,9 +88,11 @@ where
 {
 	type Event = First::Event;
 
+
 	fn inside(&self, position: math::Vector<2, f32>) -> bool {
 		self.first.inside(position) || self.second.inside(position)
 	}
+
 
 	fn bounding_rect(&self) -> Rect {
 		self.first
@@ -86,10 +100,12 @@ where
 			.merge(self.second.bounding_rect())
 	}
 
+
 	fn resize(&mut self, state: &impl State, rect: crate::Rect) {
 		self.first.resize(state, D::first(rect, self.sep));
 		self.second.resize(state, D::second(rect, self.sep));
 	}
+
 
 	fn hover(&mut self, state: &impl State, position: math::Vector<2, f32>, pressed: bool) -> Option<Self::Event> {
 		if self.first.inside(position) {
@@ -104,6 +120,7 @@ where
 		None
 	}
 
+
 	fn click(&mut self, state: &impl State, position: math::Vector<2, f32>) -> Option<Self::Event> {
 		if self.first.inside(position) {
 			return self.first.click(state, position);
@@ -113,6 +130,8 @@ where
 		}
 		None
 	}
+
+
 	fn release(&mut self, position: math::Vector<2, f32>) -> bool {
 		self.first.release(position) | self.second.release(position)
 	}

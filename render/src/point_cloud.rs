@@ -2,12 +2,14 @@ use common::MAX_LEAF_SIZE;
 use math::Vector;
 use wgpu::util::DeviceExt;
 
-use crate::{depth_texture::DepthTexture, Camera3DGPU, Has, Lookup, Point, Render, RenderPass, State};
+use crate::{ depth_texture::DepthTexture, Camera3DGPU, Has, Lookup, Point, Render, RenderPass, State };
+
 
 pub struct PointCloudState {
 	quad: wgpu::Buffer,
 	pipeline: wgpu::RenderPipeline,
 }
+
 
 //tan(60°)
 const TAN_60_DEGREES: f32 = 1.732_050_8;
@@ -112,23 +114,25 @@ impl PointCloudState {
 	}
 }
 
+
 #[repr(transparent)]
 pub struct PointCloudPass<'a>(wgpu::RenderPass<'a>);
+
 
 pub trait PointCloudRender {
 	fn render<'a>(&'a self, point_cloud_pass: &mut PointCloudPass<'a>);
 }
 
-impl<'a, T, S: Has<PointCloudState>>
-	Render<
-		'a,
-		(
-			&'a S,
-			&'a Camera3DGPU,
-			&'a Lookup,
-			&'a PointCloudEnvironment,
-		),
-	> for T
+
+impl<'a, T, S: Has<PointCloudState>> Render<
+	'a,
+	(
+		&'a S,
+		&'a Camera3DGPU,
+		&'a Lookup,
+		&'a PointCloudEnvironment,
+	),
+> for T
 where
 	T: PointCloudRender,
 {
@@ -148,16 +152,20 @@ where
 		render_pass.set_bind_group(1, &environment.bind_group, &[]);
 		render_pass.set_bind_group(2, lookup.get_bind_group(), &[]);
 		render_pass.set_vertex_buffer(0, state.get().quad.slice(..));
-		let point_cloud_pass = unsafe { std::mem::transmute::<_, &mut PointCloudPass<'a>>(render_pass) };
+		let point_cloud_pass = unsafe {
+			std::mem::transmute::<_, &mut PointCloudPass<'a>>(render_pass)
+		};
 		self.render(point_cloud_pass);
 	}
 }
+
 
 #[derive(Debug)]
 pub struct PointCloud {
 	pub buffer: wgpu::Buffer,
 	pub instances: u32,
 }
+
 
 impl PointCloud {
 	pub fn new(state: &impl Has<State>, vertices: &[crate::Point]) -> Self {
@@ -172,6 +180,7 @@ impl PointCloud {
 
 		Self { buffer, instances: vertices.len() as u32 }
 	}
+
 
 	pub fn render<'a>(&'a self, point_cloud_pass: &mut PointCloudPass<'a>, property: &'a PointCloudProperty) {
 		point_cloud_pass
@@ -197,10 +206,12 @@ impl PointCloud {
 	}
 }
 
+
 pub struct PointCloudProperty {
 	pub buffer: wgpu::Buffer,
 	pub length: u32,
 }
+
 
 impl PointCloudProperty {
 	pub fn new(state: &impl Has<State>, data: &[u32]) -> Self {
@@ -216,6 +227,7 @@ impl PointCloudProperty {
 		Self { buffer, length: data.len() as u32 }
 	}
 
+
 	pub fn new_empty(state: &impl Has<State>) -> Self {
 		let state: &State = state.get();
 		let buffer = state.device.create_buffer(&wgpu::BufferDescriptor {
@@ -228,12 +240,14 @@ impl PointCloudProperty {
 	}
 }
 
+
 pub struct PointCloudEnvironment {
 	bind_group: wgpu::BindGroup,
 	pub min: u32,
 	pub max: u32,
 	pub scale: f32,
 }
+
 
 impl PointCloudEnvironment {
 	pub fn new(state: &impl Has<State>, min: u32, max: u32, scale: f32) -> Self {
@@ -245,6 +259,7 @@ impl PointCloudEnvironment {
 			max: u32,
 			pad: [u32; 2],
 		}
+
 
 		let uniform = Uniform { scale, min, max, pad: [0, 0] };
 		let buffer = state
@@ -269,6 +284,7 @@ impl PointCloudEnvironment {
 			});
 		Self { bind_group, min, max, scale }
 	}
+
 
 	pub fn get_layout(state: &impl Has<State>) -> wgpu::BindGroupLayout {
 		state

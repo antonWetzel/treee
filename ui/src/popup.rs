@@ -2,7 +2,8 @@ use std::ops::Not;
 
 use math::Vector;
 
-use crate::{Element, Rect, State};
+use crate::{ Element, Rect, State };
+
 
 pub struct Popup<Base: Element, Popup: Element>
 where
@@ -14,6 +15,7 @@ where
 	event: fn() -> Base::Event,
 }
 
+
 impl<Base: Element, P: Element> Popup<Base, P>
 where
 	Base::Event: From<P::Event>,
@@ -22,6 +24,7 @@ where
 		Self { base, popup, active: false, event }
 	}
 }
+
 
 impl<Base: Element, P: Element> render::UIElement for Popup<Base, P>
 where
@@ -34,6 +37,7 @@ where
 		}
 	}
 
+
 	fn collect<'a>(&'a self, collector: &mut render::UICollector<'a>) {
 		self.base.collect(collector);
 		if self.active {
@@ -42,24 +46,29 @@ where
 	}
 }
 
+
 impl<Base: Element, P: Element> Element for Popup<Base, P>
 where
 	Base::Event: From<P::Event>,
 {
 	type Event = Base::Event;
 
+
 	fn inside(&self, position: Vector<2, f32>) -> bool {
 		self.active || self.base.inside(position)
 	}
+
 
 	fn bounding_rect(&self) -> Rect {
 		self.base.bounding_rect()
 	}
 
+
 	fn resize(&mut self, state: &impl State, rect: Rect) {
 		self.base.resize(state, rect);
 		self.popup.resize(state, self.base.bounding_rect());
 	}
+
 
 	fn click(&mut self, state: &impl State, position: Vector<2, f32>) -> Option<Self::Event> {
 		if self.base.inside(position) {
@@ -70,6 +79,8 @@ where
 		}
 		None
 	}
+
+
 	fn release(&mut self, position: Vector<2, f32>) -> bool {
 		if self.active.not() {
 			return false;
@@ -80,6 +91,7 @@ where
 		self.active = false;
 		true
 	}
+
 
 	fn hover(&mut self, state: &impl State, position: Vector<2, f32>, pressed: bool) -> Option<Self::Event> {
 		if self.base.inside(position) {

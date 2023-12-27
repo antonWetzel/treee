@@ -9,10 +9,11 @@ mod tree;
 mod triangulation;
 mod writer;
 
+
 use std::num::NonZeroU32;
 
 use las::Read;
-use math::{Vector, X, Y, Z};
+use math::{ Vector, X, Y, Z };
 use progress::Progress;
 use rayon::prelude::*;
 use thiserror::Error;
@@ -20,11 +21,13 @@ use writer::Writer;
 
 use tree::Tree;
 
-use crate::{cache::Cache, progress::Stage, segment::Segmenter};
+use crate::{ cache::Cache, progress::Stage, segment::Segmenter };
+
 
 const IMPORT_PROGRESS_SCALE: u64 = 10_000;
 
 const MIN_SEGMENT_SIZE: usize = 100;
+
 
 #[derive(Error, Debug)]
 pub enum ImporterError {
@@ -43,9 +46,11 @@ pub enum ImporterError {
 	OutputFolderIsNotEmpty,
 }
 
+
 fn map_point(point: las::Point, center: Vector<3, f64>) -> Vector<3, f32> {
 	(Vector::new([point.x, point.z, -point.y]) - center).map(|v| v as f32)
 }
+
 
 fn import() -> Result<(), ImporterError> {
 	let input = rfd::FileDialog::new()
@@ -82,12 +87,12 @@ fn import() -> Result<(), ImporterError> {
 	let (sender, reciever) = crossbeam::channel::bounded(2048);
 	rayon::join(
 		|| {
-			//skips invalid points without error or warning
-			for point in reader.points().flatten() {
-				sender.send(map_point(point, pos)).unwrap();
-			}
-			drop(sender);
-		},
+		//skips invalid points without error or warning
+		for point in reader.points().flatten() {
+			sender.send(map_point(point, pos)).unwrap();
+		}
+		drop(sender);
+	},
 		|| {
 			let mut counter = 0;
 			for point in reciever {
@@ -204,9 +209,10 @@ fn import() -> Result<(), ImporterError> {
 	Ok(())
 }
 
+
 fn main() {
 	match import() {
-		Ok(()) => {},
+		Ok(()) => { },
 		Err(err) => eprintln!("Error: {}", err),
 	}
 }
