@@ -64,7 +64,7 @@ fn import() -> Result<(), ImporterError> {
 		.pick_folder()
 		.ok_or(ImporterError::NoOutputFolder)?;
 
-	let stage = Stage::new("Unpacking");
+	let stage = Stage::new("Setup Files");
 
 	Writer::setup(&output)?;
 
@@ -87,12 +87,12 @@ fn import() -> Result<(), ImporterError> {
 	let (sender, reciever) = crossbeam::channel::bounded(2048);
 	rayon::join(
 		|| {
-		//skips invalid points without error or warning
-		for point in reader.points().flatten() {
-			sender.send(map_point(point, pos)).unwrap();
-		}
-		drop(sender);
-	},
+			//skips invalid points without error or warning
+			for point in reader.points().flatten() {
+				sender.send(map_point(point, pos)).unwrap();
+			}
+			drop(sender);
+		},
 		|| {
 			let mut counter = 0;
 			for point in reciever {

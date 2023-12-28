@@ -1,15 +1,17 @@
 use std::{
 	collections::HashSet,
 	fs::File,
-	io::{Read, Seek, Write},
+	io::{ Read, Seek, Write },
 	num::NonZeroU32,
 	path::Path,
 };
 
 use math::Vector;
-use serde::{Deserialize, Serialize};
+use serde::{ Deserialize, Serialize };
+
 
 pub const MAX_LEAF_SIZE: usize = 1 << 15;
+
 
 #[derive(Debug, Deserialize, Serialize)]
 pub enum IndexData {
@@ -21,6 +23,7 @@ pub enum IndexData {
 	},
 }
 
+
 #[derive(Debug, Deserialize, Serialize)]
 pub struct IndexNode {
 	pub data: IndexData,
@@ -28,6 +31,7 @@ pub struct IndexNode {
 	pub size: f32,
 	pub index: u32,
 }
+
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Project {
@@ -40,11 +44,13 @@ pub struct Project {
 	pub segment_values: Vec<Value>,
 }
 
+
 impl Project {
 	pub fn from_file(path: impl AsRef<Path>) -> Self {
 		let file = std::fs::OpenOptions::new().read(true).open(path).unwrap();
 		bincode::deserialize_from(file).unwrap()
 	}
+
 
 	pub fn save(&self, path: impl AsRef<Path>) {
 		let file = std::fs::OpenOptions::new()
@@ -55,11 +61,14 @@ impl Project {
 		bincode::serialize_into(file, self).unwrap();
 	}
 
+
 	pub fn get_segment_values(&self, index: usize) -> &[Value] {
-		let l = self.segment_properties.len();
-		&self.segment_values[(index * l)..(index * l + l)]
+		// let l = self.segment_properties.len();
+		// &self.segment_values[(index * l)..(index * l + l)]
+		&[]
 	}
 }
+
 
 #[derive(Debug, Deserialize, Serialize)]
 pub enum Value {
@@ -67,6 +76,7 @@ pub enum Value {
 	Percent(f32),
 	RelativeHeight { absolute: f32, percent: f32 },
 }
+
 
 impl std::fmt::Display for Value {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -78,6 +88,7 @@ impl std::fmt::Display for Value {
 	}
 }
 
+
 pub struct DataFile<T>
 where
 	T: Copy + bytemuck::Pod,
@@ -85,6 +96,7 @@ where
 	file: File,
 	phantom: std::marker::PhantomData<T>,
 }
+
 
 impl<T> DataFile<T>
 where
@@ -101,6 +113,7 @@ where
 		Self { file, phantom: std::marker::PhantomData }
 	}
 
+
 	pub fn open(path: impl AsRef<Path>) -> Self {
 		Self {
 			file: std::fs::OpenOptions::new()
@@ -110,6 +123,7 @@ where
 			phantom: std::marker::PhantomData,
 		}
 	}
+
 
 	pub fn save(&mut self, idx: usize, data: &[T]) {
 		self.file.seek(std::io::SeekFrom::End(0)).unwrap();
@@ -122,6 +136,7 @@ where
 			.unwrap();
 		self.file.write_all(bytemuck::cast_slice(&pos)).unwrap();
 	}
+
 
 	pub fn read(&mut self, idx: usize) -> Vec<T> {
 		let mut pos = [0u64, 0u64];

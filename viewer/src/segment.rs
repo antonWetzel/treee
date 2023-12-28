@@ -13,6 +13,7 @@ pub struct Segment {
 	point_cloud: render::PointCloud,
 	property: render::PointCloudProperty,
 	mesh: render::Mesh,
+	pub render_mesh: bool,
 }
 
 
@@ -42,6 +43,7 @@ impl Segment {
 			point_cloud,
 			path,
 			mesh,
+			render_mesh: false,
 		}
 	}
 

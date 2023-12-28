@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{ path::PathBuf, ops::Not };
 
 use common::Project;
 use math::{ Vector, X, Y, Z };
@@ -399,7 +399,14 @@ impl render::Entry for Game {
 				self.interface_active = false;
 				self.window.screen_shot(self.state, self, path);
 				self.interface_active = before;
+				self.request_redraw()
 			},
+			(input::KeyCode::KeyO, input::State::Pressed) => {
+				if let Some(segment) = &mut self.segment {
+					segment.render_mesh = segment.render_mesh.not();
+					self.request_redraw();
+				}
+			}
 
 			_ => { },
 		}
@@ -478,20 +485,23 @@ impl render::RenderEntry for Game {
 
 	fn render<'a>(&'a self, render_pass: &mut render::RenderPass<'a>) {
 		if let Some(segment) = &self.segment {
-		// render_pass.render(
-		// 	segment,
-		// 	(
-		// 		self.state,
-		// 		&self.tree.camera.gpu,
-		// 		&self.tree.lookup,
-		// 		&self.tree.environment,
-		// 	),
-		// );
-		render_pass.render(
-			segment,
-			(self.state, &self.tree.camera.gpu, &self.tree.lookup),
-		);
-	} else {
+			if segment.render_mesh {
+				render_pass.render(
+					segment,
+					(self.state, &self.tree.camera.gpu, &self.tree.lookup),
+				);
+			} else {
+				render_pass.render(
+					segment,
+					(
+						self.state,
+						&self.tree.camera.gpu,
+						&self.tree.lookup,
+						&self.tree.environment,
+					),
+				);
+			}
+		} else {
 			render_pass.render(
 				&self.tree,
 				(

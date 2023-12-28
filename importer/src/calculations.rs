@@ -142,7 +142,7 @@ pub fn calculate(data: Vec<Vector<3, f32>>, segment: NonZeroU32) -> (Vec<Point>,
 				percent: crown_heigth / height,
 			},
 		},
-		triangulate(&data),
+		triangulate(&data, neighbors_tree.tree),
 	)
 }
 

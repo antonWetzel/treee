@@ -8,16 +8,14 @@ use math::{ Vector, X, Y, Z };
 use crate::calculations::Adapter;
 
 
-const ALPHA: f32 = 3.0;
+const ALPHA: f32 = 1.0;
 
 
 type Tree = k_nearest::KDTree<3, f32, Vector<3, f32>, Adapter, k_nearest::EuclideanDistanceSquared>;
 
 
-pub fn triangulate(data: &[Vector<3, f32>]) -> Vec<u32> {
+pub fn triangulate(data: &[Vector<3, f32>], tree: Tree) -> Vec<u32> {
 	let mut used = vec![false; data.len()];
-
-	let tree = Tree::new(data);
 
 	//assume one connected segmnent
 	let Some(seed) = seed(data, &used, &tree) else {
