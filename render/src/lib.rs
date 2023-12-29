@@ -31,14 +31,14 @@ pub use vertex_2d::*;
 pub use window::*;
 
 
-pub trait RenderEntry {
+pub trait RenderEntry<State> {
 	fn background(&self) -> Vector<3, f32>;
 
 
-	fn render<'a>(&'a self, render_pass: &mut RenderPass<'a>);
+	fn render<'a>(&'a mut self, state: &'a State, render_pass: &mut RenderPass<'a>);
 
 
-	fn post_process<'a>(&'a self, render_pass: &mut RenderPass<'a>);
+	fn post_process<'a>(&'a mut self, state: &'a State, render_pass: &mut RenderPass<'a>);
 }
 
 

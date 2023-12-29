@@ -19,7 +19,7 @@ pub struct Camera {
 	pub gpu: render::Camera3DGPU,
 	pub cam: render::Camera3D,
 	pub transform: Transform<3, f32>,
-	controller: Controller,
+	pub controller: Controller,
 	pub lod: lod::Mode,
 }
 
@@ -56,6 +56,12 @@ impl Camera {
 
 	pub fn movement(&mut self, direction: Vector<2, f32>, state: &State) {
 		self.controller.movement(direction, &mut self.transform);
+		self.gpu = render::Camera3DGPU::new(state, &self.cam, &self.transform);
+	}
+
+
+	pub fn move_in_view_direction(&mut self, amount: f32, state: &State) {
+		self.transform.position += self.transform.basis[Z] * amount;
 		self.gpu = render::Camera3DGPU::new(state, &self.cam, &self.transform);
 	}
 
@@ -110,10 +116,18 @@ impl Camera {
 	}
 
 
-	pub fn change_controller(&mut self) {
-		self.controller = match &self.controller {
-			Controller::FirstPerson { sensitivity } => Controller::Orbital { offset: *sensitivity },
+	pub fn first_person(&self) -> Controller {
+		match &self.controller {
+			c @ Controller::FirstPerson { sensitivity } => *c,
 			Controller::Orbital { offset } => Controller::FirstPerson { sensitivity: *offset },
+		}
+	}
+
+
+	pub fn orbital(&self) -> Controller {
+		match &self.controller {
+			Controller::FirstPerson { sensitivity } => Controller::Orbital { offset: *sensitivity },
+			c @ Controller::Orbital { offset } => *c,
 		}
 	}
 
@@ -206,8 +220,8 @@ struct CameraData {
 }
 
 
-#[derive(Serialize, Deserialize, Clone, Copy)]
-enum Controller {
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq)]
+pub enum Controller {
 	FirstPerson { sensitivity: f32 },
 	Orbital { offset: f32 },
 }
@@ -264,9 +278,17 @@ impl Controller {
 
 	pub fn scroll(&mut self, value: f32, transform: &mut Transform<3, f32>) {
 		match self {
-			Controller::FirstPerson { sensitivity } => *sensitivity *= 1.0 + value / 10.0,
+			Controller::FirstPerson { sensitivity } => {
+				*sensitivity *= 1.0 + value / 10.0;
+				if *sensitivity < 0.01 {
+					*sensitivity = 0.01;
+				}
+			}
 			Controller::Orbital { offset } => {
-				let new_offset = *offset * (1.0 + value / 10.0);
+				let mut new_offset = *offset * (1.0 + value / 10.0);
+				if new_offset < 0.01 {
+					new_offset = 0.01;
+				}
 				transform.position -= transform.basis[Z] * (*offset - new_offset);
 				*offset = new_offset;
 			},

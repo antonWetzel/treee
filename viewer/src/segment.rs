@@ -14,6 +14,7 @@ pub struct Segment {
 	property: render::PointCloudProperty,
 	mesh: render::Mesh,
 	pub render_mesh: bool,
+	index: NonZeroU32,
 }
 
 
@@ -38,13 +39,7 @@ impl Segment {
 		};
 
 		path.set_file_name(format!("{}.data", property));
-		Self {
-			property: Self::load_property(state, &path),
-			point_cloud,
-			path,
-			mesh,
-			render_mesh: false,
-		}
+		Self { property: Self::load_property(state, &path), point_cloud, path, mesh, render_mesh: false, index }
 	}
 
 
@@ -61,6 +56,11 @@ impl Segment {
 		file.read_exact(bytemuck::cast_slice_mut(&mut data))
 			.unwrap();
 		render::PointCloudProperty::new(state, &data)
+	}
+
+
+	pub fn index(&self) -> NonZeroU32 {
+		self.index
 	}
 }
 

@@ -7,6 +7,8 @@ use wgpu_text::{
 	TextBrush,
 };
 
+pub use egui;
+
 
 pub struct UIState {
 	pipeline: wgpu::RenderPipeline,

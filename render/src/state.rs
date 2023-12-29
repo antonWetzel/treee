@@ -92,33 +92,38 @@ impl Runner {
 			.set_control_flow(winit::event_loop::ControlFlow::Poll);
 		self.event_loop.run(|event, event_loop| {
 			match event {
-				winit::event::Event::WindowEvent { event, window_id } => match event {
-					winit::event::WindowEvent::CloseRequested => game.close_window(window_id),
-					winit::event::WindowEvent::Resized(size) => {
-						game.resize_window(window_id, [size.width, size.height].into())
-					},
-					winit::event::WindowEvent::ScaleFactorChanged { .. } => todo!(),
-					winit::event::WindowEvent::KeyboardInput { event, .. } => match event.physical_key {
-						winit::keyboard::PhysicalKey::Code(key) => game.key_changed(window_id, key, event.state),
-						winit::keyboard::PhysicalKey::Unidentified(_) => { },
-					},
-					winit::event::WindowEvent::MouseInput { state: button_state, button, .. } => {
-						game.mouse_button_changed(window_id, (button).into(), button_state)
-					},
-					winit::event::WindowEvent::MouseWheel { delta, .. } => {
-						let delta = match delta {
-							winit::event::MouseScrollDelta::LineDelta(_, y) => -y,
-							winit::event::MouseScrollDelta::PixelDelta(pos) => -pos.y as f32,
-						};
-						game.mouse_wheel(delta)
-					},
-					winit::event::WindowEvent::CursorMoved { position, .. } => {
-						let position = Vector::from([position.x as f32, position.y as f32]);
-						game.mouse_moved(window_id, position)
-					},
-					winit::event::WindowEvent::ModifiersChanged(modifiers) => game.modifiers_changed(modifiers.state()),
-					winit::event::WindowEvent::RedrawRequested => game.render(window_id),
-					_ => { },
+				winit::event::Event::WindowEvent { event, window_id } => {
+					if game.raw_event(&event) {
+						return;
+					}
+					match event {
+						winit::event::WindowEvent::CloseRequested => game.close_window(window_id),
+						winit::event::WindowEvent::Resized(size) => {
+							game.resize_window(window_id, [size.width, size.height].into())
+						},
+						winit::event::WindowEvent::ScaleFactorChanged { .. } => todo!(),
+						winit::event::WindowEvent::KeyboardInput { event, .. } => match event.physical_key {
+							winit::keyboard::PhysicalKey::Code(key) => game.key_changed(window_id, key, event.state),
+							winit::keyboard::PhysicalKey::Unidentified(_) => { },
+						},
+						winit::event::WindowEvent::MouseInput { state: button_state, button, .. } => {
+							game.mouse_button_changed(window_id, (button).into(), button_state)
+						},
+						winit::event::WindowEvent::MouseWheel { delta, .. } => {
+							let delta = match delta {
+								winit::event::MouseScrollDelta::LineDelta(_, y) => -y,
+								winit::event::MouseScrollDelta::PixelDelta(pos) => -pos.y as f32,
+							};
+							game.mouse_wheel(delta)
+						},
+						winit::event::WindowEvent::CursorMoved { position, .. } => {
+							let position = Vector::from([position.x as f32, position.y as f32]);
+							game.mouse_moved(window_id, position)
+						},
+						winit::event::WindowEvent::ModifiersChanged(modifiers) => game.modifiers_changed(modifiers.state()),
+						winit::event::WindowEvent::RedrawRequested => game.render(window_id),
+						_ => { },
+					}
 				},
 				winit::event::Event::AboutToWait => game.time(),
 				_ => { },

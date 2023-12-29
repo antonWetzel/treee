@@ -5,16 +5,21 @@ use std::ops::Not;
 use std::path::{ Path, PathBuf };
 
 use crate::loaded_manager::LoadedManager;
+use crate::segment::Segment;
 use crate::state::State;
 use crate::{ camera, lod };
 
 use common::IndexNode;
 use common::{ IndexData, Project };
 use math::{ Dimension, Vector, X, Y, Z };
+use render::Window;
 
 
-#[derive(Clone, Copy)]
-enum LookupName {
+pub const DEFAULT_BACKGROUND: Vector<3, f32> = Vector::new([0.1, 0.2, 0.3]);
+
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum LookupName {
 	Warm,
 	Cold,
 	Wood,
@@ -22,15 +27,6 @@ enum LookupName {
 
 
 impl LookupName {
-	pub fn next(self) -> Self {
-		match self {
-			LookupName::Warm => LookupName::Cold,
-			LookupName::Cold => LookupName::Wood,
-			LookupName::Wood => LookupName::Warm,
-		}
-	}
-
-
 	pub fn data(self) -> &'static [u8] {
 		match self {
 			LookupName::Warm => include_bytes!("../assets/grad_warm.png"),
@@ -47,7 +43,12 @@ pub struct Tree {
 	pub loaded_manager: LoadedManager,
 	pub lookup: render::Lookup,
 	pub environment: render::PointCloudEnvironment,
-	lookup_name: LookupName,
+	pub background: Vector<3, f32>,
+	pub segment: Option<Segment>,
+
+	pub lookup_name: LookupName,
+	pub eye_dome: render::EyeDome,
+	pub eye_dome_active: bool,
 
 	property_index: usize,
 }
@@ -315,22 +316,25 @@ impl Node {
 
 
 impl Tree {
-	pub fn new(state: &'static State, project: &Project, path: PathBuf, aspect: f32, property: &str) -> Self {
+	pub fn new(state: &'static State, project: &Project, path: PathBuf, property: &str, window: &Window) -> Self {
 		let lookup_name = LookupName::Warm;
 		Self {
-			camera: camera::Camera::new(state, aspect),
+			background: DEFAULT_BACKGROUND,
+			camera: camera::Camera::new(state, window.get_aspect()),
 			root: Node::new(&project.root),
 			loaded_manager: LoadedManager::new(state, path, property),
 			lookup_name,
 			lookup: render::Lookup::new_png(state, lookup_name.data()),
 			property_index: 0,
 			environment: render::PointCloudEnvironment::new(state, u32::MIN, u32::MAX, 1.0),
+			segment: None,
+			eye_dome: render::EyeDome::new(state, window.config(), window.depth_texture(), 0.3),
+			eye_dome_active: true,
 		}
 	}
 
 
-	pub fn next_lookup(&mut self, state: &'static State) {
-		self.lookup_name = self.lookup_name.next();
+	pub fn update_lookup(&mut self, state: &'static State) {
 		self.lookup = render::Lookup::new_png(state, self.lookup_name.data());
 	}
 
@@ -353,6 +357,15 @@ impl Tree {
 		self.root
 			.raycast(start, direction, path, &mut checked)
 			.map(|(seg, _)| seg)
+	}
+
+
+	pub fn update(&mut self) {
+		self.root.update(
+			lod::Checker::new(&self.camera.lod),
+			&self.camera,
+			&mut self.loaded_manager,
+		)
 	}
 }
 
@@ -402,5 +415,51 @@ impl render::PointCloudRender for Tree {
 			&self.camera,
 			&self.loaded_manager,
 		);
+	}
+}
+
+
+impl render::RenderEntry<State> for Tree {
+	fn background(&self) -> Vector<3, f32> {
+		self.background
+	}
+
+
+	fn render<'a>(&'a mut self, state: &'a State, render_pass: &mut render::RenderPass<'a>) {
+		if let Some(segment) = &self.segment {
+			if segment.render_mesh {
+				render_pass.render(
+					segment,
+					(state, &self.camera.gpu, &self.lookup),
+				);
+			} else {
+				render_pass.render(
+					segment,
+					(
+						state,
+						&self.camera.gpu,
+						&self.lookup,
+						&self.environment,
+					),
+				);
+			}
+		} else {
+			render_pass.render(
+				self,
+				(
+					state,
+					&self.camera.gpu,
+					&self.lookup,
+					&self.environment,
+				),
+			);
+		}
+	}
+
+
+	fn post_process<'a>(&'a mut self, state: &'a State, render_pass: &mut render::RenderPass<'a>) {
+		if self.eye_dome_active {
+			render_pass.render(&self.eye_dome, ());
+		}
 	}
 }

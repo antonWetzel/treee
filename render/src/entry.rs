@@ -3,8 +3,14 @@ use math::Vector;
 use super::*;
 
 
+pub type Event = winit::event::WindowEvent;
+
+
 // todo: pass window_target to allow the creation of the windows
 pub trait Entry {
+	fn raw_event(&mut self, event: &Event) -> bool;
+
+
 	fn close_window(&mut self, window_id: WindowId);
 
 

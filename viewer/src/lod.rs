@@ -4,7 +4,7 @@ use serde::{ Deserialize, Serialize };
 use crate::camera;
 
 
-#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq)]
 pub enum Mode {
 	Normal { threshold: f32 },
 	Auto { threshold: f32 },
@@ -32,6 +32,21 @@ impl Mode {
 				}
 			},
 		}
+	}
+
+
+	pub fn new_auto(max_level: usize) -> Self {
+		Self::Auto { threshold: 1.0 }
+	}
+
+
+	pub fn new_normal(max_level: usize) -> Self {
+		Self::Normal { threshold: 1.0 }
+	}
+
+
+	pub fn new_level(max_level: usize) -> Self {
+		Self::Level { target: 0, max: max_level }
 	}
 }
 

@@ -34,6 +34,12 @@ var<uniform> settings: Settings;
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let size = textureDimensions(depths);
     let coord = vec2<i32>(in.tex_coords * vec2<f32>(size));
+
+    // if true {
+    //     let x = get_depth(coord);
+    //     return vec4<f32>(x, x, x, 1.0);
+    // }
+
     let depth = get_depth(coord);
     if depth == 1.0 {
         return vec4<f32>(0.0, 0.0, 0.0, 0.0);

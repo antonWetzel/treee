@@ -2,24 +2,43 @@ use std::{ path::PathBuf, ops::Not };
 
 use common::Project;
 use math::{ Vector, X, Y, Z };
-use ui::Element;
+use render::egui::Widget;
 
 use crate::{
-	interface::{ Interface, InterfaceAction },
 	lod,
 	segment::Segment,
 	state::State,
-	tree::Tree,
+	tree::{ Tree, DEFAULT_BACKGROUND, LookupName },
+	camera,
 };
 
 
-const DEFAULT_BACKGROUND: Vector<3, f32> = Vector::new([0.1, 0.2, 0.3]);
+pub struct World {
+	window: render::Window,
+	game: Game,
+	egui: render::egui::Context,
+}
+
+
+impl std::ops::Deref for World {
+	type Target = Game;
+
+
+	fn deref(&self) -> &Self::Target {
+		&self.game
+	}
+}
+
+
+impl std::ops::DerefMut for World {
+	fn deref_mut(&mut self) -> &mut Self::Target {
+		&mut self.game
+	}
+}
 
 
 pub struct Game {
-	window: render::Window,
 	tree: Tree,
-	segment: Option<Segment>,
 	project: Project,
 	path: PathBuf,
 	project_time: std::time::SystemTime,
@@ -32,26 +51,20 @@ pub struct Game {
 	time: Time,
 	paused: bool,
 
-	ui: render::UI<'static>,
-	eye_dome: render::EyeDome,
-	eye_dome_active: bool,
-
-	interface: Interface,
-	interface_active: bool,
-
-	background: Vector<3, f32>,
-
+	level_of_detail_options: bool,
+	camera_options: bool,
 	quit: bool,
 
 	render_time: f32,
 }
 
 
-impl Game {
+impl World {
 	pub fn new(state: &'static State, path: PathBuf, runner: &render::Runner) -> Self {
 		let project = Project::from_file(&path);
 
-		let window = render::Window::new(state, &runner.event_loop, &project.name);
+		let egui = render::egui::Context::default();
+		let window = render::Window::new(state, &runner.event_loop, &project.name, &egui);
 
 		window.set_window_icon(include_bytes!("../assets/png/tree-fill-big.png"));
 
@@ -61,45 +74,33 @@ impl Game {
 			state,
 			&project,
 			path.parent().unwrap().to_owned(),
-			window.get_aspect(),
 			&project.properties[0],
+			&window,
 		);
-
-		let eye_dome = render::EyeDome::new(state, window.config(), window.depth_texture(), 0.002);
-		let ui = render::UI::new(
-			state,
-			window.config(),
-			include_bytes!("../assets/Urbanist-Bold.ttf"),
-		);
-		let interface = Interface::new(state, DEFAULT_BACKGROUND);
 
 		Self {
-			ui,
-			eye_dome,
-			eye_dome_active: true,
-			interface,
-			interface_active: true,
-
-			paused: false,
-
 			window,
-			tree,
-			project,
-			project_time: std::fs::metadata(&path).unwrap().modified().unwrap(),
-			path,
-			segment: None,
+			egui,
+			game: Game {
+				paused: false,
 
-			state,
-			mouse: input::Mouse::new(),
-			mouse_start: None,
-			keyboard: input::Keyboard::new(),
-			time: Time::new(),
+				tree,
+				project,
+				project_time: std::fs::metadata(&path).unwrap().modified().unwrap(),
+				path,
 
-			background: DEFAULT_BACKGROUND,
+				state,
+				mouse: input::Mouse::new(),
+				mouse_start: None,
+				keyboard: input::Keyboard::new(),
+				time: Time::new(),
 
-			quit: false,
+				level_of_detail_options: false,
+				camera_options: false,
+				quit: false,
 
-			render_time: 0.01,
+				render_time: 0.01,
+			},
 		}
 	}
 
@@ -107,9 +108,11 @@ impl Game {
 	fn request_redraw(&mut self) {
 		self.window.request_redraw();
 	}
+}
 
 
-	fn change_project(&mut self) {
+impl Game {
+	fn change_project(&mut self, window: &render::Window) {
 		let Some(path) = rfd::FileDialog::new()
 			.add_filter("Project File", &["epc"])
 			.pick_file()
@@ -117,11 +120,11 @@ impl Game {
 			return;
 		};
 		self.path = path;
-		self.reload(self.current_poject_time());
+		self.reload(self.current_poject_time(), window);
 	}
 
 
-	fn check_reload(&mut self) {
+	fn check_reload(&mut self, window: &render::Window) {
 		let project_time = self.current_poject_time();
 		if self.project_time == project_time {
 			return;
@@ -129,7 +132,7 @@ impl Game {
 		if project_time.elapsed().unwrap() < std::time::Duration::from_millis(1000) {
 			return;
 		}
-		self.reload(project_time);
+		self.reload(project_time, window);
 	}
 
 
@@ -141,173 +144,274 @@ impl Game {
 	}
 
 
-	fn reload(&mut self, project_time: std::time::SystemTime) {
+	fn reload(&mut self, project_time: std::time::SystemTime, window: &render::Window) {
 		self.project_time = project_time;
 		self.project = Project::from_file(&self.path);
 		self.tree = Tree::new(
 			self.state,
 			&self.project,
 			self.path.parent().unwrap().to_owned(),
-			self.window.get_aspect(),
 			&self.project.properties[0],
+			window,
 		);
-		self.window.set_title(&self.project.name);
-		self.request_redraw();
+		window.set_title(&self.project.name);
+		window.request_redraw();
 	}
 
+	// fn handle_interface_action(&mut self, action: InterfaceAction) {
+	// 	match action {
+	// 		InterfaceAction::Property => {
+	// 			self.tree.next_property(&self.project.properties);
+	// 			let prop = self.tree.current_property(&self.project.properties);
+	// 			if let Some(segment) = &mut self.tree.segment {
+	// 				segment.change_property(self.state, prop);
+	// 			}
+	// 			self.request_redraw();
+	// 		},
+	// 		InterfaceAction::SliceUpdate(min, max) => {
+	// 			self.tree.environment = render::PointCloudEnvironment::new(
+	// 				self.state,
+	// 				(min * u32::MAX as f32) as u32,
+	// 				(max * u32::MAX as f32) as u32,
+	// 				self.tree.environment.scale,
+	// 			);
+	// 			self.window.request_redraw();
+	// 		},
+	// }
 
-	fn handle_interface_action(&mut self, action: InterfaceAction) {
-		match action {
-			InterfaceAction::UpdateInterface => self.request_redraw(),
-			InterfaceAction::Open => self.change_project(),
-
-			InterfaceAction::BackgroundReset => {
-				self.background = DEFAULT_BACKGROUND;
-				self.interface
-					.reset_background(self.state, DEFAULT_BACKGROUND);
-				self.request_redraw();
-			},
-			InterfaceAction::BackgroundRed(v) => {
-				self.background[X] = v;
-				self.request_redraw();
-			},
-			InterfaceAction::BackgroundGreen(v) => {
-				self.background[Y] = v;
-				self.request_redraw();
-			},
-			InterfaceAction::BackgroundBlue(v) => {
-				self.background[Z] = v;
-				self.request_redraw();
-			},
-
-			InterfaceAction::ColorPalette => {
-				self.tree.next_lookup(self.state);
-				self.request_redraw();
-			},
-			InterfaceAction::Property => {
-				self.tree.next_property(&self.project.properties);
-				if let Some(segment) = &mut self.segment {
-					segment.change_property(
-						self.state,
-						self.tree.current_property(&self.project.properties),
-					);
-				}
-				self.request_redraw();
-			},
-			InterfaceAction::EyeDome => {
-				self.eye_dome_active = !self.eye_dome_active;
-				self.request_redraw();
-			},
-			InterfaceAction::Camera => {
-				self.tree.camera.change_controller();
-				self.window.request_redraw();
-			},
-			InterfaceAction::LevelOfDetail => {
-				self.tree.camera.change_lod(self.project.depth as usize);
-				self.window.request_redraw();
-			},
-			InterfaceAction::LevelOfDetailChange(change) => {
-				self.tree.camera.lod.change_detail(change);
-				self.window.request_redraw();
-			},
-			InterfaceAction::EyeDomeStrength(v) => {
-				self.eye_dome.strength = if v < 0.1 { 0.1 } else { v }.powi(6);
-				self.eye_dome.update_settings(self.state);
-				self.window.request_redraw();
-			},
-			InterfaceAction::SliceUpdate(min, max) => {
-				self.tree.environment = render::PointCloudEnvironment::new(
-					self.state,
-					(min * u32::MAX as f32) as u32,
-					(max * u32::MAX as f32) as u32,
-					self.tree.environment.scale,
-				);
-				self.window.request_redraw();
-			},
-
-			InterfaceAction::ScaleUpdate(scale) => {
-				self.tree.environment = render::PointCloudEnvironment::new(
-					self.state,
-					self.tree.environment.min,
-					self.tree.environment.max,
-					scale * 2.0,
-				);
-				self.window.request_redraw();
-			},
-
-			InterfaceAction::EyeDomeRed(v) => {
-				self.eye_dome.color[X] = v;
-				self.eye_dome.update_settings(self.state);
-				self.window.request_redraw();
-			},
-			InterfaceAction::EyeDomeGreen(v) => {
-				self.eye_dome.color[Y] = v;
-				self.eye_dome.update_settings(self.state);
-				self.window.request_redraw();
-			},
-			InterfaceAction::EyeDomeBlue(v) => {
-				self.eye_dome.color[Z] = v;
-				self.eye_dome.update_settings(self.state);
-				self.window.request_redraw();
-			},
-
-			InterfaceAction::SegmentReset => {
-				self.segment = None;
-				self.interface.disable_segment_info();
-				self.window.request_redraw();
-			},
-		}
-	}
-
-
-	fn raycast(&mut self) {
-		if self.segment.is_some() {
+	fn raycast(&mut self, window: &render::Window) {
+		if self.tree.segment.is_some() {
 			return;
 		}
 		let start = self
 			.tree
 			.camera
-			.ray_origin(self.mouse.position(), self.window.get_size());
+			.ray_origin(self.mouse.position(), window.get_size());
 		let direction = self
 			.tree
 			.camera
-			.ray_direction(self.mouse.position(), self.window.get_size());
+			.ray_direction(self.mouse.position(), window.get_size());
 		let mut segment_path = self.path.parent().unwrap().to_path_buf();
 		segment_path.push("segments");
 		if let Some(segment) = self.tree.raycast(start, direction, &segment_path) {
 			println!("Switch to Segment '{}'", segment);
-			self.segment = Some(Segment::new(
+			self.tree.segment = Some(Segment::new(
 				self.state,
 				segment_path,
 				self.tree.current_property(&self.project.properties),
 				segment,
 			));
-			self.interface.enable_segment_info(
-				&self.project.segment_properties,
-				self.project.get_segment_values(segment.get() as usize - 1),
-			);
-			self.request_redraw();
+			// self.interface.enable_segment_info(
+			// 	&self.project.segment_properties,
+			// 	self.project.get_segment_values(segment.get() as usize - 1),
+			// );
+			window.request_redraw();
 		}
 	}
 }
 
 
-impl render::Entry for Game {
+impl Game {
+	fn ui(&mut self, ctx: &render::egui::Context, window: &mut render::Window) {
+		let full = render::egui::Layout::top_down_justified(render::egui::Align::Center);
+		render::egui::SidePanel::left("left").resizable(false).show(ctx, |ui| {
+			ui.with_layout(full, |ui| {
+				if ui.button("Load Project").clicked() {
+					self.change_project(window);
+				}
+			});
+
+			ui.with_layout(full, |ui| {
+				ui.toggle_value(&mut self.tree.eye_dome_active, "Eye Dome")
+			});
+
+			if self.tree.eye_dome_active {
+				render::egui::Grid::new("eye_dome").num_columns(2).show(ui, |ui| {
+					ui.horizontal(|ui| {
+						ui.set_min_width(100.0);
+						ui.label("Strength");
+					});
+					if ui.add(render::egui::Slider::new(&mut self.tree.eye_dome.strength, 0.0 ..= 1.0)).changed() {
+						self.tree.eye_dome.update_settings(self.state);
+					}
+					ui.end_row();
+
+					ui.label("Color");
+					ui.with_layout(full, |ui| {
+						if ui.color_edit_button_rgb(self.tree.eye_dome.color.data_mut()).changed() {
+							self.tree.eye_dome.update_settings(self.state);
+						}
+					});
+
+					ui.end_row();
+				});
+			};
+			ui.separator();
+
+			let mut seg = self.tree.segment.is_some();
+			ui.with_layout(full, |ui| {
+				ui.set_enabled(seg);
+				if ui.toggle_value(&mut seg, "Segment").changed() && seg.not() {
+					self.tree.segment = None;
+				}
+			});
+			if let Some(seg) = &self.tree.segment {
+				ui.label(format!("ID: {}", seg.index()));
+			}
+			ui.separator();
+
+			render::egui::Grid::new("other").num_columns(2).show(ui, |ui| {
+				ui.horizontal(|ui| {
+					ui.set_min_width(100.0);
+					ui.label("Point Size");
+				});
+				if ui.add(render::egui::Slider::new(&mut self.tree.environment.scale, 0.0 ..= 2.0)).changed() {
+					self.tree.environment = render::PointCloudEnvironment::new(
+						self.state,
+						self.tree.environment.min,
+						self.tree.environment.max,
+						self.tree.environment.scale,
+					);
+					window.request_redraw();
+				}
+				ui.end_row();
+
+				ui.label("Color Palette");
+				render::egui::ComboBox::from_id_source("color_palette")
+					.selected_text(format!("{:?}", self.tree.lookup_name))
+					.show_ui(ui, |ui| {
+						let mut changed = false;
+						changed |= ui.selectable_value(&mut self.tree.lookup_name, LookupName::Warm, "Warm").changed();
+						changed |= ui.selectable_value(&mut self.tree.lookup_name, LookupName::Cold, "Cold").changed();
+						// changed |= ui.selectable_value(&mut self.tree.lookup_name, LookupName::Wood, "Wood").changed();
+						if changed {
+							self.tree.update_lookup(self.state);
+						}
+					});
+				ui.end_row();
+
+				ui.label("Background");
+				ui.with_layout(full, |ui| {
+					if ui.color_edit_button_rgb(self.tree.background.data_mut()).changed() {
+						window.request_redraw();
+					}
+				});
+				ui.end_row();
+			});
+
+			ui.with_layout(full, |ui| ui.toggle_value(&mut self.level_of_detail_options, "Level of Detail"));
+			if self.level_of_detail_options {
+				render::egui::Grid::new("level_of_detail_grid").num_columns(2).show(ui, |ui| {
+					ui.horizontal(|ui| {
+						ui.set_min_width(100.0);
+						ui.label("Mode");
+					});
+					render::egui::ComboBox::from_id_source("level_of_detail_mode")
+						.selected_text(match self.tree.camera.lod {
+							lod::Mode::Auto { .. } => "Automatic",
+							lod::Mode::Normal { .. } => "Normal",
+							lod::Mode::Level { .. } => "Level",
+						})
+						.show_ui(ui, |ui| {
+							ui.selectable_value(&mut self.tree.camera.lod, lod::Mode::new_auto(
+								self.project.depth as usize,
+							), "Automatic");
+							ui.selectable_value(&mut self.tree.camera.lod, lod::Mode::new_normal(
+								self.project.depth as usize,
+							), "Normal");
+							ui.selectable_value(&mut self.tree.camera.lod, lod::Mode::new_level(
+								self.project.depth as usize,
+							), "Level");
+						});
+					ui.end_row();
+
+					ui.label("Precision");
+					match &mut self.tree.camera.lod {
+						lod::Mode::Auto { threshold } => {
+							ui.set_enabled(false);
+							render::egui::Slider::new(threshold, 0.0 ..= 10.0).ui(ui)
+						}
+						lod::Mode::Normal { threshold } => render::egui::Slider::new(threshold, 0.0 ..= 10.0).ui(ui),
+						lod::Mode::Level { target, max } => render::egui::Slider::new(target, 0 ..= *max).ui(ui),
+					};
+					ui.end_row();
+				});
+			}
+
+			ui.with_layout(full, |ui| ui.toggle_value(&mut self.camera_options, "Camera"));
+			if self.camera_options {
+				render::egui::Grid::new("camera_grid").num_columns(2).show(ui, |ui| {
+					ui.horizontal(|ui| {
+						ui.set_min_width(100.0);
+						ui.label("Controller");
+					});
+					render::egui::ComboBox::from_id_source("camera_controller")
+						.selected_text(match self.tree.camera.controller {
+							camera::Controller::Orbital { .. } => "Orbital",
+							camera::Controller::FirstPerson { .. } => "First Person",
+						})
+						.show_ui(ui, |ui| {
+							let c = self.tree.camera.orbital();
+							ui.selectable_value(&mut self.tree.camera.controller, c, "Orbital");
+							let c = self.tree.camera.first_person();
+							ui.selectable_value(&mut self.tree.camera.controller, c, "First Person");
+						});
+					ui.end_row();
+
+					match self.tree.camera.controller {
+						camera::Controller::Orbital { .. } => ui.label("Distance"),
+						camera::Controller::FirstPerson { .. } => ui.label("Speed"),
+					};
+
+					match &mut self.tree.camera.controller {
+						camera::Controller::Orbital { offset } => {
+							let old = *offset;
+							render::egui::DragValue::new(offset).ui(ui);
+							if *offset < 0.1 {
+								*offset = 0.1;
+							}
+							let diff = *offset - old;
+							if diff.abs() > 0.001 {
+								self.tree.camera.move_in_view_direction(diff, self.state);
+							}
+						},
+						camera::Controller::FirstPerson { sensitivity } => {
+							render::egui::DragValue::new(sensitivity).ui(ui);
+							if *sensitivity < 0.01 {
+								*sensitivity = 0.01;
+							}
+						}
+					};
+					ui.end_row();
+				});
+			}
+		});
+	}
+}
+
+
+impl render::Entry for World {
+	fn raw_event(&mut self, event: &render::Event) -> bool {
+		let response = self.window.window_event(event);
+		if response.repaint {
+			self.request_redraw();
+		}
+		response.consumed
+	}
+
+
 	fn render(&mut self, _window_id: render::WindowId) {
 		if self.paused {
 			return;
 		}
-		if self.segment.is_none() {
-			self.tree.root.update(
-				lod::Checker::new(&self.tree.camera.lod),
-				&self.tree.camera,
-				&mut self.tree.loaded_manager,
-			);
+		if self.tree.segment.is_none() {
+			self.tree.update();
 		}
 
-		self.ui.queue(self.state, &self.interface);
+		let raw_input = self.window.egui_winit.take_egui_input(&self.window.window);
+		let full_output = self.egui.run(raw_input, |ctx| self.game.ui(ctx, &mut self.window));
 
-		if let Some(time) = self.window.render(self.state, self) {
+		if let Some(time) = self.window.render(self.game.state, &mut self.game.tree, full_output, &self.egui) {
 			self.render_time = time;
 		}
 	}
@@ -319,24 +423,14 @@ impl render::Entry for Game {
 			return;
 		}
 		self.window.resized(self.state);
-		self.tree.camera.cam.set_aspect(self.window.get_aspect());
+		self.game.tree.camera.cam.set_aspect(self.window.get_aspect());
 		self.tree.camera.gpu = render::Camera3DGPU::new(
 			self.state,
 			&self.tree.camera.cam,
 			&self.tree.camera.transform,
 		);
 		self.request_redraw();
-		self.ui.resize(self.state, self.window.config());
-		self.eye_dome
-			.update_depth(self.state, self.window.depth_texture());
-
-		self.interface.resize(
-			self.state,
-			ui::Rect {
-				min: Vector::default(),
-				max: self.window.get_size(),
-			},
-		);
+		self.game.tree.eye_dome.update_depth(self.game.state, self.window.depth_texture());
 	}
 
 
@@ -363,19 +457,19 @@ impl render::Entry for Game {
 		let l = direction.length();
 		if l > 0.0 {
 			direction *= 10.0 * delta.as_secs_f32() / l;
-			self.tree.camera.movement(direction, self.state);
+			self.game.tree.camera.movement(direction, self.state);
 			self.request_redraw();
 		}
 
 		if self.tree.loaded_manager.update()
 			|| (self.tree.loaded_manager.loaded() > 0
-				&& self.segment.is_none()
-				&& self.tree.camera.time(self.render_time))
+				&& self.tree.segment.is_none()
+				&& self.game.tree.camera.time(self.render_time))
 		{
 			self.window.request_redraw();
 		}
 
-		self.check_reload();
+		self.game.check_reload(&self.window);
 	}
 
 
@@ -385,7 +479,7 @@ impl render::Entry for Game {
 		match (key, key_state) {
 			(input::KeyCode::KeyK, input::State::Pressed) => self.tree.camera.save(),
 			(input::KeyCode::KeyL, input::State::Pressed) => {
-				self.tree.camera.load(self.state);
+				self.game.tree.camera.load(self.state);
 				self.request_redraw()
 			},
 			(input::KeyCode::KeyP, input::State::Pressed) => {
@@ -395,14 +489,11 @@ impl render::Entry for Game {
 				else {
 					return;
 				};
-				let before = self.interface_active;
-				self.interface_active = false;
-				self.window.screen_shot(self.state, self, path);
-				self.interface_active = before;
+				// self.window.screen_shot(self.state, &mut self.tree, path);
 				self.request_redraw()
 			},
 			(input::KeyCode::KeyO, input::State::Pressed) => {
-				if let Some(segment) = &mut self.segment {
+				if let Some(segment) = &mut self.tree.segment {
 					segment.render_mesh = segment.render_mesh.not();
 					self.request_redraw();
 				}
@@ -419,7 +510,7 @@ impl render::Entry for Game {
 
 
 	fn mouse_wheel(&mut self, delta: f32) {
-		self.tree.camera.scroll(delta, self.state);
+		self.game.tree.camera.scroll(delta, self.state);
 		self.request_redraw();
 	}
 
@@ -433,22 +524,14 @@ impl render::Entry for Game {
 		self.mouse.update(button, button_state);
 		match (button, button_state) {
 			(input::MouseButton::Left, input::State::Pressed) => {
-				if let Some(action) = self.interface.click(self.state, self.mouse.position()) {
-					self.handle_interface_action(action);
-					self.mouse_start = None;
-				} else {
-					self.mouse_start = Some(self.mouse.position());
-				}
+				self.mouse_start = Some(self.mouse.position());
 			},
 			(input::MouseButton::Left, input::State::Released) => {
 				if let Some(start) = self.mouse_start {
 					let dist = (start - self.mouse.position()).length();
 					if dist < 2.0 {
-						self.raycast();
+						self.game.raycast(&self.window);
 					}
-				}
-				if self.interface.release(self.mouse.position()) {
-					self.request_redraw();
 				}
 			},
 			_ => { },
@@ -458,14 +541,8 @@ impl render::Entry for Game {
 
 	fn mouse_moved(&mut self, _window_id: render::WindowId, position: Vector<2, f32>) {
 		let delta = self.mouse.delta(position);
-		if let Some(action) = self.interface.hover(
-			self.state,
-			position,
-			self.mouse.pressed(input::MouseButton::Left),
-		) {
-			self.handle_interface_action(action);
-		} else if self.mouse.pressed(input::MouseButton::Left) {
-			self.tree.camera.rotate(delta, self.state);
+		if self.mouse.pressed(input::MouseButton::Left) {
+			self.game.tree.camera.rotate(delta, self.state);
 			self.request_redraw();
 		}
 	}
@@ -473,55 +550,6 @@ impl render::Entry for Game {
 
 	fn exit(&self) -> bool {
 		self.quit
-	}
-}
-
-
-impl render::RenderEntry for Game {
-	fn background(&self) -> Vector<3, f32> {
-		self.background
-	}
-
-
-	fn render<'a>(&'a self, render_pass: &mut render::RenderPass<'a>) {
-		if let Some(segment) = &self.segment {
-			if segment.render_mesh {
-				render_pass.render(
-					segment,
-					(self.state, &self.tree.camera.gpu, &self.tree.lookup),
-				);
-			} else {
-				render_pass.render(
-					segment,
-					(
-						self.state,
-						&self.tree.camera.gpu,
-						&self.tree.lookup,
-						&self.tree.environment,
-					),
-				);
-			}
-		} else {
-			render_pass.render(
-				&self.tree,
-				(
-					self.state,
-					&self.tree.camera.gpu,
-					&self.tree.lookup,
-					&self.tree.environment,
-				),
-			);
-		}
-	}
-
-
-	fn post_process<'a>(&'a self, render_pass: &mut render::RenderPass<'a>) {
-		if self.eye_dome_active {
-			render_pass.render(&self.eye_dome, ());
-		}
-		if self.interface_active {
-			render_pass.render(&self.interface, (&self.ui, self.state));
-		}
 	}
 }
 

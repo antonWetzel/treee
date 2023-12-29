@@ -6,13 +6,17 @@ use super::*;
 
 
 pub type WindowId = winit::window::WindowId;
+pub type EventResponse = egui_winit::EventResponse;
 
 
 pub struct Window {
-	window: winit::window::Window,
+	pub window: winit::window::Window,
 	config: wgpu::SurfaceConfiguration,
 	surface: wgpu::Surface,
 	depth_texture: DepthTexture,
+
+	pub egui_winit: egui_winit::State,
+	egui_wgpu: egui_wgpu::renderer::Renderer,
 }
 
 
@@ -21,8 +25,9 @@ impl Window {
 		state: &impl Has<State>,
 		window_target: &winit::event_loop::EventLoopWindowTarget<()>,
 		title: T,
+		egui: &egui::Context,
 	) -> Self {
-		let state = state.get();
+		let state: &State = state.get();
 		let window = winit::window::WindowBuilder::new()
 			.with_title(title)
 			.with_min_inner_size(winit::dpi::LogicalSize { width: 10, height: 10 })
@@ -51,7 +56,30 @@ impl Window {
 
 		let depth_texture = DepthTexture::new(&state.device, &config, "depth");
 
-		Self { window, surface, depth_texture, config }
+		let egui_wgpu = egui_wgpu::renderer::Renderer::new(
+			&state.device,
+			config.format,
+			None,
+			1,
+		);
+
+		let id = egui.viewport_id();
+		Self {
+			surface,
+			depth_texture,
+			config,
+
+			egui_winit: egui_winit::State::new(
+				egui.clone(),
+				id,
+				&window,
+				None,
+				None,
+			),
+			egui_wgpu,
+
+			window,
+		}
 	}
 
 
@@ -90,6 +118,11 @@ impl Window {
 	}
 
 
+	pub fn window_event(&mut self, event: &winit::event::WindowEvent) -> EventResponse {
+		self.egui_winit.on_window_event(&self.window, event)
+	}
+
+
 	pub fn set_window_icon(&self, png: &[u8]) {
 		let img = image::load_from_memory(png).unwrap();
 		let icon = winit::window::Icon::from_rgba(img.to_rgba8().into_vec(), img.width(), img.height()).unwrap();
@@ -118,20 +151,20 @@ impl Window {
 	}
 
 
-	pub fn screen_shot(&self, state: &'static impl Has<State>, renderable: &impl RenderEntry, path: PathBuf) {
+	pub fn screen_shot<S: Has<State>>(&mut self, state: &'static S, renderable: &mut impl RenderEntry<S>, path: PathBuf, ui: egui::FullOutput, egui: &egui::Context) {
 		fn ceil_to_multiple(value: u32, base: u32) -> u32 {
 			(value + (base - 1)) / base * base
 		}
 
 
-		let state: &State = state.get();
+		let render_state: &State = state.get();
 		let (texture_width, texture_height, format) = {
 			let output = &self.surface.get_current_texture().unwrap().texture;
 
 			(output.size().width, output.size().height, output.format())
 		};
 
-		let mut encoder = state
+		let mut encoder = render_state
 			.device
 			.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("Render Encoder") });
 
@@ -149,16 +182,16 @@ impl Window {
 			label: None,
 			view_formats: &Vec::new(),
 		};
-		let texture = state.device.create_texture(&texture_desc);
+		let texture = render_state.device.create_texture(&texture_desc);
 		let view = texture.create_view(&Default::default());
 
-		self.render_to(state, renderable, &view, renderable.background(), 0.0);
+		self.render_to(state, renderable, &view, renderable.background(), 0.0, ui, egui);
 
 		let u32_size = std::mem::size_of::<u32>() as u32;
 		let texture_width = ceil_to_multiple(texture_width, 256 / 4);
 		let buffer_size = (u32_size * texture_width * texture_height) as wgpu::BufferAddress;
 
-		let buffer = state.device.create_buffer(&wgpu::BufferDescriptor {
+		let buffer = render_state.device.create_buffer(&wgpu::BufferDescriptor {
 			size: buffer_size,
 			usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
 			label: None,
@@ -185,7 +218,7 @@ impl Window {
 			},
 			texture.size(),
 		);
-		state.queue.submit(Some(encoder.finish()));
+		render_state.queue.submit(Some(encoder.finish()));
 
 		let buffer_slice = buffer.slice(..);
 
@@ -203,7 +236,7 @@ impl Window {
 
 			for pixel in image.pixels_mut() {
 				pixel.0.swap(0, 2); // hack because input uses BGRA, not RGBA
-				}
+			}
 			image.save(path).unwrap();
 			buffer.unmap();
 		});
@@ -211,13 +244,15 @@ impl Window {
 	}
 
 
-	fn render_to(
-		&self,
-		state: &'static impl Has<State>,
-		renderable: &impl RenderEntry,
+	fn render_to<S: Has<State>>(
+		&mut self,
+		state: &'static S,
+		renderable: &mut impl RenderEntry<S>,
 		view: &wgpu::TextureView,
 		background: Vector<3, f32>,
 		alpha: f32,
+		ui: egui::FullOutput,
+		egui: &egui::Context,
 	) -> f32 {
 		let render_state: &State = state.get();
 		let set = render_state
@@ -258,8 +293,21 @@ impl Window {
 			timestamp_writes: None,
 		}));
 
-		renderable.render(&mut render_pass);
+		renderable.render(state, &mut render_pass);
 		drop(render_pass);
+
+		let full_output = ui;
+
+		self.egui_winit.handle_platform_output(&self.window, full_output.platform_output);
+		let paint_jobs = egui.tessellate(full_output.shapes, full_output.pixels_per_point);
+		let size = self.window.inner_size();
+		let screen = &egui_wgpu::renderer::ScreenDescriptor {
+			size_in_pixels: [size.width, size.height],
+			pixels_per_point: 1.0,
+		};
+
+		let commands = self.egui_wgpu.update_buffers(&render_state.device, &render_state.queue, &mut encoder, &paint_jobs, screen);
+		render_state.queue.submit(commands);
 
 		let mut render_pass = RenderPass::new(encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
 			label: Some("eye dome"),
@@ -275,7 +323,16 @@ impl Window {
 			occlusion_query_set: None,
 			timestamp_writes: None,
 		}));
-		renderable.post_process(&mut render_pass);
+		renderable.post_process(state, &mut render_pass);
+
+		for (id, delta) in full_output.textures_delta.set {
+			self.egui_wgpu.update_texture(&render_state.device, &render_state.queue, id, &delta);
+		}
+		for id in full_output.textures_delta.free {
+			self.egui_wgpu.free_texture(&id);
+		}
+		self.egui_wgpu.render(&mut render_pass, &paint_jobs, screen);
+
 		drop(render_pass);
 
 		let buffer = render_state.device.create_buffer(&wgpu::BufferDescriptor {
@@ -313,13 +370,13 @@ impl Window {
 	}
 
 
-	pub fn render(&self, state: &'static impl Has<State>, renderable: &impl RenderEntry) -> Option<f32> {
+	pub fn render<S: Has<State>>(&mut self, state: &'static S, renderable: &mut impl RenderEntry<S>, ui: egui::FullOutput, egui: &egui::Context) -> Option<f32> {
 		let output = self.surface.get_current_texture().ok()?;
 		let view = output
 			.texture
 			.create_view(&wgpu::TextureViewDescriptor::default());
 
-		let res = self.render_to(state, renderable, &view, renderable.background(), 1.0);
+		let res = self.render_to(state, renderable, &view, renderable.background(), 1.0, ui, egui);
 		output.present();
 		Some(res)
 	}

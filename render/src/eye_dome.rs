@@ -200,7 +200,9 @@ impl EyeDome {
 	) -> wgpu::BindGroup {
 		let uniform = EyeDomeUniform {
 			color: [color[X], color[Y], color[Z]],
-			strength,
+			strength: if strength < 0.1 { 0.1 } else {
+				strength
+			}.powi(6),
 		};
 		let buffer = state
 			.device

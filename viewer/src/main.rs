@@ -5,7 +5,6 @@ use thiserror::Error;
 
 mod camera;
 mod game;
-mod interface;
 mod loaded_manager;
 mod lod;
 mod segment;
@@ -33,7 +32,7 @@ fn main() -> Result<(), ViewerError> {
 	let state = State::new(state);
 	let state = Box::leak(Box::new(state));
 
-	let mut game = game::Game::new(state, path, &runner);
+	let mut game = game::World::new(state, path, &runner);
 	runner.run(&mut game)?;
 
 	Ok(())
