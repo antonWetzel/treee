@@ -143,38 +143,31 @@ fn import() -> Result<(), ImporterError> {
 	);
 
 	let (sender, reciever) = crossbeam::channel::bounded(2048);
-	let segment_properties = ["trunk", "crown"];
-	let (segment_values, _) = rayon::join(
+	rayon::join(
 		|| {
 			rayon::ThreadPoolBuilder::new()
 				.num_threads(4)
 				.build()
 				.unwrap()
 				.install(|| {
-					let vec = segments
+					segments
 						.into_par_iter()
 						.enumerate()
-						.map(|(index, segment)| {
+						.for_each(|(index, segment)| {
 							let index = NonZeroU32::new(index as u32 + 1).unwrap();
 							if segment.length() < MIN_SEGMENT_SIZE {
-								return None;
+								return;
 							}
 							let (points, information, mesh) = calculations::calculate(segment.points(), index);
-							sender.send((points, index, mesh)).unwrap();
-
-							Some([information.trunk_height, information.crown_height])
-						})
-						.flatten()
-						.flatten()
-						.collect();
+							sender.send((points, index, mesh, information)).unwrap();
+						});
 					drop(sender);
-					vec
 				})
 		},
 		|| {
 			let mut counter = 0;
-			for (points, segment, mesh) in reciever {
-				Writer::save_segment(&output, segment, &points, &mesh);
+			for (points, segment, mesh, information) in reciever {
+				Writer::save_segment(&output, segment, &points, &mesh, information);
 				for point in points {
 					tree.insert(point, &mut cache);
 					counter += 1;
@@ -191,11 +184,9 @@ fn import() -> Result<(), ImporterError> {
 
 	let stage = Stage::new("Save Project");
 
-	let properties = ["sub_index", "slice", "curve"];
+	let properties = [("sub_index", "Height"), ("slice", "Expansion"), ("curve", "Curvature")];
 	let (tree, project) = tree.flatten(
 		&properties,
-		&segment_properties,
-		segment_values,
 		input.display().to_string(),
 		cache,
 	);

@@ -76,7 +76,7 @@ impl World {
 			state,
 			&project,
 			path.parent().unwrap().to_owned(),
-			&project.properties[0],
+			&project.properties[0].0,
 			&window,
 		);
 
@@ -155,7 +155,7 @@ impl Game {
 			self.state,
 			&self.project,
 			self.path.parent().unwrap().to_owned(),
-			&self.project.properties[0],
+			&self.project.properties[0].0,
 			window,
 		);
 		window.set_title(&self.project.name);
@@ -213,7 +213,7 @@ impl Game {
 						.show_ui(ui, |ui| {
 							let mut changed = false;
 							for prop in &self.project.properties {
-								changed |= ui.selectable_value(&mut self.tree.property, prop.clone(), prop).changed();
+								changed |= ui.selectable_value(&mut self.tree.property, prop.0.clone(), &prop.1).changed();
 							}
 							if changed {
 								self.tree.loaded_manager.change_property(&self.tree.property);
@@ -252,7 +252,14 @@ impl Game {
 						if ui.selectable_label(seg.render_mesh, "Mesh").clicked() {
 							seg.render_mesh = true;
 						};
-					})
+					});
+					ui.end_row();
+
+					for info in &seg.information.values {
+						ui.label(&info.0);
+						ui.label(format!("{}", info.1));
+						ui.end_row();
+					}
 				});
 			}
 			ui.separator();

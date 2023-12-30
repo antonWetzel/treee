@@ -38,10 +38,7 @@ pub struct Project {
 	pub name: String,
 	pub depth: u32,
 	pub root: IndexNode,
-	pub properties: Vec<String>,
-
-	pub segment_properties: Vec<String>,
-	pub segment_values: Vec<Value>,
+	pub properties: Vec<(String, String)>,
 }
 
 
@@ -59,13 +56,6 @@ impl Project {
 			.open(path)
 			.unwrap();
 		bincode::serialize_into(file, self).unwrap();
-	}
-
-
-	pub fn get_segment_values(&self, index: usize) -> &[Value] {
-		// let l = self.segment_properties.len();
-		// &self.segment_values[(index * l)..(index * l + l)]
-		&[]
 	}
 }
 
@@ -154,5 +144,34 @@ where
 			.read_exact(bytemuck::cast_slice_mut(&mut buffer))
 			.unwrap();
 		buffer
+	}
+}
+
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Segment {
+	pub values: Vec<(String, Value)>,
+}
+
+
+impl Segment {
+	pub fn new(values: Vec<(String, Value)>) -> Self {
+		Self { values }
+	}
+
+
+	pub fn save(&self, path: &Path) {
+		let file = std::fs::OpenOptions::new()
+			.write(true)
+			.create(true)
+			.open(path)
+			.unwrap();
+		bincode::serialize_into(file, self).unwrap();
+	}
+
+
+	pub fn load(path: &Path) -> Self {
+		let file = std::fs::OpenOptions::new().read(true).open(path).unwrap();
+		bincode::deserialize_from(file).unwrap()
 	}
 }

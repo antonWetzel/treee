@@ -15,6 +15,8 @@ pub struct Segment {
 	mesh: render::Mesh,
 	pub render_mesh: bool,
 	index: NonZeroU32,
+
+	pub information: common::Segment,
 }
 
 
@@ -38,8 +40,19 @@ impl Segment {
 			render::Mesh::new(state, &data)
 		};
 
+		path.set_file_name("segment.information");
+		let information = common::Segment::load(&path);
+
 		path.set_file_name(format!("{}.data", property));
-		Self { property: Self::load_property(state, &path), point_cloud, path, mesh, render_mesh: false, index }
+		Self {
+			property: Self::load_property(state, &path),
+			point_cloud,
+			path,
+			mesh,
+			render_mesh: false,
+			index,
+			information,
+		}
 	}
 
 

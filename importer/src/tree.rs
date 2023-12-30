@@ -187,9 +187,7 @@ impl Tree {
 
 	pub fn flatten(
 		self,
-		calculators: &[&str],
-		segment_properties: &[&str],
-		segment_values: Vec<common::Value>,
+		calculators: &[(&str, &str)],
 		name: String,
 		mut cache: Cache<Point>,
 	) -> (FlatTree, Project) {
@@ -200,12 +198,7 @@ impl Tree {
 			name,
 			depth,
 			root: tree,
-			properties: calculators.iter().map(|&c| String::from(c)).collect(),
-			segment_properties: segment_properties
-				.iter()
-				.map(|&c| String::from(c))
-				.collect(),
-			segment_values,
+			properties: calculators.iter().map(|&(name, file)| (String::from(name), String::from(file))).collect(),
 		};
 
 		(flat, project)

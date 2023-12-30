@@ -5,7 +5,7 @@ use std::{
 	path::{ Path, PathBuf },
 };
 
-use crate::{ point, ImporterError };
+use crate::{ point, ImporterError, calculations::SegmentInformation };
 
 
 pub struct Writer {
@@ -61,7 +61,7 @@ impl Writer {
 	}
 
 
-	pub fn save_segment(path: &Path, segment: NonZeroU32, data: &[point::Point], mesh: &[u32]) {
+	pub fn save_segment(path: &Path, segment: NonZeroU32, data: &[point::Point], mesh: &[u32], information: SegmentInformation) {
 		let mut path = path.to_path_buf();
 		path.push(format!("segments/{}", segment));
 		std::fs::create_dir_all(&path).unwrap();
@@ -122,5 +122,12 @@ impl Writer {
 			.open(&path)
 			.unwrap();
 		mesh_file.write_all(bytemuck::cast_slice(mesh)).unwrap();
+
+		let information = common::Segment::new([
+			("Trunk".into(), information.trunk_height),
+			("Crown".into(), information.crown_height),
+		].into_iter().collect());
+		path.set_file_name("segment.information");
+		information.save(&path);
 	}
 }

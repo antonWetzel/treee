@@ -198,6 +198,7 @@ impl EyeDome {
 		color: Vector<3, f32>,
 		strength: f32,
 	) -> wgpu::BindGroup {
+		let strength = 1.0 - strength;
 		let uniform = EyeDomeUniform {
 			color: [color[X], color[Y], color[Z]],
 			strength: if strength < 0.1 { 0.1 } else {

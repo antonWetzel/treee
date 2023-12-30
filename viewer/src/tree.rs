@@ -328,7 +328,7 @@ impl Tree {
 			lookup: render::Lookup::new_png(state, lookup_name.data()),
 			environment: render::PointCloudEnvironment::new(state, u32::MIN, u32::MAX, 1.0),
 			segment: None,
-			eye_dome: render::EyeDome::new(state, window.config(), window.depth_texture(), 0.3),
+			eye_dome: render::EyeDome::new(state, window.config(), window.depth_texture(), 0.7),
 			eye_dome_active: true,
 
 			property: String::from(property),
