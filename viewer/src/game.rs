@@ -1,14 +1,14 @@
 use std::{ path::PathBuf, ops::Not };
 
 use common::Project;
-use math::{ Vector, X, Y, Z };
+use math::{ Vector, X, Y };
 use render::egui::Widget;
 
 use crate::{
 	lod,
 	segment::Segment,
 	state::State,
-	tree::{ Tree, DEFAULT_BACKGROUND, LookupName },
+	tree::{ Tree, LookupName },
 	camera,
 };
 
@@ -51,6 +51,8 @@ pub struct Game {
 	time: Time,
 	paused: bool,
 
+	property_options: bool,
+	visual_options: bool,
 	level_of_detail_options: bool,
 	camera_options: bool,
 	quit: bool,
@@ -95,8 +97,10 @@ impl World {
 				keyboard: input::Keyboard::new(),
 				time: Time::new(),
 
+				property_options: false,
 				level_of_detail_options: false,
 				camera_options: false,
+				visual_options: false,
 				quit: false,
 
 				render_time: 0.01,
@@ -158,26 +162,6 @@ impl Game {
 		window.request_redraw();
 	}
 
-	// fn handle_interface_action(&mut self, action: InterfaceAction) {
-	// 	match action {
-	// 		InterfaceAction::Property => {
-	// 			self.tree.next_property(&self.project.properties);
-	// 			let prop = self.tree.current_property(&self.project.properties);
-	// 			if let Some(segment) = &mut self.tree.segment {
-	// 				segment.change_property(self.state, prop);
-	// 			}
-	// 			self.request_redraw();
-	// 		},
-	// 		InterfaceAction::SliceUpdate(min, max) => {
-	// 			self.tree.environment = render::PointCloudEnvironment::new(
-	// 				self.state,
-	// 				(min * u32::MAX as f32) as u32,
-	// 				(max * u32::MAX as f32) as u32,
-	// 				self.tree.environment.scale,
-	// 			);
-	// 			self.window.request_redraw();
-	// 		},
-	// }
 
 	fn raycast(&mut self, window: &render::Window) {
 		if self.tree.segment.is_some() {
@@ -194,17 +178,12 @@ impl Game {
 		let mut segment_path = self.path.parent().unwrap().to_path_buf();
 		segment_path.push("segments");
 		if let Some(segment) = self.tree.raycast(start, direction, &segment_path) {
-			println!("Switch to Segment '{}'", segment);
 			self.tree.segment = Some(Segment::new(
 				self.state,
 				segment_path,
-				self.tree.current_property(&self.project.properties),
+				&self.tree.property,
 				segment,
 			));
-			// self.interface.enable_segment_info(
-			// 	&self.project.segment_properties,
-			// 	self.project.get_segment_values(segment.get() as usize - 1),
-			// );
 			window.request_redraw();
 		}
 	}
@@ -220,11 +199,156 @@ impl Game {
 					self.change_project(window);
 				}
 			});
+			ui.separator();
+
+			ui.with_layout(full, |ui| ui.toggle_value(&mut self.property_options, "Property"));
+			if self.property_options {
+				render::egui::Grid::new("property").num_columns(2).show(ui, |ui| {
+					ui.horizontal(|ui| {
+						ui.set_min_width(100.0);
+						ui.label("Selected");
+					});
+					render::egui::ComboBox::from_id_source("property_selected")
+						.selected_text(&self.tree.property)
+						.show_ui(ui, |ui| {
+							let mut changed = false;
+							for prop in &self.project.properties {
+								changed |= ui.selectable_value(&mut self.tree.property, prop.clone(), prop).changed();
+							}
+							if changed {
+								self.tree.loaded_manager.change_property(&self.tree.property);
+								self.tree.update_lookup(self.state);
+								if let Some(seg) = &mut self.tree.segment {
+									seg.change_property(self.state, &self.tree.property);
+								}
+							}
+						});
+					ui.end_row();
+				});
+			}
+			ui.separator();
+
+			let mut seg = self.tree.segment.is_some();
+			ui.with_layout(full, |ui| {
+				ui.set_enabled(seg);
+				if ui.toggle_value(&mut seg, "Segment").changed() && seg.not() {
+					self.tree.segment = None;
+				}
+			});
+			if let Some(seg) = &mut self.tree.segment {
+				render::egui::Grid::new("segment").num_columns(2).show(ui, |ui| {
+					ui.horizontal(|ui| {
+						ui.set_min_width(100.0);
+						ui.label("ID");
+					});
+					ui.label(format!("{}", seg.index()));
+					ui.end_row();
+
+					ui.label("Display");
+					ui.horizontal(|ui| {
+						if ui.selectable_label(seg.render_mesh.not(), "Points").clicked() {
+							seg.render_mesh = false;
+						};
+						if ui.selectable_label(seg.render_mesh, "Mesh").clicked() {
+							seg.render_mesh = true;
+						};
+					})
+				});
+			}
+			ui.separator();
+
+			ui.with_layout(full, |ui| {
+				ui.toggle_value(&mut self.visual_options, "Visual");
+			});
+			if self.visual_options {
+				render::egui::Grid::new("visiual").num_columns(2).show(ui, |ui| {
+					ui.horizontal(|ui| {
+						ui.set_min_width(100.0);
+						ui.label("Point Size");
+					});
+
+					if ui.add(render::egui::Slider::new(&mut self.tree.environment.scale, 0.0 ..= 2.0)).changed() {
+						self.tree.environment = render::PointCloudEnvironment::new(
+							self.state,
+							self.tree.environment.min,
+							self.tree.environment.max,
+							self.tree.environment.scale,
+						);
+						window.request_redraw();
+					}
+					ui.end_row();
+
+					ui.label("Min");
+					let mut min = self.tree.environment.min as f32 / u32::MAX as f32;
+					if ui.add(render::egui::Slider::new(&mut min, 0.0 ..= 1.0)).changed() {
+						self.tree.environment.min = (min * u32::MAX as f32) as u32;
+						self.tree.environment.max = self.tree.environment.max.max(self.tree.environment.min);
+						self.tree.environment = render::PointCloudEnvironment::new(
+							self.state,
+							self.tree.environment.min,
+							self.tree.environment.max,
+							self.tree.environment.scale,
+						);
+						window.request_redraw();
+					}
+					ui.end_row();
+
+					ui.label("Max");
+					let mut max = self.tree.environment.max as f32 / u32::MAX as f32;
+					if ui.add(render::egui::Slider::new(&mut max, 0.0 ..= 1.0)).changed() {
+						self.tree.environment.max = (max * u32::MAX as f32) as u32;
+						self.tree.environment.min = self.tree.environment.min.min(self.tree.environment.max);
+						self.tree.environment = render::PointCloudEnvironment::new(
+							self.state,
+							self.tree.environment.min,
+							self.tree.environment.max,
+							self.tree.environment.scale,
+						);
+						window.request_redraw();
+					}
+					ui.end_row();
+
+					ui.label("Color Palette");
+					render::egui::ComboBox::from_id_source("color_palette")
+						.selected_text(format!("{:?}", self.tree.lookup_name))
+						.show_ui(ui, |ui| {
+							let mut changed = false;
+							changed |= ui.selectable_value(&mut self.tree.lookup_name, LookupName::Warm, "Warm").changed();
+							changed |= ui.selectable_value(&mut self.tree.lookup_name, LookupName::Cold, "Cold").changed();
+							// changed |= ui.selectable_value(&mut self.tree.lookup_name, LookupName::Wood, "Wood").changed();
+							if changed {
+								self.tree.update_lookup(self.state);
+							}
+						});
+					ui.end_row();
+
+					ui.label("Background");
+					ui.with_layout(full, |ui| {
+						if ui.color_edit_button_rgb(self.tree.background.data_mut()).changed() {
+							window.request_redraw();
+						}
+					});
+					ui.end_row();
+
+					ui.label("Screenshot");
+					if ui.button("Save").clicked() {
+						let Some(path) = rfd::FileDialog::new()
+							.add_filter("PNG", &["png"])
+							.save_file()
+						else {
+							return;
+						};
+						window.screen_shot(self.state, &mut self.tree, path);
+						window.request_redraw()
+					}
+					ui.end_row();
+				});
+			}
+			ui.separator();
 
 			ui.with_layout(full, |ui| {
 				ui.toggle_value(&mut self.tree.eye_dome_active, "Eye Dome")
 			});
-
 			if self.tree.eye_dome_active {
 				render::egui::Grid::new("eye_dome").num_columns(2).show(ui, |ui| {
 					ui.horizontal(|ui| {
@@ -247,57 +371,6 @@ impl Game {
 				});
 			};
 			ui.separator();
-
-			let mut seg = self.tree.segment.is_some();
-			ui.with_layout(full, |ui| {
-				ui.set_enabled(seg);
-				if ui.toggle_value(&mut seg, "Segment").changed() && seg.not() {
-					self.tree.segment = None;
-				}
-			});
-			if let Some(seg) = &self.tree.segment {
-				ui.label(format!("ID: {}", seg.index()));
-			}
-			ui.separator();
-
-			render::egui::Grid::new("other").num_columns(2).show(ui, |ui| {
-				ui.horizontal(|ui| {
-					ui.set_min_width(100.0);
-					ui.label("Point Size");
-				});
-				if ui.add(render::egui::Slider::new(&mut self.tree.environment.scale, 0.0 ..= 2.0)).changed() {
-					self.tree.environment = render::PointCloudEnvironment::new(
-						self.state,
-						self.tree.environment.min,
-						self.tree.environment.max,
-						self.tree.environment.scale,
-					);
-					window.request_redraw();
-				}
-				ui.end_row();
-
-				ui.label("Color Palette");
-				render::egui::ComboBox::from_id_source("color_palette")
-					.selected_text(format!("{:?}", self.tree.lookup_name))
-					.show_ui(ui, |ui| {
-						let mut changed = false;
-						changed |= ui.selectable_value(&mut self.tree.lookup_name, LookupName::Warm, "Warm").changed();
-						changed |= ui.selectable_value(&mut self.tree.lookup_name, LookupName::Cold, "Cold").changed();
-						// changed |= ui.selectable_value(&mut self.tree.lookup_name, LookupName::Wood, "Wood").changed();
-						if changed {
-							self.tree.update_lookup(self.state);
-						}
-					});
-				ui.end_row();
-
-				ui.label("Background");
-				ui.with_layout(full, |ui| {
-					if ui.color_edit_button_rgb(self.tree.background.data_mut()).changed() {
-						window.request_redraw();
-					}
-				});
-				ui.end_row();
-			});
 
 			ui.with_layout(full, |ui| ui.toggle_value(&mut self.level_of_detail_options, "Level of Detail"));
 			if self.level_of_detail_options {
@@ -337,6 +410,7 @@ impl Game {
 					ui.end_row();
 				});
 			}
+			ui.separator();
 
 			ui.with_layout(full, |ui| ui.toggle_value(&mut self.camera_options, "Camera"));
 			if self.camera_options {
@@ -382,6 +456,18 @@ impl Game {
 							}
 						}
 					};
+					ui.end_row();
+
+					ui.label("Position");
+					ui.horizontal(|ui| {
+						if ui.button("Save").clicked() {
+							self.tree.camera.save();
+						}
+						if ui.button("Load").clicked() {
+							self.tree.camera.load(self.state);
+							window.request_redraw();
+						}
+					});
 					ui.end_row();
 				});
 			}
@@ -475,32 +561,6 @@ impl render::Entry for World {
 
 	fn key_changed(&mut self, _window_id: render::WindowId, key: input::KeyCode, key_state: input::State) {
 		self.keyboard.update(key, key_state);
-
-		match (key, key_state) {
-			(input::KeyCode::KeyK, input::State::Pressed) => self.tree.camera.save(),
-			(input::KeyCode::KeyL, input::State::Pressed) => {
-				self.game.tree.camera.load(self.state);
-				self.request_redraw()
-			},
-			(input::KeyCode::KeyP, input::State::Pressed) => {
-				let Some(path) = rfd::FileDialog::new()
-					.add_filter("PNG", &["png"])
-					.save_file()
-				else {
-					return;
-				};
-				// self.window.screen_shot(self.state, &mut self.tree, path);
-				self.request_redraw()
-			},
-			(input::KeyCode::KeyO, input::State::Pressed) => {
-				if let Some(segment) = &mut self.tree.segment {
-					segment.render_mesh = segment.render_mesh.not();
-					self.request_redraw();
-				}
-			}
-
-			_ => { },
-		}
 	}
 
 

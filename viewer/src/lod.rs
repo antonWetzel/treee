@@ -20,27 +20,12 @@ pub enum Checker {
 
 
 impl Mode {
-	pub fn change_detail(&mut self, amount: f32) {
-		match self {
-			Mode::Normal { threshold, .. } => *threshold *= 1.0 + amount / 10.0,
-			Mode::Auto { .. } => { },
-			Mode::Level { target, max } => {
-				if amount < 0.0 {
-					*target -= (*target > 0) as usize
-				} else {
-					*target += (*target < *max) as usize
-				}
-			},
-		}
-	}
-
-
-	pub fn new_auto(max_level: usize) -> Self {
+	pub fn new_auto(_max_level: usize) -> Self {
 		Self::Auto { threshold: 1.0 }
 	}
 
 
-	pub fn new_normal(max_level: usize) -> Self {
+	pub fn new_normal(_max_level: usize) -> Self {
 		Self::Normal { threshold: 1.0 }
 	}
 

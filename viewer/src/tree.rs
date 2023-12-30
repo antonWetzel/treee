@@ -22,6 +22,7 @@ pub const DEFAULT_BACKGROUND: Vector<3, f32> = Vector::new([0.1, 0.2, 0.3]);
 pub enum LookupName {
 	Warm,
 	Cold,
+	#[allow(dead_code)]
 	Wood,
 }
 
@@ -50,7 +51,7 @@ pub struct Tree {
 	pub eye_dome: render::EyeDome,
 	pub eye_dome_active: bool,
 
-	property_index: usize,
+	pub property: String,
 }
 
 
@@ -325,29 +326,18 @@ impl Tree {
 			loaded_manager: LoadedManager::new(state, path, property),
 			lookup_name,
 			lookup: render::Lookup::new_png(state, lookup_name.data()),
-			property_index: 0,
 			environment: render::PointCloudEnvironment::new(state, u32::MIN, u32::MAX, 1.0),
 			segment: None,
 			eye_dome: render::EyeDome::new(state, window.config(), window.depth_texture(), 0.3),
 			eye_dome_active: true,
+
+			property: String::from(property),
 		}
 	}
 
 
 	pub fn update_lookup(&mut self, state: &'static State) {
 		self.lookup = render::Lookup::new_png(state, self.lookup_name.data());
-	}
-
-
-	pub fn next_property(&mut self, properties: &[String]) {
-		self.property_index = (self.property_index + 1) % properties.len();
-		self.loaded_manager
-			.change_property(&properties[self.property_index], self.property_index);
-	}
-
-
-	pub fn current_property<'a>(&self, properties: &'a [String]) -> &'a str {
-		&properties[self.property_index]
 	}
 
 
@@ -457,7 +447,7 @@ impl render::RenderEntry<State> for Tree {
 	}
 
 
-	fn post_process<'a>(&'a mut self, state: &'a State, render_pass: &mut render::RenderPass<'a>) {
+	fn post_process<'a>(&'a mut self, _state: &'a State, render_pass: &mut render::RenderPass<'a>) {
 		if self.eye_dome_active {
 			render_pass.render(&self.eye_dome, ());
 		}

@@ -86,16 +86,6 @@ impl Camera {
 	}
 
 
-	pub fn change_lod(&mut self, max_level: usize) {
-		self.lod = match &self.lod {
-			lod::Mode::Normal { .. } => lod::Mode::Auto { threshold: 1.0 },
-			lod::Mode::Auto { .. } => lod::Mode::Level { target: 0, max: max_level },
-			lod::Mode::Level { .. } => lod::Mode::Normal { threshold: 1.0 },
-		};
-		println!("Changed LOD to {:?}", self.lod);
-	}
-
-
 	pub fn time(&mut self, render_time: f32) -> bool {
 		match &mut self.lod {
 			lod::Mode::Auto { threshold } => {
@@ -118,7 +108,7 @@ impl Camera {
 
 	pub fn first_person(&self) -> Controller {
 		match &self.controller {
-			c @ Controller::FirstPerson { sensitivity } => *c,
+			c @ Controller::FirstPerson { .. } => *c,
 			Controller::Orbital { offset } => Controller::FirstPerson { sensitivity: *offset },
 		}
 	}
@@ -127,7 +117,7 @@ impl Camera {
 	pub fn orbital(&self) -> Controller {
 		match &self.controller {
 			Controller::FirstPerson { sensitivity } => Controller::Orbital { offset: *sensitivity },
-			c @ Controller::Orbital { offset } => *c,
+			c @ Controller::Orbital { .. } => *c,
 		}
 	}
 

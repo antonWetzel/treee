@@ -115,8 +115,8 @@ impl LoadedManager {
 	}
 
 
-	pub fn change_property(&mut self, name: &str, index: usize) {
-		self.property_index = index;
+	pub fn change_property(&mut self, name: &str) {
+		self.property_index = self.property_index.overflowing_add(1).0;
 		self.property_path.set_file_name(format!("{}.data", name));
 		for sender in &self.update_senders {
 			sender

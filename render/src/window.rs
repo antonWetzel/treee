@@ -151,7 +151,7 @@ impl Window {
 	}
 
 
-	pub fn screen_shot<S: Has<State>>(&mut self, state: &'static S, renderable: &mut impl RenderEntry<S>, path: PathBuf, ui: egui::FullOutput, egui: &egui::Context) {
+	pub fn screen_shot<S: Has<State>>(&mut self, state: &'static S, renderable: &mut impl RenderEntry<S>, path: PathBuf) {
 		fn ceil_to_multiple(value: u32, base: u32) -> u32 {
 			(value + (base - 1)) / base * base
 		}
@@ -185,7 +185,7 @@ impl Window {
 		let texture = render_state.device.create_texture(&texture_desc);
 		let view = texture.create_view(&Default::default());
 
-		self.render_to(state, renderable, &view, renderable.background(), 0.0, ui, egui);
+		self.render_to(state, renderable, &view, renderable.background(), 0.0, (&[], &[], &[]));
 
 		let u32_size = std::mem::size_of::<u32>() as u32;
 		let texture_width = ceil_to_multiple(texture_width, 256 / 4);
@@ -251,8 +251,12 @@ impl Window {
 		view: &wgpu::TextureView,
 		background: Vector<3, f32>,
 		alpha: f32,
-		ui: egui::FullOutput,
-		egui: &egui::Context,
+
+		ui: (
+			&[egui::ClippedPrimitive],
+			&[(egui::TextureId, egui::epaint::ImageDelta)],
+			&[egui::TextureId],
+		),
 	) -> f32 {
 		let render_state: &State = state.get();
 		let set = render_state
@@ -296,17 +300,18 @@ impl Window {
 		renderable.render(state, &mut render_pass);
 		drop(render_pass);
 
-		let full_output = ui;
-
-		self.egui_winit.handle_platform_output(&self.window, full_output.platform_output);
-		let paint_jobs = egui.tessellate(full_output.shapes, full_output.pixels_per_point);
 		let size = self.window.inner_size();
 		let screen = &egui_wgpu::renderer::ScreenDescriptor {
 			size_in_pixels: [size.width, size.height],
 			pixels_per_point: 1.0,
 		};
-
-		let commands = self.egui_wgpu.update_buffers(&render_state.device, &render_state.queue, &mut encoder, &paint_jobs, screen);
+		for (id, delta) in ui.1 {
+			self.egui_wgpu.update_texture(&render_state.device, &render_state.queue, *id, delta);
+		}
+		for id in ui.2 {
+			self.egui_wgpu.free_texture(id);
+		}
+		let commands = self.egui_wgpu.update_buffers(&render_state.device, &render_state.queue, &mut encoder, ui.0, screen);
 		render_state.queue.submit(commands);
 
 		let mut render_pass = RenderPass::new(encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -325,13 +330,7 @@ impl Window {
 		}));
 		renderable.post_process(state, &mut render_pass);
 
-		for (id, delta) in full_output.textures_delta.set {
-			self.egui_wgpu.update_texture(&render_state.device, &render_state.queue, id, &delta);
-		}
-		for id in full_output.textures_delta.free {
-			self.egui_wgpu.free_texture(&id);
-		}
-		self.egui_wgpu.render(&mut render_pass, &paint_jobs, screen);
+		self.egui_wgpu.render(&mut render_pass, ui.0, screen);
 
 		drop(render_pass);
 
@@ -376,7 +375,10 @@ impl Window {
 			.texture
 			.create_view(&wgpu::TextureViewDescriptor::default());
 
-		let res = self.render_to(state, renderable, &view, renderable.background(), 1.0, ui, egui);
+		self.egui_winit.handle_platform_output(&self.window, ui.platform_output);
+		let paint_jobs = egui.tessellate(ui.shapes, ui.pixels_per_point);
+
+		let res = self.render_to(state, renderable, &view, renderable.background(), 1.0, (&paint_jobs, &ui.textures_delta.set, &ui.textures_delta.free));
 		output.present();
 		Some(res)
 	}
