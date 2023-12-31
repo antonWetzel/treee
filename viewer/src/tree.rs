@@ -51,7 +51,7 @@ pub struct Tree {
 	pub eye_dome: render::EyeDome,
 	pub eye_dome_active: bool,
 
-	pub property: String,
+	pub property: (String, String),
 }
 
 
@@ -317,13 +317,13 @@ impl Node {
 
 
 impl Tree {
-	pub fn new(state: &'static State, project: &Project, path: PathBuf, property: &str, window: &Window) -> Self {
+	pub fn new(state: &'static State, project: &Project, path: PathBuf, property: (String, String), window: &Window) -> Self {
 		let lookup_name = LookupName::Warm;
 		Self {
 			background: DEFAULT_BACKGROUND,
 			camera: camera::Camera::new(state, window.get_aspect()),
 			root: Node::new(&project.root),
-			loaded_manager: LoadedManager::new(state, path, property),
+			loaded_manager: LoadedManager::new(state, path, &property.0),
 			lookup_name,
 			lookup: render::Lookup::new_png(state, lookup_name.data()),
 			environment: render::PointCloudEnvironment::new(state, u32::MIN, u32::MAX, 1.0),
@@ -331,7 +331,7 @@ impl Tree {
 			eye_dome: render::EyeDome::new(state, window.config(), window.depth_texture(), 0.7),
 			eye_dome_active: true,
 
-			property: String::from(property),
+			property,
 		}
 	}
 

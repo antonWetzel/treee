@@ -27,32 +27,7 @@ Point cloud importer and viewer with focus on forest scans.
 - `cargo run --bin=viewer (--release)`
 	- select project file
 		- `project.epc` in output folder
-	- controls (work in progress)
-		- <kbd>wasd</kbd>/<kbd>↑←↓→</kbd>move camera
-		- <kbd>left mouse button</kbd> pan camera
-		- `Folder`: open project file
-		- `Bucket`: background color
-			- click for reset
-			- popup sliders for fine control
-		- `Color Palette`: toggle visualization color palette
-			- warm (default)
-			- cold
-			- green/brown
-		- `Information`: change visualization property
-			- height (default)
-			- inverse height
-		- `Invert`: eye dome lightning
-			- click to toggle
-			- popup slider for strength or color
-		- `Camera`: toggle camera controller
-			- orbital controls (default)
-			- first person
-		- `Layers`: level of detail
-			- click to change
-				- based on distance (default)
-				- equal level for all
-			- popup buttons to increase or decrease quality
-		- `Box`: segment reset
-			- click to reset selected Segment
-		- `Sliders`: view slice
-			- popup sliders to set min and max value
+	- UI for settings
+	- navigate with <kbd>wasd</kbd> or <kbd>↑←↓→</kbd>
+	- left mouse button to pan the camera
+	- click to select segment

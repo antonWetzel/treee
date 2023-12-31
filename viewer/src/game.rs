@@ -2,7 +2,6 @@ use std::{ path::PathBuf, ops::Not };
 
 use common::Project;
 use math::{ Vector, X, Y };
-use render::egui::Widget;
 
 use crate::{
 	lod,
@@ -76,7 +75,7 @@ impl World {
 			state,
 			&project,
 			path.parent().unwrap().to_owned(),
-			&project.properties[0].0,
+			project.properties[0].clone(),
 			&window,
 		);
 
@@ -155,7 +154,7 @@ impl Game {
 			self.state,
 			&self.project,
 			self.path.parent().unwrap().to_owned(),
-			&self.project.properties[0].0,
+			self.project.properties[0].clone(),
 			window,
 		);
 		window.set_title(&self.project.name);
@@ -181,7 +180,7 @@ impl Game {
 			self.tree.segment = Some(Segment::new(
 				self.state,
 				segment_path,
-				&self.tree.property,
+				&self.tree.property.0,
 				segment,
 			));
 			window.request_redraw();
@@ -192,38 +191,48 @@ impl Game {
 
 impl Game {
 	fn ui(&mut self, ctx: &render::egui::Context, window: &mut render::Window) {
-		let full = render::egui::Layout::top_down_justified(render::egui::Align::Center);
-		render::egui::SidePanel::left("left").resizable(false).show(ctx, |ui| {
-			ui.with_layout(full, |ui| {
-				if ui.button("Load Project").clicked() {
-					self.change_project(window);
-				}
-			});
+		const HEIGHT: f32 = 10.0;
+		const LEFT: f32 = 100.0;
+		const RIGHT: f32 = 150.0;
+
+
+		use render::egui::*;
+
+
+		let full = Layout::top_down_justified(Align::Center);
+		SidePanel::left("left").resizable(false).default_width(275.0).show(ctx, |ui| {
+			if ui.add_sized([ui.available_width(), HEIGHT], Button::new("Load Project")).clicked() {
+				self.change_project(window);
+			};
 			ui.separator();
 
-			ui.with_layout(full, |ui| ui.toggle_value(&mut self.property_options, "Property"));
+			if ui.add_sized([ui.available_width(), HEIGHT], SelectableLabel::new(self.property_options, "Property")).clicked() {
+				self.property_options = self.property_options.not();
+			};
 			if self.property_options {
-				render::egui::Grid::new("property").num_columns(2).show(ui, |ui| {
-					ui.horizontal(|ui| {
-						ui.set_min_width(100.0);
-						ui.label("Selected");
-					});
-					render::egui::ComboBox::from_id_source("property_selected")
-						.selected_text(&self.tree.property)
+				ui.horizontal(|ui| {
+					ui.add_sized([LEFT, HEIGHT], Label::new("Selected"));
+					ComboBox::from_id_source("property_selected")
+						.width(RIGHT)
+						.selected_text(&self.tree.property.1)
 						.show_ui(ui, |ui| {
 							let mut changed = false;
 							for prop in &self.project.properties {
-								changed |= ui.selectable_value(&mut self.tree.property, prop.0.clone(), &prop.1).changed();
+								changed |= ui.selectable_value(&mut self.tree.property.0, prop.0.clone(), &prop.1).changed();
 							}
 							if changed {
-								self.tree.loaded_manager.change_property(&self.tree.property);
+								for prop in &self.project.properties {
+									if prop.0 == self.tree.property.0 {
+										self.tree.property.1 = prop.1.clone();
+									}
+								}
+								self.tree.loaded_manager.change_property(&self.tree.property.0);
 								self.tree.update_lookup(self.state);
 								if let Some(seg) = &mut self.tree.segment {
-									seg.change_property(self.state, &self.tree.property);
+									seg.change_property(self.state, &self.tree.property.0);
 								}
 							}
 						});
-					ui.end_row();
 				});
 			}
 			ui.separator();
@@ -236,45 +245,37 @@ impl Game {
 				}
 			});
 			if let Some(seg) = &mut self.tree.segment {
-				render::egui::Grid::new("segment").num_columns(2).show(ui, |ui| {
-					ui.horizontal(|ui| {
-						ui.set_min_width(100.0);
-						ui.label("ID");
-					});
-					ui.label(format!("{}", seg.index()));
-					ui.end_row();
+				ui.horizontal(|ui| {
+					ui.add_sized([LEFT, HEIGHT], Label::new("ID"));
+					ui.add_sized([RIGHT, HEIGHT], Label::new(format!("{}", seg.index())));
+				});
 
-					ui.label("Display");
-					ui.horizontal(|ui| {
-						if ui.selectable_label(seg.render_mesh.not(), "Points").clicked() {
-							seg.render_mesh = false;
-						};
-						if ui.selectable_label(seg.render_mesh, "Mesh").clicked() {
-							seg.render_mesh = true;
-						};
-					});
-					ui.end_row();
-
-					for info in &seg.information.values {
-						ui.label(&info.0);
-						ui.label(format!("{}", info.1));
-						ui.end_row();
+				ui.horizontal(|ui| {
+					ui.add_sized([LEFT, HEIGHT], Label::new("Display"));
+					if ui.add_sized([ui.available_width() / 2.0, HEIGHT], SelectableLabel::new(seg.render_mesh.not(), "Points")).clicked() {
+						seg.render_mesh = false;
+					}
+					if ui.add_sized([ui.available_width(), HEIGHT], SelectableLabel::new(seg.render_mesh, "Mesh")).clicked() {
+						seg.render_mesh = true;
 					}
 				});
+
+				for info in &seg.information.values {
+					ui.horizontal(|ui| {
+						ui.add_sized([LEFT, HEIGHT], Label::new(&info.0));
+						ui.add_sized([LEFT, HEIGHT], Label::new(format!("{}", info.1)));
+					});
+				}
 			}
 			ui.separator();
 
-			ui.with_layout(full, |ui| {
-				ui.toggle_value(&mut self.visual_options, "Visual");
-			});
+			if ui.add_sized([ui.available_width(), HEIGHT], SelectableLabel::new(self.visual_options, "Visual")).clicked() {
+				self.visual_options = self.visual_options.not();
+			}
 			if self.visual_options {
-				render::egui::Grid::new("visiual").num_columns(2).show(ui, |ui| {
-					ui.horizontal(|ui| {
-						ui.set_min_width(100.0);
-						ui.label("Point Size");
-					});
-
-					if ui.add(render::egui::Slider::new(&mut self.tree.environment.scale, 0.0 ..= 2.0)).changed() {
+				ui.horizontal(|ui| {
+					ui.add_sized([LEFT, HEIGHT], Label::new("Point Size"));
+					if ui.add_sized([RIGHT, HEIGHT], Slider::new(&mut self.tree.environment.scale, 0.0 ..= 2.0)).changed() {
 						self.tree.environment = render::PointCloudEnvironment::new(
 							self.state,
 							self.tree.environment.min,
@@ -283,11 +284,12 @@ impl Game {
 						);
 						window.request_redraw();
 					}
-					ui.end_row();
+				});
 
-					ui.label("Min");
+				ui.horizontal(|ui| {
+					ui.add_sized([LEFT, HEIGHT], Label::new("Min"));
 					let mut min = self.tree.environment.min as f32 / u32::MAX as f32;
-					if ui.add(render::egui::Slider::new(&mut min, 0.0 ..= 1.0)).changed() {
+					if ui.add_sized([RIGHT, HEIGHT], Slider::new(&mut min, 0.0 ..= 1.0)).changed() {
 						self.tree.environment.min = (min * u32::MAX as f32) as u32;
 						self.tree.environment.max = self.tree.environment.max.max(self.tree.environment.min);
 						self.tree.environment = render::PointCloudEnvironment::new(
@@ -298,11 +300,12 @@ impl Game {
 						);
 						window.request_redraw();
 					}
-					ui.end_row();
+				});
 
-					ui.label("Max");
+				ui.horizontal(|ui| {
+					ui.add_sized([LEFT, HEIGHT], Label::new("Max"));
 					let mut max = self.tree.environment.max as f32 / u32::MAX as f32;
-					if ui.add(render::egui::Slider::new(&mut max, 0.0 ..= 1.0)).changed() {
+					if ui.add_sized([RIGHT, HEIGHT], Slider::new(&mut max, 0.0 ..= 1.0)).changed() {
 						self.tree.environment.max = (max * u32::MAX as f32) as u32;
 						self.tree.environment.min = self.tree.environment.min.min(self.tree.environment.max);
 						self.tree.environment = render::PointCloudEnvironment::new(
@@ -313,11 +316,13 @@ impl Game {
 						);
 						window.request_redraw();
 					}
-					ui.end_row();
+				});
 
-					ui.label("Color Palette");
-					render::egui::ComboBox::from_id_source("color_palette")
+				ui.horizontal(|ui| {
+					ui.add_sized([LEFT, HEIGHT], Label::new("Color Palette"));
+					ComboBox::from_id_source("color_palette")
 						.selected_text(format!("{:?}", self.tree.lookup_name))
+						.width(RIGHT)
 						.show_ui(ui, |ui| {
 							let mut changed = false;
 							changed |= ui.selectable_value(&mut self.tree.lookup_name, LookupName::Warm, "Warm").changed();
@@ -327,18 +332,19 @@ impl Game {
 								self.tree.update_lookup(self.state);
 							}
 						});
-					ui.end_row();
+				});
 
-					ui.label("Background");
-					ui.with_layout(full, |ui| {
-						if ui.color_edit_button_rgb(self.tree.background.data_mut()).changed() {
-							window.request_redraw();
-						}
-					});
-					ui.end_row();
+				ui.horizontal(|ui| {
+					ui.add_sized([LEFT, HEIGHT], Label::new("Background"));
+					ui.style_mut().spacing.interact_size.x = ui.available_width();
+					if ui.color_edit_button_rgb(self.tree.background.data_mut()).changed() {
+						window.request_redraw();
+					}
+				});
 
-					ui.label("Screenshot");
-					if ui.button("Save").clicked() {
+				ui.horizontal(|ui| {
+					ui.add_sized([LEFT, HEIGHT], Label::new("Screenshot"));
+					if ui.add_sized([RIGHT, HEIGHT], Button::new("Save").min_size(ui.available_size())).clicked() {
 						let Some(path) = rfd::FileDialog::new()
 							.add_filter("PNG", &["png"])
 							.save_file()
@@ -348,7 +354,6 @@ impl Game {
 						window.screen_shot(self.state, &mut self.tree, path);
 						window.request_redraw()
 					}
-					ui.end_row();
 				});
 			}
 			ui.separator();
@@ -357,36 +362,31 @@ impl Game {
 				ui.toggle_value(&mut self.tree.eye_dome_active, "Eye Dome")
 			});
 			if self.tree.eye_dome_active {
-				render::egui::Grid::new("eye_dome").num_columns(2).show(ui, |ui| {
-					ui.horizontal(|ui| {
-						ui.set_min_width(100.0);
-						ui.label("Strength");
-					});
-					if ui.add(render::egui::Slider::new(&mut self.tree.eye_dome.strength, 0.0 ..= 1.0)).changed() {
+				ui.horizontal(|ui| {
+					ui.add_sized([LEFT, HEIGHT], Label::new("Strength"));
+					if ui.add_sized([RIGHT, HEIGHT], Slider::new(&mut self.tree.eye_dome.strength, 0.0 ..= 1.0)).changed() {
 						self.tree.eye_dome.update_settings(self.state);
 					}
-					ui.end_row();
+				});
 
-					ui.label("Color");
-					ui.with_layout(full, |ui| {
-						if ui.color_edit_button_rgb(self.tree.eye_dome.color.data_mut()).changed() {
-							self.tree.eye_dome.update_settings(self.state);
-						}
-					});
-
-					ui.end_row();
+				ui.horizontal(|ui| {
+					ui.add_sized([LEFT, HEIGHT], Label::new("Color"));
+					ui.style_mut().spacing.interact_size.x = ui.available_size().x;
+					if ui.color_edit_button_rgb(self.tree.eye_dome.color.data_mut()).changed() {
+						self.tree.eye_dome.update_settings(self.state);
+					}
 				});
 			};
 			ui.separator();
 
-			ui.with_layout(full, |ui| ui.toggle_value(&mut self.level_of_detail_options, "Level of Detail"));
+			if ui.add_sized([ui.available_width(), HEIGHT], SelectableLabel::new(self.level_of_detail_options, "Level of Detail")).clicked() {
+				self.level_of_detail_options = self.level_of_detail_options.not();
+			}
 			if self.level_of_detail_options {
-				render::egui::Grid::new("level_of_detail_grid").num_columns(2).show(ui, |ui| {
-					ui.horizontal(|ui| {
-						ui.set_min_width(100.0);
-						ui.label("Mode");
-					});
-					render::egui::ComboBox::from_id_source("level_of_detail_mode")
+				ui.horizontal(|ui| {
+					ui.add_sized([LEFT, HEIGHT], Label::new("Mode"));
+					ComboBox::from_id_source("level_of_detail_mode")
+						.width(RIGHT)
 						.selected_text(match self.tree.camera.lod {
 							lod::Mode::Auto { .. } => "Automatic",
 							lod::Mode::Normal { .. } => "Normal",
@@ -403,30 +403,31 @@ impl Game {
 								self.project.depth as usize,
 							), "Level");
 						});
-					ui.end_row();
+				});
 
-					ui.label("Precision");
+				ui.horizontal(|ui| {
+					ui.add_sized([LEFT, HEIGHT], Label::new("Precision"));
+
 					match &mut self.tree.camera.lod {
 						lod::Mode::Auto { threshold } => {
 							ui.set_enabled(false);
-							render::egui::Slider::new(threshold, 0.0 ..= 10.0).ui(ui)
+							ui.add_sized([RIGHT, HEIGHT], Slider::new(threshold, 0.0 ..= 10.0));
 						}
-						lod::Mode::Normal { threshold } => render::egui::Slider::new(threshold, 0.0 ..= 10.0).ui(ui),
-						lod::Mode::Level { target, max } => render::egui::Slider::new(target, 0 ..= *max).ui(ui),
+						lod::Mode::Normal { threshold } => _ = ui.add_sized([RIGHT, HEIGHT], Slider::new(threshold, 0.0 ..= 10.0)),
+						lod::Mode::Level { target, max } => _ = ui.add_sized([RIGHT, HEIGHT], Slider::new(target, 0 ..= *max)),
 					};
-					ui.end_row();
 				});
 			}
 			ui.separator();
 
-			ui.with_layout(full, |ui| ui.toggle_value(&mut self.camera_options, "Camera"));
+			if ui.add_sized([ui.available_width(), HEIGHT], SelectableLabel::new(self.camera_options, "Camera")).clicked() {
+				self.camera_options = self.camera_options.not();
+			};
 			if self.camera_options {
-				render::egui::Grid::new("camera_grid").num_columns(2).show(ui, |ui| {
-					ui.horizontal(|ui| {
-						ui.set_min_width(100.0);
-						ui.label("Controller");
-					});
-					render::egui::ComboBox::from_id_source("camera_controller")
+				ui.horizontal(|ui| {
+					ui.add_sized([LEFT, HEIGHT], Label::new("Controller"));
+					ComboBox::from_id_source("camera_controller")
+						.width(RIGHT)
 						.selected_text(match self.tree.camera.controller {
 							camera::Controller::Orbital { .. } => "Orbital",
 							camera::Controller::FirstPerson { .. } => "First Person",
@@ -437,17 +438,17 @@ impl Game {
 							let c = self.tree.camera.first_person();
 							ui.selectable_value(&mut self.tree.camera.controller, c, "First Person");
 						});
-					ui.end_row();
+				});
 
-					match self.tree.camera.controller {
-						camera::Controller::Orbital { .. } => ui.label("Distance"),
-						camera::Controller::FirstPerson { .. } => ui.label("Speed"),
-					};
-
+				ui.horizontal(|ui| {
+					ui.add_sized([LEFT, HEIGHT], Label::new(match self.tree.camera.controller {
+						camera::Controller::Orbital { .. } => "Distance",
+						camera::Controller::FirstPerson { .. } => "Speed",
+					}));
 					match &mut self.tree.camera.controller {
 						camera::Controller::Orbital { offset } => {
 							let old = *offset;
-							render::egui::DragValue::new(offset).ui(ui);
+							ui.add_sized([RIGHT, HEIGHT], DragValue::new(offset));
 							if *offset < 0.1 {
 								*offset = 0.1;
 							}
@@ -457,25 +458,23 @@ impl Game {
 							}
 						},
 						camera::Controller::FirstPerson { sensitivity } => {
-							render::egui::DragValue::new(sensitivity).ui(ui);
+							ui.add_sized([RIGHT, HEIGHT], DragValue::new(sensitivity));
 							if *sensitivity < 0.01 {
 								*sensitivity = 0.01;
 							}
 						}
 					};
-					ui.end_row();
+				});
 
-					ui.label("Position");
-					ui.horizontal(|ui| {
-						if ui.button("Save").clicked() {
-							self.tree.camera.save();
-						}
-						if ui.button("Load").clicked() {
-							self.tree.camera.load(self.state);
-							window.request_redraw();
-						}
-					});
-					ui.end_row();
+				ui.horizontal_top(|ui| {
+					ui.add_sized([LEFT, HEIGHT], Label::new("Position"));
+					if ui.add_sized([ui.available_width() / 2.0, HEIGHT], Button::new("Save")).clicked() {
+						self.tree.camera.save();
+					}
+					if ui.add_sized([ui.available_width(), HEIGHT], Button::new("Load")).clicked() {
+						self.tree.camera.load(self.state);
+						window.request_redraw();
+					}
 				});
 			}
 		});
