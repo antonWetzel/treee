@@ -218,7 +218,7 @@ impl Node {
 
 
 	pub fn update(&mut self, view_checker: lod::Checker, camera: &camera::Camera, loaded_manager: &mut LoadedManager) {
-		if !camera.inside_frustrum(self.corner, self.size) {
+		if !camera.inside_moved_frustrum(self.corner, self.size, -10.0) {
 			self.clear(loaded_manager);
 			return;
 		}
@@ -232,10 +232,11 @@ impl Node {
 				} else {
 					if !loaded_manager.exist(self.index) {
 						loaded_manager.request(self.index);
-					}
-					let view_checker = view_checker.level_down();
-					for child in children.iter_mut().flatten() {
-						child.update(view_checker, camera, loaded_manager);
+					} else {
+						let view_checker = view_checker.level_down();
+						for child in children.iter_mut().flatten() {
+							child.update(view_checker, camera, loaded_manager);
+						}
 					}
 				}
 			},

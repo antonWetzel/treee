@@ -57,33 +57,36 @@ impl Camera3D {
 
 
 	pub fn inside(&self, corner: Vector<3, f32>, size: f32, transform: Transform<3, f32>) -> bool {
-		// todo: not perfect, maybe use 4 planes
-		let matrix = self.projection() * transform.inverse().as_matrix();
-		let mut points = [
-			corner + [0.0, 0.0, 0.0].into(),
-			corner + [0.0, 0.0, size].into(),
-			corner + [0.0, size, 0.0].into(),
-			corner + [0.0, size, size].into(),
-			corner + [size, 0.0, 0.0].into(),
-			corner + [size, 0.0, size].into(),
-			corner + [size, size, 0.0].into(),
-			corner + [size, size, size].into(),
-		]
-			.map(|point| matrix * Vector::new([point[X], point[Y], point[Z], 1.0]))
-			.into_iter()
-			.filter(|point| point[W] >= 0.0)
-			.map(|point| Vector::new([point[X], point[Y], point[Z]]) / point[W]);
+		let y = (self.fovy() / 2.0).tan();
+		let x = y * self.aspect();
 
-		let Some(mut max) = points.next() else {
-			return false
-		};
-		let mut min = max;
-		for point in points {
-			max = max.max(point);
-			min = min.min(point);
+		let planes = [
+			Vector::new([-1.0, 0.0, x]),
+			Vector::new([1.0, 0.0, x]),
+			Vector::new([0.0, -1.0, y]),
+			Vector::new([0.0, 1.0, y]),
+		];
+
+		let t = transform.inverse();
+		let points = [
+			[0.0, 0.0, 0.0].into(),
+			[0.0, 0.0, size].into(),
+			[0.0, size, 0.0].into(),
+			[0.0, size, size].into(),
+			[size, 0.0, 0.0].into(),
+			[size, 0.0, size].into(),
+			[size, size, 0.0].into(),
+			[size, size, size].into(),
+		]
+			.map(|point| corner + point)
+			.map(|point| t * point);
+
+		for plane in planes {
+			if points.iter().copied().all(|p| p.dot(plane) > 0.0) {
+				return false;
+			}
 		}
-		max[X] >= -1.0 && max[Y] >= -1.0 && max[Z] >= -1.0
-			&& min[X] <= 1.0 && min[Y] <= 1.0 && min[Z] <= 1.0
+		true
 	}
 }
 
