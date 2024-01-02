@@ -5,7 +5,7 @@ pub struct State {
 	state: render::State,
 	pointcloud: render::PointCloudState,
 	mesh: render::MeshState,
-	ui: render::UIState,
+	lines: render::LinesState,
 }
 
 
@@ -30,9 +30,9 @@ impl Has<render::MeshState> for State {
 }
 
 
-impl Has<render::UIState> for State {
-	fn get(&self) -> &render::UIState {
-		&self.ui
+impl Has<render::LinesState> for State {
+	fn get(&self) -> &render::LinesState {
+		&self.lines
 	}
 }
 
@@ -42,7 +42,7 @@ impl State {
 		Self {
 			pointcloud: render::PointCloudState::new(&state),
 			mesh: render::MeshState::new(&state),
-			ui: render::UIState::new(&state),
+			lines: render::LinesState::new(&state),
 			state,
 		}
 	}

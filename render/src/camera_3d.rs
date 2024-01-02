@@ -57,8 +57,9 @@ impl Camera3D {
 
 
 	pub fn inside(&self, corner: Vector<3, f32>, size: f32, transform: Transform<3, f32>) -> bool {
+		// todo: not perfect, maybe use 4 planes
 		let matrix = self.projection() * transform.inverse().as_matrix();
-		let points = [
+		let mut points = [
 			corner + [0.0, 0.0, 0.0].into(),
 			corner + [0.0, 0.0, size].into(),
 			corner + [0.0, size, 0.0].into(),
@@ -69,15 +70,20 @@ impl Camera3D {
 			corner + [size, size, size].into(),
 		]
 			.map(|point| matrix * Vector::new([point[X], point[Y], point[Z], 1.0]))
+			.into_iter()
+			.filter(|point| point[W] >= 0.0)
 			.map(|point| Vector::new([point[X], point[Y], point[Z]]) / point[W]);
 
-		let mut max = points[0];
-		let mut min = points[0];
-		for point in points.into_iter().skip(1) {
+		let Some(mut max) = points.next() else {
+			return false
+		};
+		let mut min = max;
+		for point in points {
 			max = max.max(point);
 			min = min.min(point);
 		}
-		max[X] >= -1.0 && max[Y] >= -1.0 && max[Z] >= -1.0 && min[X] <= 1.0 && min[Y] <= 1.0 && min[Z] <= 1.0
+		max[X] >= -1.0 && max[Y] >= -1.0 && max[Z] >= -1.0
+			&& min[X] <= 1.0 && min[Y] <= 1.0 && min[Z] <= 1.0
 	}
 }
 

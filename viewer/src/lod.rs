@@ -60,7 +60,7 @@ impl Checker {
 				let rad = size * 0.5;
 				let pos = corner + Vector::new([rad, rad, rad]);
 				let dist = (camera.position() - pos).length() - (3.0 * rad * rad).sqrt();
-				let dist = if dist < 0.0 { 0.0 } else { dist };
+				// let dist = if dist < 0.0 { 0.0 } else { dist };
 				(dist / (size * size)) > threshold
 			},
 		}

@@ -9,9 +9,9 @@ mod point_cloud;
 mod render_pass;
 mod state;
 mod texture;
-mod ui;
 mod vertex_2d;
 mod window;
+mod lines;
 
 
 pub use camera_3d::*;
@@ -26,9 +26,10 @@ pub use point_cloud::*;
 pub use render_pass::*;
 pub use state::*;
 pub use texture::*;
-pub use ui::*;
 pub use vertex_2d::*;
 pub use window::*;
+pub use lines::*;
+pub use egui;
 
 
 pub trait RenderEntry<State> {

@@ -50,6 +50,7 @@ pub struct Tree {
 	pub lookup_name: LookupName,
 	pub eye_dome: render::EyeDome,
 	pub eye_dome_active: bool,
+	pub voxels_active: bool,
 
 	pub property: (String, String),
 }
@@ -60,6 +61,8 @@ pub struct Node {
 	pub corner: Vector<3, f32>,
 	pub size: f32,
 	index: usize,
+
+	lines: render::Lines,
 }
 
 
@@ -75,7 +78,7 @@ pub enum Data {
 
 
 impl Node {
-	pub fn new(node: &IndexNode) -> Self {
+	pub fn new(node: &IndexNode, state: &State) -> Self {
 		let data = match &node.data {
 			IndexData::Branch { children: index_children } => {
 				let mut children: [_; 8] = Default::default();
@@ -84,7 +87,7 @@ impl Node {
 					.iter()
 					.enumerate()
 					.filter_map(|(i, child)| child.as_ref().map(|c| (i, c))) {
-					let node = Node::new(child);
+					let node = Node::new(child, state);
 					node.get_segments(&mut segments);
 					children[i] = Some(node);
 				}
@@ -94,7 +97,22 @@ impl Node {
 			IndexData::Leaf { segments } => Data::Leaf { segments: segments.clone() },
 		};
 
+		let points = [
+			node.position + Vector::new([0.0, 0.0, 0.0]),
+			node.position + Vector::new([node.size, 0.0, 0.0]),
+			node.position + Vector::new([node.size, 0.0, node.size]),
+			node.position + Vector::new([0.0, 0.0, node.size]),
+
+			node.position + Vector::new([0.0, node.size, 0.0]),
+			node.position + Vector::new([node.size, node.size, 0.0]),
+			node.position + Vector::new([node.size, node.size, node.size]),
+			node.position + Vector::new([0.0, node.size, node.size]),
+		];
+
+		let indices = [0, 1, 1, 2, 2, 3, 3, 0, 4, 5, 5, 6, 6, 7, 7, 4, 0, 4, 1, 5, 2, 6, 3, 7];
+
 		Node {
+			lines: render::Lines::new(state, &points, &indices),
 			corner: node.position,
 			size: node.size,
 			index: node.index as usize,
@@ -150,6 +168,37 @@ impl Node {
 	}
 
 
+	pub fn render_lines<'a>(
+		&'a self,
+		lines_pass: &mut render::LinesPass<'a>,
+		view_checker: lod::Checker,
+		camera: &camera::Camera,
+		loaded_manager: &'a LoadedManager,
+	) {
+		if !camera.inside_frustrum(self.corner, self.size) {
+			return;
+		}
+		match &self.data {
+			Data::Branch { children, segments: _ } => {
+				if loaded_manager.exist(self.index)
+					&& (view_checker.should_render(self.corner, self.size, camera)
+						|| !Self::can_render_children(children, loaded_manager, camera))
+				{
+					self.lines.render(lines_pass);
+				} else {
+					let view_checker = view_checker.level_down();
+					for child in children.iter().flatten() {
+						child.render_lines(lines_pass, view_checker, camera, loaded_manager);
+					}
+				}
+			},
+			Data::Leaf { segments: _ } => {
+				self.lines.render(lines_pass);
+			},
+		}
+	}
+
+
 	pub fn can_render_children(
 		children: &[Option<Node>; 8],
 		loaded_manager: &LoadedManager,
@@ -169,7 +218,7 @@ impl Node {
 
 
 	pub fn update(&mut self, view_checker: lod::Checker, camera: &camera::Camera, loaded_manager: &mut LoadedManager) {
-		if !camera.inside_moved_frustrum(self.corner, self.size, -100.0) {
+		if !camera.inside_frustrum(self.corner, self.size) {
 			self.clear(loaded_manager);
 			return;
 		}
@@ -322,7 +371,7 @@ impl Tree {
 		Self {
 			background: DEFAULT_BACKGROUND,
 			camera: camera::Camera::new(state, window.get_aspect()),
-			root: Node::new(&project.root),
+			root: Node::new(&project.root, state),
 			loaded_manager: LoadedManager::new(state, path, &property.0),
 			lookup_name,
 			lookup: render::Lookup::new_png(state, lookup_name.data()),
@@ -330,6 +379,7 @@ impl Tree {
 			segment: None,
 			eye_dome: render::EyeDome::new(state, window.config(), window.depth_texture(), 0.7),
 			eye_dome_active: true,
+			voxels_active: false,
 
 			property,
 		}
@@ -355,7 +405,7 @@ impl Tree {
 			lod::Checker::new(&self.camera.lod),
 			&self.camera,
 			&mut self.loaded_manager,
-		)
+		);
 	}
 }
 
@@ -409,6 +459,18 @@ impl render::PointCloudRender for Tree {
 }
 
 
+impl render::LinesRender for Tree {
+	fn render<'a>(&'a self, lines_pass: &mut render::LinesPass<'a>) {
+		self.root.render_lines(
+			lines_pass,
+			lod::Checker::new(&self.camera.lod),
+			&self.camera,
+			&self.loaded_manager,
+		);
+	}
+}
+
+
 impl render::RenderEntry<State> for Tree {
 	fn background(&self) -> Vector<3, f32> {
 		self.background
@@ -443,6 +505,9 @@ impl render::RenderEntry<State> for Tree {
 					&self.environment,
 				),
 			);
+			if self.voxels_active {
+				render_pass.render(self, (state, &self.camera.gpu));
+			}
 		}
 	}
 

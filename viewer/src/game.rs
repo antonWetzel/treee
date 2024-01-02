@@ -355,6 +355,13 @@ impl Game {
 						window.request_redraw()
 					}
 				});
+
+				ui.horizontal(|ui| {
+					ui.add_sized([LEFT, HEIGHT], Label::new("Debug"));
+					if ui.add_sized([ui.available_width(), HEIGHT], SelectableLabel::new(self.tree.voxels_active, "Voxels")).clicked() {
+						self.tree.voxels_active = self.tree.voxels_active.not();
+					}
+				});
 			}
 			ui.separator();
 
