@@ -11,14 +11,14 @@ pub struct Lookup {
 
 impl Lookup {
 	pub fn new_png(state: &impl Has<State>, data: &[u8]) -> Self {
-		let state: &State = state.get();
+		let state = state.get();
 		let texture = Texture::new_1d(state, data);
 		assert!(texture.size[X].is_power_of_two());
 		assert_eq!(texture.size[Y], 1);
 
 		let view = texture
 			.gpu
-			.create_view(&wgpu::TextureViewDescriptor::default());
+			.create_view(&Default::default());
 
 		let bind_group_layout = Self::get_layout(state);
 

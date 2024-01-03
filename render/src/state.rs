@@ -12,6 +12,11 @@ pub struct State {
 }
 
 
+impl Has<State> for State {
+	fn get(&self) -> &State { self }
+}
+
+
 pub type RenderError = winit::error::EventLoopError;
 
 

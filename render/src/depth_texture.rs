@@ -24,7 +24,7 @@ impl DepthTexture {
 			usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
 		};
 		let texture = device.create_texture(&desc);
-		let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+		let view = texture.create_view(&Default::default());
 
 		Self { view }
 	}

@@ -27,7 +27,7 @@ impl Window {
 		title: T,
 		egui: &egui::Context,
 	) -> Self {
-		let state: &State = state.get();
+		let state = state.get();
 		let window = winit::window::WindowBuilder::new()
 			.with_title(title)
 			.with_min_inner_size(winit::dpi::LogicalSize { width: 10, height: 10 })
@@ -258,7 +258,7 @@ impl Window {
 			&[egui::TextureId],
 		),
 	) -> f32 {
-		let render_state: &State = state.get();
+		let render_state = state.get();
 		let set = render_state
 			.device
 			.create_query_set(&wgpu::QuerySetDescriptor {
@@ -373,7 +373,7 @@ impl Window {
 		let output = self.surface.get_current_texture().ok()?;
 		let view = output
 			.texture
-			.create_view(&wgpu::TextureViewDescriptor::default());
+			.create_view(&Default::default());
 
 		self.egui_winit.handle_platform_output(&self.window, ui.platform_output);
 		let paint_jobs = egui.tessellate(ui.shapes, ui.pixels_per_point);
