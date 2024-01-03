@@ -5,7 +5,6 @@ use crate::{
 	depth_texture::DepthTexture,
 	Camera3DGPU,
 	Has,
-	Render,
 	RenderPass,
 	State,
 };
@@ -90,18 +89,23 @@ pub trait LinesRender {
 }
 
 
-impl<'a, T, S: Has<LinesState>> Render<'a, (&'a S, &'a Camera3DGPU)> for T
+pub trait LinesRenderExt<'a, V, S> {
+	fn render_lines(&mut self, value: &'a V, state: &'a S, camera: &'a Camera3DGPU);
+}
+
+
+impl<'a, V, S> LinesRenderExt<'a, V, S> for RenderPass<'a>
 where
-	T: LinesRender,
+	S: Has<LinesState>,
+	V: LinesRender,
 {
-	fn render(&'a self, render_pass: &mut RenderPass<'a>, data: (&'a S, &'a Camera3DGPU)) {
-		let (state, camera) = (data.0.get(), data.1);
-		render_pass.set_pipeline(&state.pipeline);
-		render_pass.set_bind_group(0, camera.get_bind_group(), &[]);
+	fn render_lines(&mut self, value: &'a V, state: &'a S, camera: &'a Camera3DGPU) {
+		self.set_pipeline(&state.get().pipeline);
+		self.set_bind_group(0, camera.get_bind_group(), &[]);
 		let lines_pass = unsafe {
-			std::mem::transmute::<_, &mut LinesPass<'a>>(render_pass)
+			std::mem::transmute::<_, &mut LinesPass<'a>>(self)
 		};
-		self.render(lines_pass);
+		value.render(lines_pass);
 	}
 }
 

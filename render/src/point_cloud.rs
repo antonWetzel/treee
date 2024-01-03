@@ -2,11 +2,11 @@ use common::MAX_LEAF_SIZE;
 use math::Vector;
 use wgpu::util::DeviceExt;
 
-use crate::{ depth_texture::DepthTexture, Camera3DGPU, Has, Lookup, Point, Render, RenderPass, State };
+use crate::{ depth_texture::DepthTexture, Camera3DGPU, Has, Lookup, Point, RenderPass, State };
 
 
 pub struct PointCloudState {
-	quad: wgpu::Buffer,
+	base: wgpu::Buffer,
 	pipeline: wgpu::RenderPipeline,
 }
 
@@ -14,8 +14,7 @@ pub struct PointCloudState {
 //tan(60°)
 const TAN_60_DEGREES: f32 = 1.732_050_8;
 
-// todo: better name
-const QUAD_DATA: [crate::PointEdge; 3] = [
+const BASE_VERTICES: [crate::PointEdge; 3] = [
 	crate::PointEdge {
 		position: Vector::new([-TAN_60_DEGREES, -1.0]),
 	},
@@ -26,7 +25,7 @@ const QUAD_DATA: [crate::PointEdge; 3] = [
 ];
 
 // Triangle is a lot faster
-// const QUAD_DATA: [crate::PointEdge; 6] = [
+// const BASE_VERTICES: [crate::PointEdge; 6] = [
 // 	crate::PointEdge { position: Vector::new([-1.0, -1.0]) },
 // 	crate::PointEdge { position: Vector::new([1.0, -1.0]) },
 // 	crate::PointEdge { position: Vector::new([1.0, 1.0]) },
@@ -63,7 +62,7 @@ impl PointCloudState {
 					module: &shader,
 					entry_point: "vs_main",
 					buffers: &[
-						Point::quad_description(),
+						Point::base_description(),
 						Point::description(wgpu::VertexStepMode::Instance),
 						Point::property_description(wgpu::VertexStepMode::Instance),
 					],
@@ -102,11 +101,11 @@ impl PointCloudState {
 			});
 
 		Self {
-			quad: state
+			base: state
 				.device
 				.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 					label: Some("Quad Buffer"),
-					contents: bytemuck::cast_slice(&QUAD_DATA),
+					contents: bytemuck::cast_slice(&BASE_VERTICES),
 					usage: wgpu::BufferUsages::VERTEX,
 				}),
 			pipeline,
@@ -124,38 +123,26 @@ pub trait PointCloudRender {
 }
 
 
-impl<'a, T, S: Has<PointCloudState>> Render<
-	'a,
-	(
-		&'a S,
-		&'a Camera3DGPU,
-		&'a Lookup,
-		&'a PointCloudEnvironment,
-	),
-> for T
+pub trait PointCloudExt<'a, V, S> {
+	fn render_point_clouds(&mut self, value: &'a V, state: &'a S, camera: &'a Camera3DGPU, lookup: &'a Lookup, environment: &'a PointCloudEnvironment);
+}
+
+
+impl<'a, V, S> PointCloudExt<'a, V, S> for RenderPass<'a>
 where
-	T: PointCloudRender,
+	S: Has<PointCloudState>,
+	V: PointCloudRender,
 {
-	fn render(
-		&'a self,
-		render_pass: &mut RenderPass<'a>,
-		data: (
-			&'a S,
-			&'a Camera3DGPU,
-			&'a Lookup,
-			&'a PointCloudEnvironment,
-		),
-	) {
-		let (state, camera, lookup, environment) = (data.0.get(), data.1, data.2, data.3);
-		render_pass.set_pipeline(&state.pipeline);
-		render_pass.set_bind_group(0, camera.get_bind_group(), &[]);
-		render_pass.set_bind_group(1, &environment.bind_group, &[]);
-		render_pass.set_bind_group(2, lookup.get_bind_group(), &[]);
-		render_pass.set_vertex_buffer(0, state.get().quad.slice(..));
-		let point_cloud_pass = unsafe {
-			std::mem::transmute::<_, &mut PointCloudPass<'a>>(render_pass)
+	fn render_point_clouds(&mut self, value: &'a V, state: &'a S, camera: &'a Camera3DGPU, lookup: &'a Lookup, environment: &'a PointCloudEnvironment) {
+		self.set_pipeline(&state.get().pipeline);
+		self.set_bind_group(0, camera.get_bind_group(), &[]);
+		self.set_bind_group(1, &environment.bind_group, &[]);
+		self.set_bind_group(2, lookup.get_bind_group(), &[]);
+		self.set_vertex_buffer(0, state.get().base.slice(..));
+		let lines_pass = unsafe {
+			std::mem::transmute::<_, &mut PointCloudPass<'a>>(self)
 		};
-		self.render(point_cloud_pass);
+		value.render(lines_pass);
 	}
 }
 
@@ -202,7 +189,7 @@ impl PointCloud {
 		}
 		point_cloud_pass
 			.0
-			.draw(0..QUAD_DATA.len() as u32, 0..self.instances);
+			.draw(0..BASE_VERTICES.len() as u32, 0..self.instances);
 	}
 }
 

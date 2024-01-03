@@ -8,7 +8,6 @@ use crate::{
 	Point,
 	PointCloud,
 	PointCloudProperty,
-	Render,
 	RenderPass,
 	State,
 };
@@ -96,19 +95,24 @@ pub trait MeshRender {
 }
 
 
-impl<'a, T, S: Has<MeshState>> Render<'a, (&'a S, &'a Camera3DGPU, &'a Lookup)> for T
+pub trait MeshRenderExt<'a, V, S> {
+	fn render_meshes(&mut self, value: &'a V, state: &'a S, camera: &'a Camera3DGPU, lookup: &'a Lookup);
+}
+
+
+impl<'a, V, S> MeshRenderExt<'a, V, S> for RenderPass<'a>
 where
-	T: MeshRender,
+	S: Has<MeshState>,
+	V: MeshRender,
 {
-	fn render(&'a self, render_pass: &mut RenderPass<'a>, data: (&'a S, &'a Camera3DGPU, &'a Lookup)) {
-		let (state, camera, lookup) = (data.0.get(), data.1, data.2);
-		render_pass.set_pipeline(&state.pipeline);
-		render_pass.set_bind_group(0, camera.get_bind_group(), &[]);
-		render_pass.set_bind_group(1, lookup.get_bind_group(), &[]);
-		let mesh_pass = unsafe {
-			std::mem::transmute::<_, &mut MeshPass<'a>>(render_pass)
+	fn render_meshes(&mut self, value: &'a V, state: &'a S, camera: &'a Camera3DGPU, lookup: &'a Lookup) {
+		self.set_pipeline(&state.get().pipeline);
+		self.set_bind_group(0, camera.get_bind_group(), &[]);
+		self.set_bind_group(1, lookup.get_bind_group(), &[]);
+		let lines_pass = unsafe {
+			std::mem::transmute::<_, &mut MeshPass<'a>>(self)
 		};
-		self.render(mesh_pass);
+		value.render(lines_pass);
 	}
 }
 

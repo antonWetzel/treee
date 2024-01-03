@@ -1,4 +1,4 @@
-use math::{ Mat, Projection, Transform, Vector, W, X, Y, Z };
+use math::{ Mat, Projection, Transform, Vector };
 use wgpu::util::DeviceExt;
 
 use crate::{ Has, State };

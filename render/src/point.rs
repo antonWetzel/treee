@@ -25,16 +25,16 @@ unsafe impl bytemuck::Pod for PointEdge { }
 
 
 impl Point {
-	const QUAD_ATTRIBUTES: [wgpu::VertexAttribute; 1] = vertex_attr_array![0 => Float32x2];
+	const BASE_ATTRIBUTES: [wgpu::VertexAttribute; 1] = vertex_attr_array![0 => Float32x2];
 	const ATTRIBUTES: [wgpu::VertexAttribute; 3] = vertex_attr_array![1 => Float32x3, 2 => Float32x3, 3 => Float32];
 	const PROPERTY_ATTRIBUTES: [wgpu::VertexAttribute; 1] = vertex_attr_array![4 => Uint32];
 
 
-	pub fn quad_description<'a>() -> wgpu::VertexBufferLayout<'a> {
+	pub fn base_description<'a>() -> wgpu::VertexBufferLayout<'a> {
 		wgpu::VertexBufferLayout {
 			array_stride: std::mem::size_of::<PointEdge>() as wgpu::BufferAddress,
 			step_mode: wgpu::VertexStepMode::Vertex,
-			attributes: &Self::QUAD_ATTRIBUTES,
+			attributes: &Self::BASE_ATTRIBUTES,
 		}
 	}
 

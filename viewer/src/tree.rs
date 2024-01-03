@@ -12,7 +12,7 @@ use crate::{ camera, lod };
 use common::IndexNode;
 use common::{ IndexData, Project };
 use math::{ Dimension, Vector, X, Y, Z };
-use render::Window;
+use render::{ Window, LinesRenderExt, MeshRenderExt, PointCloudExt };
 
 
 pub const DEFAULT_BACKGROUND: Vector<3, f32> = Vector::new([0.1, 0.2, 0.3]);
@@ -481,33 +481,14 @@ impl render::RenderEntry<State> for Tree {
 	fn render<'a>(&'a mut self, state: &'a State, render_pass: &mut render::RenderPass<'a>) {
 		if let Some(segment) = &self.segment {
 			if segment.render_mesh {
-				render_pass.render(
-					segment,
-					(state, &self.camera.gpu, &self.lookup),
-				);
+				render_pass.render_meshes(segment, state, &self.camera.gpu, &self.lookup);
 			} else {
-				render_pass.render(
-					segment,
-					(
-						state,
-						&self.camera.gpu,
-						&self.lookup,
-						&self.environment,
-					),
-				);
+				render_pass.render_point_clouds(segment, state, &self.camera.gpu, &self.lookup, &self.environment);
 			}
 		} else {
-			render_pass.render(
-				self,
-				(
-					state,
-					&self.camera.gpu,
-					&self.lookup,
-					&self.environment,
-				),
-			);
+			render_pass.render_point_clouds(self, state, &self.camera.gpu, &self.lookup, &self.environment);
 			if self.voxels_active {
-				render_pass.render(self, (state, &self.camera.gpu));
+				render_pass.render_lines(self, state, &self.camera.gpu);
 			}
 		}
 	}
