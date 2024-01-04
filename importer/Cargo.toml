@@ -21,3 +21,4 @@ tempfile.workspace = true
 rayon.workspace = true
 termsize.workspace = true
 bytemuck.workspace =  true
+clap.workspace = true

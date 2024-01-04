@@ -1,11 +1,10 @@
 use math::{ Vector, X, Y, Z };
 
-use crate::point::PointsCollection;
+use crate::{ point::PointsCollection, Settings };
 
 
 const GRID_SIZE: usize = 64;
 const GRID_SIZE_3: usize = GRID_SIZE * GRID_SIZE * GRID_SIZE;
-const POINT_SCALE: f32 = 0.95;
 
 
 #[derive(Clone, Copy)]
@@ -21,7 +20,7 @@ struct Cell {
 }
 
 
-pub fn grid(children: Vec<PointsCollection>, corner: Vector<3, f32>, size: f32) -> PointsCollection {
+pub fn grid(children: Vec<PointsCollection>, corner: Vector<3, f32>, size: f32, settings: &Settings) -> PointsCollection {
 	let mut grid = Vec::<Cell>::new();
 	grid.resize(
 		GRID_SIZE_3,
@@ -70,7 +69,7 @@ pub fn grid(children: Vec<PointsCollection>, corner: Vector<3, f32>, size: f32) 
 			render::Point {
 				position: cell.position / cell.count as f32,
 				normal: cell.normal,
-				size: POINT_SCALE * cell.total_area.sqrt(),
+				size: settings.lod_size_scale * cell.total_area.sqrt(),
 			},
 			cell.slice,
 			cell.sub_index,

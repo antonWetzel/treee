@@ -2,10 +2,7 @@ use std::num::NonZeroU32;
 
 use math::{ Dimension, Mat, Vector, X, Y, Z };
 
-use crate::{ point::Point, triangulation::triangulate };
-
-
-pub const MAX_NEIGHBORS: usize = 32 - 1;
+use crate::{ point::Point, triangulation::triangulate, Settings };
 
 
 pub struct SegmentInformation {
@@ -14,7 +11,7 @@ pub struct SegmentInformation {
 }
 
 
-pub fn calculate(data: Vec<Vector<3, f32>>, segment: NonZeroU32) -> (Vec<Point>, SegmentInformation, Vec<u32>) {
+pub fn calculate(data: Vec<Vector<3, f32>>, segment: NonZeroU32, settings: &Settings) -> (Vec<Point>, SegmentInformation, Option<Vec<u32>>) {
 	let neighbors_tree = NeighborsTree::new(&data);
 
 	let (min, max) = {
@@ -71,13 +68,16 @@ pub fn calculate(data: Vec<Vector<3, f32>>, segment: NonZeroU32) -> (Vec<Point>,
 
 		(mapped, slice_width, min + slice_width * sep as f32)
 	};
+	let mut neighbors_location = bytemuck::zeroed_vec(settings.neighbors_count);
 
 	let res = (0..data.len())
 		.map(|i| {
-			let mut neighbors = unsafe {
-				std::mem::zeroed()
-			};
-			let neighbors = neighbors_tree.get(i, &data, &mut neighbors);
+			let neighbors = neighbors_tree.get(
+				i,
+				&data,
+				&mut neighbors_location,
+				settings.neighbors_max_distance,
+			);
 
 			let mean = {
 				let mut mean = Vector::<3, f32>::new([0.0, 0.0, 0.0]);
@@ -142,7 +142,7 @@ pub fn calculate(data: Vec<Vector<3, f32>>, segment: NonZeroU32) -> (Vec<Point>,
 				percent: crown_heigth / height,
 			},
 		},
-		triangulate(&data, neighbors_tree.tree),
+		settings.triangulation.then(|| triangulate(&data, neighbors_tree.tree, settings)),
 	)
 }
 
@@ -179,9 +179,10 @@ impl NeighborsTree {
 		&self,
 		index: usize,
 		data: &[Vector<3, f32>],
-		location: &'a mut [k_nearest::Entry<f32>; MAX_NEIGHBORS],
+		location: &'a mut [k_nearest::Entry<f32>],
+		max_distance: f32,
 	) -> &'a [k_nearest::Entry<f32>] {
-		let l = self.tree.k_nearest(&data[index], &mut location[..], 1.0);
+		let l = self.tree.k_nearest(&data[index], location, max_distance);
 		&location[0..l]
 	}
 }

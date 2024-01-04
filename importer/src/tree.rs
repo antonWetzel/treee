@@ -11,7 +11,7 @@ use rayon::prelude::*;
 use crate::cache::{ Cache, CacheEntry, CacheIndex };
 use crate::point::{ Point, PointsCollection };
 use crate::progress::Progress;
-use crate::{ level_of_detail, Writer };
+use crate::{ level_of_detail, Writer, Settings };
 
 
 #[derive(Debug)]
@@ -234,7 +234,7 @@ pub struct FlatTree {
 
 
 impl FlatTree {
-	pub fn save(self, writer: Writer) {
+	pub fn save(self, writer: Writer, settings: &Settings) {
 		let progress = Mutex::new(Progress::new("Save Data", self.nodes.len()));
 
 		let mut data = Vec::with_capacity(self.nodes.len());
@@ -248,7 +248,7 @@ impl FlatTree {
 			.into_par_iter()
 			.enumerate()
 			.for_each(|(i, node)| {
-				let res = node.save(&data, &writer);
+				let res = node.save(&data, &writer, settings);
 				data[i].store(Some(res));
 				progress.lock().unwrap().step();
 			});
@@ -259,7 +259,7 @@ impl FlatTree {
 
 
 impl FLatNode {
-	fn save(self, data: &[AtomicCell<Option<PointsCollection>>], writer: &Mutex<Writer>) -> PointsCollection {
+	fn save(self, data: &[AtomicCell<Option<PointsCollection>>], writer: &Mutex<Writer>, settings: &Settings) -> PointsCollection {
 		match self.data {
 			FlatData::Branch { mut children } => {
 				let mut points = Vec::with_capacity(8);
@@ -273,7 +273,7 @@ impl FLatNode {
 					points.push(lod);
 				}
 
-				let points = level_of_detail::grid(points, self.corner, self.size);
+				let points = level_of_detail::grid(points, self.corner, self.size, settings);
 
 				{
 					let mut writer = writer.lock().unwrap();

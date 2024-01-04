@@ -10,8 +10,9 @@ mod triangulation;
 mod writer;
 
 
-use std::num::NonZeroU32;
+use std::{ num::NonZeroU32, path::PathBuf };
 
+use clap::Parser;
 use las::Read;
 use math::{ Vector, X, Y, Z };
 use progress::Progress;
@@ -25,8 +26,6 @@ use crate::{ cache::Cache, progress::Stage, segment::Segmenter };
 
 
 const IMPORT_PROGRESS_SCALE: u64 = 10_000;
-
-const MIN_SEGMENT_SIZE: usize = 100;
 
 
 #[derive(Error, Debug)]
@@ -44,6 +43,55 @@ pub enum ImporterError {
 
 	#[error("Output folder is not empty")]
 	OutputFolderIsNotEmpty,
+
+	#[error("Atleast two Threads are required")]
+	NotEnoughThreads,
+}
+
+
+#[derive(clap::Args)]
+pub struct Settings {
+	/// Enable triangulation.
+	#[arg(long, default_value_t = false)]
+	triangulation: bool,
+
+	/// Alpha for triangulation.
+	#[arg(long, default_value_t = 0.25)]
+	alpha: f32,
+
+	/// Minimum size for segments. Segments with less points are removed.
+	#[arg(long, default_value_t = 100)]
+	min_segment_size: usize,
+
+	/// Maximum count for neighbors search
+	#[arg(long, default_value_t = 31)]
+	neighbors_count: usize,
+
+	/// Maximum distance in meters for the neighbors search
+	#[arg(long, default_value_t = 1.0)]
+	neighbors_max_distance: f32,
+
+	/// Scale for the size of the combined point
+	#[arg(long, default_value_t = 0.95)]
+	lod_size_scale: f32,
+}
+
+
+#[derive(clap::Parser)]
+pub struct Cli {
+	/// Input file location. Open File Dialog if not specified.
+	input_file: Option<PathBuf>,
+
+	/// Output folder location. Open File Dialog if not specified.
+	#[arg(long, short)]
+	output_folder: Option<PathBuf>,
+
+	/// Maximal thread count for multithreading. 0 for the amount of logical cores.
+	#[arg(long, default_value_t = 4)]
+	max_threads: usize,
+
+	#[command(flatten)]
+	settings: Settings,
 }
 
 
@@ -52,17 +100,27 @@ fn map_point(point: las::Point, center: Vector<3, f64>) -> Vector<3, f32> {
 }
 
 
-fn import() -> Result<(), ImporterError> {
-	let input = rfd::FileDialog::new()
-		.set_title("Select Input File")
-		.add_filter("Input File", &["las", "laz"])
-		.pick_file()
-		.ok_or(ImporterError::NoInputFile)?;
+fn import(cli: Cli) -> Result<(), ImporterError> {
+	if cli.max_threads == 1 {
+		return Err(ImporterError::NotEnoughThreads);
+	}
+	let input = match cli.input_file {
+		Some(file) => file,
+		None => rfd::FileDialog::new()
+			.set_title("Select Input File")
+			.add_filter("Input File", &["las", "laz"])
+			.pick_file()
+			.ok_or(ImporterError::NoInputFile)?,
+	};
 
-	let output = rfd::FileDialog::new()
-		.set_title("Select Output Folder")
-		.pick_folder()
-		.ok_or(ImporterError::NoOutputFolder)?;
+	let output = match cli.output_folder {
+		Some(folder) => folder,
+		None => rfd::FileDialog::new()
+			.set_title("Select Output Folder")
+			.pick_folder()
+			.ok_or(ImporterError::NoOutputFolder)?,
+	};
+	let settings = cli.settings;
 
 	let stage = Stage::new("Setup Files");
 
@@ -145,29 +203,26 @@ fn import() -> Result<(), ImporterError> {
 	let (sender, reciever) = crossbeam::channel::bounded(2048);
 	rayon::join(
 		|| {
-			rayon::ThreadPoolBuilder::new()
-				.num_threads(4)
-				.build()
-				.unwrap()
-				.install(|| {
-					segments
-						.into_par_iter()
-						.enumerate()
-						.for_each(|(index, segment)| {
-							let index = NonZeroU32::new(index as u32 + 1).unwrap();
-							if segment.length() < MIN_SEGMENT_SIZE {
-								return;
-							}
-							let (points, information, mesh) = calculations::calculate(segment.points(), index);
-							sender.send((points, index, mesh, information)).unwrap();
-						});
-					drop(sender);
-				})
+			segments
+				.into_par_iter()
+				.enumerate()
+			// todo: fix progress
+				.filter(|(_, segment)| segment.length() >= settings.min_segment_size)
+				.for_each(|(index, segment)| {
+					let index = NonZeroU32::new(index as u32 + 1).unwrap();
+					let (points, information, mesh) = calculations::calculate(
+						segment.points(),
+						index,
+						&settings,
+					);
+					sender.send((points, index, mesh, information)).unwrap();
+				});
+			drop(sender);
 		},
 		|| {
 			let mut counter = 0;
 			for (points, segment, mesh, information) in reciever {
-				Writer::save_segment(&output, segment, &points, &mesh, information);
+				Writer::save_segment(&output, segment, &points, mesh.as_deref(), information);
 				for point in points {
 					tree.insert(point, &mut cache);
 					counter += 1;
@@ -195,14 +250,20 @@ fn import() -> Result<(), ImporterError> {
 
 	stage.finish();
 
-	tree.save(writer);
+	tree.save(writer, &settings);
 
 	Ok(())
 }
 
 
 fn main() {
-	match import() {
+	let cli = Cli::parse();
+	let res = rayon::ThreadPoolBuilder::new()
+		.num_threads(cli.max_threads.min(std::thread::available_parallelism().map(|v| v.get()).unwrap_or(0)))
+		.build()
+		.unwrap()
+		.install(|| import(cli));
+	match res {
 		Ok(()) => { },
 		Err(err) => eprintln!("Error: {}", err),
 	}

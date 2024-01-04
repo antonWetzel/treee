@@ -12,6 +12,7 @@ Point cloud importer and viewer with focus on forest scans.
 ## Importer
 
 - `cargo run --bin=importer (--release)`
+	- see `cargo run -- --help` for options
 	- select input file (`.las` or `.laz`)
 	- select empty output folder
 	- phases

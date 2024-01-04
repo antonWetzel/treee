@@ -12,7 +12,7 @@ pub struct Segment {
 	path: PathBuf,
 	point_cloud: render::PointCloud,
 	property: render::PointCloudProperty,
-	mesh: render::Mesh,
+	pub mesh: Option<render::Mesh>,
 	pub render_mesh: bool,
 	index: NonZeroU32,
 
@@ -31,14 +31,14 @@ impl Segment {
 
 		let point_cloud = render::PointCloud::new(state, &points);
 		path.set_file_name("mesh.data");
-		let mesh = {
-			let mut file = File::open(&path).unwrap();
-			let size = file.metadata().map(|m| m.len() as usize).ok().unwrap();
+		let mesh = (|| {
+			let mut file = File::open(&path).ok()?;
+			let size = file.metadata().map(|m| m.len() as usize).ok()?;
 			let mut data = bytemuck::zeroed_vec::<u32>(size / std::mem::size_of::<u32>());
-			file.read_exact(bytemuck::cast_slice_mut(&mut data))
-				.unwrap();
-			render::Mesh::new(state, &data)
-		};
+			file.read_exact(bytemuck::cast_slice_mut(&mut data)).ok()?;
+			let mesh = render::Mesh::new(state, &data);
+			Some(mesh)
+		})();
 
 		path.set_file_name("segment.information");
 		let information = common::Segment::load(&path);
@@ -87,7 +87,8 @@ impl render::PointCloudRender for Segment {
 
 impl render::MeshRender for Segment {
 	fn render<'a>(&'a self, mesh_pass: &mut render::MeshPass<'a>) {
-		self.mesh
-			.render(mesh_pass, &self.point_cloud, &self.property);
+		if let Some(mesh) = &self.mesh {
+			mesh.render(mesh_pass, &self.point_cloud, &self.property);
+		}
 	}
 }

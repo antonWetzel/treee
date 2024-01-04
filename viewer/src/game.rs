@@ -255,6 +255,7 @@ impl Game {
 					if ui.add_sized([ui.available_width() / 2.0, HEIGHT], SelectableLabel::new(seg.render_mesh.not(), "Points")).clicked() {
 						seg.render_mesh = false;
 					}
+					ui.set_enabled(seg.mesh.is_some());
 					if ui.add_sized([ui.available_width(), HEIGHT], SelectableLabel::new(seg.render_mesh, "Mesh")).clicked() {
 						seg.render_mesh = true;
 					}
@@ -275,7 +276,7 @@ impl Game {
 			if self.visual_options {
 				ui.horizontal(|ui| {
 					ui.add_sized([LEFT, HEIGHT], Label::new("Point Size"));
-					if ui.add_sized([RIGHT, HEIGHT], Slider::new(&mut self.tree.environment.scale, 0.0 ..= 2.0)).changed() {
+					if ui.add_sized([RIGHT, HEIGHT], Slider::new(&mut self.tree.environment.scale, 0.0..=2.0)).changed() {
 						self.tree.environment = render::PointCloudEnvironment::new(
 							self.state,
 							self.tree.environment.min,
@@ -289,7 +290,7 @@ impl Game {
 				ui.horizontal(|ui| {
 					ui.add_sized([LEFT, HEIGHT], Label::new("Min"));
 					let mut min = self.tree.environment.min as f32 / u32::MAX as f32;
-					if ui.add_sized([RIGHT, HEIGHT], Slider::new(&mut min, 0.0 ..= 1.0)).changed() {
+					if ui.add_sized([RIGHT, HEIGHT], Slider::new(&mut min, 0.0..=1.0)).changed() {
 						self.tree.environment.min = (min * u32::MAX as f32) as u32;
 						self.tree.environment.max = self.tree.environment.max.max(self.tree.environment.min);
 						self.tree.environment = render::PointCloudEnvironment::new(
@@ -305,7 +306,7 @@ impl Game {
 				ui.horizontal(|ui| {
 					ui.add_sized([LEFT, HEIGHT], Label::new("Max"));
 					let mut max = self.tree.environment.max as f32 / u32::MAX as f32;
-					if ui.add_sized([RIGHT, HEIGHT], Slider::new(&mut max, 0.0 ..= 1.0)).changed() {
+					if ui.add_sized([RIGHT, HEIGHT], Slider::new(&mut max, 0.0..=1.0)).changed() {
 						self.tree.environment.max = (max * u32::MAX as f32) as u32;
 						self.tree.environment.min = self.tree.environment.min.min(self.tree.environment.max);
 						self.tree.environment = render::PointCloudEnvironment::new(
@@ -371,7 +372,7 @@ impl Game {
 			if self.tree.eye_dome_active {
 				ui.horizontal(|ui| {
 					ui.add_sized([LEFT, HEIGHT], Label::new("Strength"));
-					if ui.add_sized([RIGHT, HEIGHT], Slider::new(&mut self.tree.eye_dome.strength, 0.0 ..= 1.0)).changed() {
+					if ui.add_sized([RIGHT, HEIGHT], Slider::new(&mut self.tree.eye_dome.strength, 0.0..=1.0)).changed() {
 						self.tree.eye_dome.update_settings(self.state);
 					}
 				});
@@ -418,10 +419,10 @@ impl Game {
 					match &mut self.tree.camera.lod {
 						lod::Mode::Auto { threshold } => {
 							ui.set_enabled(false);
-							ui.add_sized([RIGHT, HEIGHT], Slider::new(threshold, 0.0 ..= 10.0));
+							ui.add_sized([RIGHT, HEIGHT], Slider::new(threshold, 0.0..=10.0));
 						}
-						lod::Mode::Normal { threshold } => _ = ui.add_sized([RIGHT, HEIGHT], Slider::new(threshold, 0.0 ..= 10.0)),
-						lod::Mode::Level { target, max } => _ = ui.add_sized([RIGHT, HEIGHT], Slider::new(target, 0 ..= *max)),
+						lod::Mode::Normal { threshold } => _ = ui.add_sized([RIGHT, HEIGHT], Slider::new(threshold, 0.0..=10.0)),
+						lod::Mode::Level { target, max } => _ = ui.add_sized([RIGHT, HEIGHT], Slider::new(target, 0..=*max)),
 					};
 				});
 			}

@@ -48,3 +48,4 @@ termsize = "0.1"
 egui-wgpu = { git = "https://github.com/emilk/egui.git", features = ["winit"] }
 egui = { git = "https://github.com/emilk/egui.git" }
 egui-winit = { git = "https://github.com/emilk/egui.git" }
+clap = { version = "4.4", features = ["derive"] }

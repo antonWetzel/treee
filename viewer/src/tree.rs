@@ -229,14 +229,12 @@ impl Node {
 					for child in children.iter_mut().flatten() {
 						child.clear(loaded_manager);
 					}
+				} else if !loaded_manager.exist(self.index) {
+					loaded_manager.request(self.index);
 				} else {
-					if !loaded_manager.exist(self.index) {
-						loaded_manager.request(self.index);
-					} else {
-						let view_checker = view_checker.level_down();
-						for child in children.iter_mut().flatten() {
-							child.update(view_checker, camera, loaded_manager);
-						}
+					let view_checker = view_checker.level_down();
+					for child in children.iter_mut().flatten() {
+						child.update(view_checker, camera, loaded_manager);
 					}
 				}
 			},
