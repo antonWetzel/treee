@@ -2,7 +2,7 @@ use std::num::NonZeroU32;
 
 use math::{ Dimension, Mat, Vector, X, Y, Z };
 
-use crate::{ point::Point, triangulation::triangulate, Settings };
+use crate::{ point::Point, Settings };
 
 
 pub struct SegmentInformation {
@@ -11,7 +11,7 @@ pub struct SegmentInformation {
 }
 
 
-pub fn calculate(data: Vec<Vector<3, f32>>, segment: NonZeroU32, settings: &Settings) -> (Vec<Point>, SegmentInformation, Option<Vec<u32>>) {
+pub fn calculate(data: Vec<Vector<3, f32>>, segment: NonZeroU32, settings: &Settings) -> (Vec<Point>, SegmentInformation) {
 	let neighbors_tree = NeighborsTree::new(&data);
 
 	let (min, max) = {
@@ -142,7 +142,6 @@ pub fn calculate(data: Vec<Vector<3, f32>>, segment: NonZeroU32, settings: &Sett
 				percent: crown_heigth / height,
 			},
 		},
-		settings.triangulation.then(|| triangulate(&data, neighbors_tree.tree, settings)),
 	)
 }
 

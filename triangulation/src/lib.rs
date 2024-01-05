@@ -1,62 +1,77 @@
 use std::{
 	collections::{ HashMap, HashSet },
 	ops::Not,
+	sync::mpsc::SendError,
 };
 
-use math::{ Vector, X, Y, Z };
+use math::{ Vector, X, Y, Z, Dimension };
 
-use crate::{ calculations::Adapter, Settings };
+
+pub struct Adapter;
+
+
+impl k_nearest::Adapter<3, f32, Vector<3, f32>> for Adapter {
+	fn get(point: &Vector<3, f32>, dimension: Dimension) -> f32 {
+		point[dimension]
+	}
+
+
+	fn get_all(point: &Vector<3, f32>) -> [f32; 3] {
+		point.data()
+	}
+}
 
 
 type Tree = k_nearest::KDTree<3, f32, Vector<3, f32>, Adapter, k_nearest::EuclideanDistanceSquared>;
 
 
-pub fn triangulate(data: &[Vector<3, f32>], tree: Tree, settings: &Settings) -> Vec<u32> {
+pub fn triangulate(data: &[Vector<3, f32>], alpha: f32, res: std::sync::mpsc::Sender<Vector<3, usize>>) -> Result<(), SendError<Vector<3, usize>>> {
+	let tree = Tree::new(data);
 	let mut used = vec![false; data.len()];
 
-	//assume one connected segmnent
-	let Some((seed, center)) = seed(data, &used, &tree, settings.alpha) else {
-		return Vec::new();
-	};
-	let mut indices = vec![seed[X] as u32, seed[Y] as u32, seed[Z] as u32];
-	used[seed[X]] = true;
-	used[seed[Y]] = true;
-	used[seed[Z]] = true;
 	let mut found = HashSet::new();
+	while let Some(seed) = seed(data, &used, &tree, alpha) {
+		res.send(seed)?;
+		used[seed[X]] = true;
+		used[seed[Y]] = true;
+		used[seed[Z]] = true;
 
-	let mut edges = [
-		(Edge::new(seed[X], seed[Z], center), seed[Y]),
-		(Edge::new(seed[Z], seed[Y], center), seed[X]),
-		(Edge::new(seed[Y], seed[X], center), seed[Z]),
-	]
-		.into_iter()
-		.collect::<HashMap<_, _>>();
+		let mut edges = [
+			(Edge::new(seed[X], seed[Z]), seed[Y]),
+			(Edge::new(seed[Z], seed[Y]), seed[X]),
+			(Edge::new(seed[Y], seed[X]), seed[Z]),
+		]
+			.into_iter()
+			.collect::<HashMap<_, _>>();
 
-	while let Some(edge) = edges.keys().next().copied() {
-		let old = edges.remove(&edge).unwrap();
-		found.insert(edge);
-		let (first, second, center) = (edge.active_1, edge.active_2, edge.center);
-		if let Some((third, center)) = find_third(data, first, second, &tree, old, settings.alpha, center) {
-			indices.push(first as u32);
-			indices.push(second as u32);
-			indices.push(third as u32);
-			used[third] = true;
-			for edge in [
-				(Edge::new(first, third, center), second),
-				(Edge::new(third, second, center), first),
-			] {
-				if let std::collections::hash_map::Entry::Vacant(e) = edges.entry(edge.0) {
-					if found.contains(&edge.0).not() {
-						e.insert(edge.1);
+		while let Some(edge) = edges.keys().next().copied() {
+			let old = edges.remove(&edge).unwrap();
+			found.insert(edge);
+			let (first, second) = (edge.active_1, edge.active_2);
+			if let Some(third) = find_third(data, first, second, &tree, old, alpha) {
+				// checked in `find_third`
+				if third == old {
+					continue;
+				}
+				res.send([first, second, third].into())?;
+				used[third] = true;
+				for edge in [
+					(Edge::new(first, third), second),
+					(Edge::new(third, second), first),
+				] {
+					if let std::collections::hash_map::Entry::Vacant(e) = edges.entry(edge.0) {
+						if found.contains(&edge.0).not() {
+							e.insert(edge.1);
+						}
+					} else {
+						edges.remove(&edge.0);
+						found.insert(edge.0);
 					}
-				} else {
-					edges.remove(&edge.0);
-					found.insert(edge.0);
 				}
 			}
 		}
 	}
-	indices
+	Ok(())
 }
 
 
@@ -64,13 +79,12 @@ pub fn triangulate(data: &[Vector<3, f32>], tree: Tree, settings: &Settings) -> 
 struct Edge {
 	active_1: usize,
 	active_2: usize,
-	center: Vector<3, f32>,
 }
 
 
 impl Edge {
-	fn new(active_1: usize, active_2: usize, center: Vector<3, f32>) -> Self {
-		Self { active_1, active_2, center }
+	fn new(active_1: usize, active_2: usize) -> Self {
+		Self { active_1, active_2 }
 	}
 }
 
@@ -99,7 +113,7 @@ impl std::hash::Hash for Edge {
 }
 
 
-fn seed(data: &[Vector<3, f32>], used: &[bool], tree: &Tree, alpha: f32) -> Option<(Vector<3, usize>, Vector<3, f32>)> {
+fn seed(data: &[Vector<3, f32>], used: &[bool], tree: &Tree, alpha: f32) -> Option<Vector<3, usize>> {
 	for (first, point) in data.iter().enumerate().filter(|&(idx, _)| used[idx].not()) {
 		let nearest = tree.nearest(point, (2.0 * alpha).powi(2));
 		if nearest.len() <= 2 {
@@ -114,30 +128,20 @@ fn seed(data: &[Vector<3, f32>], used: &[bool], tree: &Tree, alpha: f32) -> Opti
 				.iter()
 				.skip(second_index + 1)
 				.filter(|entry| used[entry.index].not()) {
-				let Some(center) = sphere_location(
-					data[first],
-					data[second.index],
-					data[third.index],
-					alpha,
-				) else {
+				let Some(center) = sphere_location(data[first], data[second.index], data[third.index], alpha) else {
 					continue;
 				};
 
 				if tree.empty(&center, (alpha - 0.001).powi(2)) {
-					return Some(([first, second.index, third.index].into(), center));
+					return Some([first, second.index, third.index].into());
 				}
 
-				let Some(center) = sphere_location(
-					data[second.index],
-					data[first],
-					data[third.index],
-					alpha,
-				) else {
+				let Some(center) = sphere_location(data[second.index], data[first], data[third.index], alpha) else {
 					continue;
 				};
 
 				if tree.empty(&center, (alpha - 0.001).powi(2)) {
-					return Some(([second.index, first, third.index].into(), center));
+					return Some([second.index, first, third.index].into());
 				}
 			}
 		}
@@ -146,17 +150,11 @@ fn seed(data: &[Vector<3, f32>], used: &[bool], tree: &Tree, alpha: f32) -> Opti
 }
 
 
-fn find_third(
-	data: &[Vector<3, f32>],
-	first: usize,
-	second: usize,
-	tree: &Tree,
-	old: usize,
-	alpha: f32,
-	center: Vector<3, f32>,
-) -> Option<(usize, Vector<3, f32>)> {
+fn find_third(data: &[Vector<3, f32>], first: usize, second: usize, tree: &Tree, old: usize, alpha: f32) -> Option<usize> {
 	let a = data[first];
+	let b = data[old];
 	let c = data[second];
+	let center = sphere_location(a, b, c, alpha).unwrap();
 	let bar = (c - a).normalized();
 	let mid_point = (a + c) / 2.0;
 	let to_center = (center - mid_point).normalized();
@@ -185,7 +183,7 @@ fn find_third(
 		}
 
 		best_angle = angle;
-		best = Some((third.index, center));
+		best = Some(third.index);
 	}
 	best
 }

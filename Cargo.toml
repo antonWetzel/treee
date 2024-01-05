@@ -9,6 +9,7 @@ members = [
 	"k-nearest",
 	"common",
 	"input",
+	"triangulation",
 ]
 resolver = "2"
 
@@ -24,6 +25,7 @@ math = { path = "./math" }
 input = { path = "./input" }
 common = { path = "./common" }
 k-nearest = { path = "./k-nearest" }
+triangulation = { path = "./triangulation" }
 
 pollster = "0.3"
 rfd = "0.12"

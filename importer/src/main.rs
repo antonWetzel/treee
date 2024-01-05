@@ -6,7 +6,6 @@ mod progress;
 mod quad_tree;
 mod segment;
 mod tree;
-mod triangulation;
 mod writer;
 
 
@@ -51,14 +50,6 @@ pub enum ImporterError {
 
 #[derive(clap::Args)]
 pub struct Settings {
-	/// Enable triangulation.
-	#[arg(long, default_value_t = false)]
-	triangulation: bool,
-
-	/// Alpha for triangulation.
-	#[arg(long, default_value_t = 0.25)]
-	alpha: f32,
-
 	/// Minimum size for segments. Segments with less points are removed.
 	#[arg(long, default_value_t = 100)]
 	min_segment_size: usize,
@@ -210,19 +201,19 @@ fn import(cli: Cli) -> Result<(), ImporterError> {
 				.filter(|(_, segment)| segment.length() >= settings.min_segment_size)
 				.for_each(|(index, segment)| {
 					let index = NonZeroU32::new(index as u32 + 1).unwrap();
-					let (points, information, mesh) = calculations::calculate(
+					let (points, information) = calculations::calculate(
 						segment.points(),
 						index,
 						&settings,
 					);
-					sender.send((points, index, mesh, information)).unwrap();
+					sender.send((points, index, information)).unwrap();
 				});
 			drop(sender);
 		},
 		|| {
 			let mut counter = 0;
-			for (points, segment, mesh, information) in reciever {
-				Writer::save_segment(&output, segment, &points, mesh.as_deref(), information);
+			for (points, segment, information) in reciever {
+				Writer::save_segment(&output, segment, &points, information);
 				for point in points {
 					tree.insert(point, &mut cache);
 					counter += 1;

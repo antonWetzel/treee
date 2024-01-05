@@ -5,7 +5,7 @@ use math::{ Vector, X, Y };
 
 use crate::{
 	lod,
-	segment::Segment,
+	segment::{ Segment, self },
 	state::State,
 	tree::{ Tree, LookupName },
 	camera,
@@ -255,8 +255,17 @@ impl Game {
 					if ui.add_sized([ui.available_width() / 2.0, HEIGHT], SelectableLabel::new(seg.render_mesh.not(), "Points")).clicked() {
 						seg.render_mesh = false;
 					}
-					ui.set_enabled(seg.mesh.is_some());
+					ui.set_enabled(matches!(seg.mesh, segment::MeshState::Done(..) | segment::MeshState::Progress(..)));
 					if ui.add_sized([ui.available_width(), HEIGHT], SelectableLabel::new(seg.render_mesh, "Mesh")).clicked() {
+						seg.render_mesh = true;
+					}
+				});
+
+				ui.horizontal(|ui| {
+					ui.add_sized([LEFT, HEIGHT], Label::new("Mesh"));
+					ui.add_sized([ui.available_width() / 2.0, HEIGHT], DragValue::new(&mut seg.alpha).clamp_range(0.0..=10.0).speed(0.01));
+					if ui.add_sized([ui.available_width(), HEIGHT], Button::new("Update")).clicked() {
+						seg.triangulate(self.state);
 						seg.render_mesh = true;
 					}
 				});
@@ -567,6 +576,10 @@ impl render::Entry for World {
 				&& self.game.tree.camera.time(self.render_time))
 		{
 			self.window.request_redraw();
+		}
+
+		if let Some(segment) = &mut self.game.tree.segment {
+			segment.update(self.game.state);
 		}
 
 		self.game.check_reload(&self.window);
