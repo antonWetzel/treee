@@ -7,7 +7,7 @@ pub struct Point {
 
 	pub segment: NonZeroU32,
 	pub slice: u32,
-	pub sub_index: u32,
+	pub height: u32,
 	pub curve: u32,
 }
 
@@ -16,8 +16,9 @@ pub struct PointsCollection {
 	pub render: Vec<render::Point>,
 
 	pub slice: Vec<u32>,
-	pub sub_index: Vec<u32>,
+	pub height: Vec<u32>,
 	pub curve: Vec<u32>,
+	pub segment: Vec<u32>,
 }
 
 
@@ -27,16 +28,18 @@ impl PointsCollection {
 			render: Vec::new(),
 
 			slice: Vec::new(),
-			sub_index: Vec::new(),
+			height: Vec::new(),
 			curve: Vec::new(),
+			segment: Vec::new(),
 		}
 	}
 
 
-	pub fn add(&mut self, render: render::Point, slice: u32, sub_index: u32, curve: u32) {
+	pub fn add(&mut self, render: render::Point, slice: u32, height: u32, curve: u32, segment: u32) {
 		self.render.push(render);
 		self.slice.push(slice);
-		self.sub_index.push(sub_index);
+		self.height.push(height);
 		self.curve.push(curve);
+		self.segment.push(segment);
 	}
 }

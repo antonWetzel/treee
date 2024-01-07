@@ -3,13 +3,12 @@ mod calculations;
 mod level_of_detail;
 mod point;
 mod progress;
-mod quad_tree;
 mod segment;
 mod tree;
 mod writer;
 
 
-use std::{ num::NonZeroU32, path::PathBuf };
+use std::path::PathBuf;
 
 use clap::Parser;
 use las::Read;
@@ -131,7 +130,7 @@ fn import(cli: Cli) -> Result<(), ImporterError> {
 
 	let mut progress = Progress::new("Import", progress_points as usize);
 
-	let mut segmenter = Segmenter::new((min - pos).map(|v| v as f32));
+	let mut segmenter = Segmenter::new((min - pos).map(|v| v as f32), (max - pos).map(|v| v as f32));
 
 	let (sender, reciever) = crossbeam::channel::bounded(2048);
 	rayon::join(
@@ -157,30 +156,8 @@ fn import(cli: Cli) -> Result<(), ImporterError> {
 
 	progress.finish();
 
-	let mut progress = Progress::new("Segmenting", progress_points as usize);
-	let mut segments = segmenter.segments();
-	let (sender, reciever) = crossbeam::channel::bounded(2048);
-	rayon::join(
-		|| {
-			reader.seek(0).unwrap();
-			for point in reader.points().flatten() {
-				sender.send(map_point(point, pos)).unwrap();
-			}
-			drop(sender);
-		},
-		|| {
-			let mut counter = 0;
-			for point in reciever {
-				segments.add_point(point);
-				counter += 1;
-				if counter >= IMPORT_PROGRESS_SCALE {
-					progress.step();
-					counter -= IMPORT_PROGRESS_SCALE;
-				}
-			}
-		},
-	);
-	let segments = segments.segments();
+	let progress = Stage::new("Segmenting");
+	let segments = segmenter.segments();
 	progress.finish();
 
 	let mut progress = Progress::new("Calculate", progress_points as usize);
@@ -196,11 +173,9 @@ fn import(cli: Cli) -> Result<(), ImporterError> {
 		|| {
 			segments
 				.into_par_iter()
-				.enumerate()
-			// todo: fix progress
-				.filter(|(_, segment)| segment.length() >= settings.min_segment_size)
-				.for_each(|(index, segment)| {
-					let index = NonZeroU32::new(index as u32 + 1).unwrap();
+				.filter(|segment| segment.length() >= settings.min_segment_size)
+				.for_each(|segment| {
+					let index = rand::random();
 					let (points, information) = calculations::calculate(
 						segment.points(),
 						index,
@@ -230,7 +205,7 @@ fn import(cli: Cli) -> Result<(), ImporterError> {
 
 	let stage = Stage::new("Save Project");
 
-	let properties = [("sub_index", "Height"), ("slice", "Expansion"), ("curve", "Curvature")];
+	let properties = [("segment", "Segment"), ("height", "Height"), ("slice", "Expansion"), ("curve", "Curvature")];
 	let (tree, project) = tree.flatten(
 		&properties,
 		input.display().to_string(),

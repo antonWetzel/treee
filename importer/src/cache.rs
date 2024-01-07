@@ -8,10 +8,11 @@ use std::{
 
 
 pub struct Cache<T> {
-	active: HashMap<usize, (Vec<T>, usize)>,
+	active: HashMap<usize, Vec<T>>,
 	stored: HashMap<usize, (File, usize)>,
 	current: usize,
-	max_active: usize,
+	max_values: usize,
+	entry_index: usize,
 }
 
 
@@ -28,49 +29,43 @@ pub struct CacheEntry<T> {
 
 
 impl<T> Cache<T> {
-	pub fn new(max_active: usize) -> Self {
+	pub fn new(max_values: usize) -> Self {
 		Self {
 			active: HashMap::new(),
 			stored: HashMap::new(),
 			current: 0,
-			max_active,
+			max_values,
+			entry_index: 0,
 		}
 	}
 
 
 	pub fn new_entry(&mut self) -> CacheIndex {
-		self.current += 1;
-		CacheIndex(self.current)
+		self.entry_index += 1;
+		CacheIndex(self.entry_index)
 	}
 
 
-	pub fn add_point(&mut self, index: &CacheIndex, point: T) {
+	pub fn add_entry(&mut self, index: &CacheIndex, point: T) {
 		self.current += 1;
+		if self.current > self.max_values {
+			self.evict();
+		}
 		match self.active.get_mut(&index.0) {
-			None => { },
+			None => {
+				self.active.insert(index.0, vec![point]);
+			},
 			Some(entry) => {
-				entry.0.push(point);
-				entry.1 = self.current;
-				return;
+				entry.push(point);
 			},
 		}
-		self.evict();
-		self.active.insert(index.0, (vec![point], self.current));
 	}
 
 
 	fn evict(&mut self) {
-		if self.active.len() < self.max_active {
+		let Some((&key, entry)) = self.active.iter_mut().max_by_key(|(_, entry)| entry.len()) else {
 			return;
-		}
-		let mut oldest_index = 0;
-		let mut oldest_value = usize::MAX;
-		for (index, entry) in &self.active {
-			if entry.1 < oldest_value {
-				oldest_index = *index;
-				oldest_value = entry.1;
-			}
-		}
+		};
 
 
 		fn write_to<T>(file: &mut File, data: Vec<T>) {
@@ -84,13 +79,15 @@ impl<T> Cache<T> {
 		}
 
 
-		let entry = self.active.remove(&oldest_index).unwrap().0;
-		match self.stored.get_mut(&oldest_index) {
+		let entry = std::mem::take(entry);
+		self.current -= entry.len();
+
+		match self.stored.get_mut(&key) {
 			None => {
 				let mut file = tempfile::tempfile().unwrap();
 				let l = entry.len();
 				write_to(&mut file, entry);
-				self.stored.insert(oldest_index, (file, l));
+				self.stored.insert(key, (file, l));
 			},
 			Some((file, length)) => {
 				*length += entry.len();
@@ -104,7 +101,6 @@ impl<T> Cache<T> {
 		let active = self
 			.active
 			.remove(&index.0)
-			.map(|v| v.0)
 			.unwrap_or_default();
 		let (file, length) = if let Some((file, length)) = self.stored.remove(&index.0) {
 			(Some(file), length + active.len())
@@ -134,11 +130,6 @@ impl<T> CacheEntry<T> {
 		} else {
 			self.active
 		}
-	}
-
-
-	pub fn is_empty(&self) -> bool {
-		self.length() == 0
 	}
 
 

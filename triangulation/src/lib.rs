@@ -1,5 +1,5 @@
 use std::{
-	collections::{ HashMap, HashSet },
+	collections::{ HashSet, VecDeque },
 	ops::Not,
 	sync::mpsc::SendError,
 };
@@ -24,14 +24,16 @@ impl k_nearest::Adapter<3, f32, Vector<3, f32>> for Adapter {
 
 type Tree = k_nearest::KDTree<3, f32, Vector<3, f32>, Adapter, k_nearest::EuclideanDistanceSquared>;
 
+type Package = Option<Vector<3, usize>>;
 
-pub fn triangulate(data: &[Vector<3, f32>], alpha: f32, res: std::sync::mpsc::Sender<Vector<3, usize>>) -> Result<(), SendError<Vector<3, usize>>> {
+
+pub fn triangulate(data: &[Vector<3, f32>], alpha: f32, res: std::sync::mpsc::Sender<Package>) -> Result<(), SendError<Package>> {
 	let tree = Tree::new(data);
 	let mut used = vec![false; data.len()];
 
 	let mut found = HashSet::new();
-	while let Some(seed) = seed(data, &used, &tree, alpha) {
-		res.send(seed)?;
+	while let Some(seed) = seed(data, &used, &tree, alpha, &res) {
+		res.send(Some(seed))?;
 		used[seed[X]] = true;
 		used[seed[Y]] = true;
 		used[seed[Z]] = true;
@@ -42,31 +44,30 @@ pub fn triangulate(data: &[Vector<3, f32>], alpha: f32, res: std::sync::mpsc::Se
 			(Edge::new(seed[Y], seed[X]), seed[Z]),
 		]
 			.into_iter()
-			.collect::<HashMap<_, _>>();
+			.collect::<VecDeque<_>>();
 
-		while let Some(edge) = edges.keys().next().copied() {
-			let old = edges.remove(&edge).unwrap();
+		while let Some(edge) = edges.pop_front() {
+			if found.contains(&edge) {
+				continue;
+			}
 			found.insert(edge);
-			let (first, second) = (edge.active_1, edge.active_2);
+			let (first, second) = (edge.0.active_1, edge.0.active_2);
+			let old = edge.1;
 			if let Some(third) = find_third(data, first, second, &tree, old, alpha) {
 				// checked in `find_third`
 				if third == old {
 					continue;
 				}
-				res.send([first, second, third].into())?;
+				res.send(Some([first, second, third].into()))?;
 				used[third] = true;
 				for edge in [
 					(Edge::new(first, third), second),
 					(Edge::new(third, second), first),
 				] {
-					if let std::collections::hash_map::Entry::Vacant(e) = edges.entry(edge.0) {
-						if found.contains(&edge.0).not() {
-							e.insert(edge.1);
-						}
-					} else {
-						edges.remove(&edge.0);
-						found.insert(edge.0);
+					if found.contains(&edge) {
+						continue;
 					}
+					edges.push_back(edge);
 				}
 			}
 		}
@@ -113,8 +114,12 @@ impl std::hash::Hash for Edge {
 }
 
 
-fn seed(data: &[Vector<3, f32>], used: &[bool], tree: &Tree, alpha: f32) -> Option<Vector<3, usize>> {
+fn seed(data: &[Vector<3, f32>], used: &[bool], tree: &Tree, alpha: f32, res: &std::sync::mpsc::Sender<Package>) -> Option<Vector<3, usize>> {
 	for (first, point) in data.iter().enumerate().filter(|&(idx, _)| used[idx].not()) {
+		match res.send(None) {
+			Ok(_) => { },
+			Err(_) => return None,
+		}
 		let nearest = tree.nearest(point, (2.0 * alpha).powi(2));
 		if nearest.len() <= 2 {
 			continue;

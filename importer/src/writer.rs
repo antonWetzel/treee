@@ -12,7 +12,8 @@ pub struct Writer {
 	pub points: common::DataFile<render::Point>,
 	pub slice: common::DataFile<u32>,
 	pub curve: common::DataFile<u32>,
-	pub sub_index: common::DataFile<u32>,
+	pub height: common::DataFile<u32>,
+	pub segment: common::DataFile<u32>,
 }
 
 
@@ -49,10 +50,13 @@ impl Writer {
 		path.set_file_name("curve.data");
 		let curve = common::DataFile::new(size, &path);
 
-		path.set_file_name("sub_index.data");
-		let sub_index = common::DataFile::new(size, &path);
+		path.set_file_name("height.data");
+		let height = common::DataFile::new(size, &path);
 
-		Ok(Self { points, slice, curve, sub_index })
+		path.set_file_name("segment.data");
+		let segment = common::DataFile::new(size, &path);
+
+		Ok(Self { points, slice, curve, height, segment })
 	}
 
 
@@ -83,8 +87,8 @@ impl Writer {
 				.unwrap(),
 		);
 
-		path.set_file_name("sub_index.data");
-		let mut sub_index = BufWriter::new(
+		path.set_file_name("height.data");
+		let mut height = BufWriter::new(
 			std::fs::OpenOptions::new()
 				.write(true)
 				.create(true)
@@ -100,6 +104,15 @@ impl Writer {
 				.open(&path)
 				.unwrap(),
 		);
+		path.set_file_name("segment.data");
+		let mut segment_values = BufWriter::new(
+			std::fs::OpenOptions::new()
+				.write(true)
+				.create(true)
+				.open(&path)
+				.unwrap(),
+		);
+
 		for point in data {
 			points
 				.write_all(bytemuck::cast_slice(&[point.render]))
@@ -107,12 +120,13 @@ impl Writer {
 			slice
 				.write_all(bytemuck::cast_slice(&[point.slice]))
 				.unwrap();
-			sub_index
-				.write_all(bytemuck::cast_slice(&[point.sub_index]))
+			height
+				.write_all(bytemuck::cast_slice(&[point.height]))
 				.unwrap();
 			curve
 				.write_all(bytemuck::cast_slice(&[point.curve]))
 				.unwrap();
+			segment_values.write_all(bytemuck::cast_slice(&[segment.get()])).unwrap();
 		}
 
 		let information = common::Segment::new([

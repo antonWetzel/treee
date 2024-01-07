@@ -122,7 +122,7 @@ pub fn calculate(data: Vec<Vector<3, f32>>, segment: NonZeroU32, settings: &Sett
 				},
 				segment,
 				slice: slices[((data[i][Y] - min) / slice_width) as usize],
-				sub_index: ((data[i][Y] - min) / (max - min) * u32::MAX as f32) as u32,
+				height: ((data[i][Y] - min) / (max - min) * u32::MAX as f32) as u32,
 				curve: map_to_u32((3.0 * eigen_values[Z]) / (eigen_values[X] + eigen_values[Y] + eigen_values[Z])),
 			}
 		})

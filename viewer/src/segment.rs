@@ -12,7 +12,7 @@ use crate::state::State;
 
 pub enum MeshState {
 	None,
-	Progress(Vec<u32>, render::Mesh, std::sync::mpsc::Receiver<Vector<3, usize>>),
+	Progress(Vec<u32>, render::Mesh, std::sync::mpsc::Receiver<Option<Vector<3, usize>>>),
 	Done(render::Mesh),
 }
 
@@ -91,12 +91,15 @@ impl Segment {
 
 
 	pub fn update(&mut self, state: &State) {
+		let mut update = false;
 		match &mut self.mesh {
 			MeshState::None | MeshState::Done(_) => { },
 			MeshState::Progress(res, _, reciever) => {
+				let before = res.len() / 1000;
 				loop {
 					match reciever.try_recv() {
-						Ok(triangle) => {
+						Ok(None) => { },
+						Ok(Some(triangle)) => {
 							res.push(triangle[X] as u32);
 							res.push(triangle[Y] as u32);
 							res.push(triangle[Z] as u32);
@@ -105,16 +108,20 @@ impl Segment {
 						Err(TryRecvError::Disconnected) => {
 							let mesh = render::Mesh::new(state, res);
 							self.mesh = MeshState::Done(mesh);
-							break;
+							return;
 						}
 					}
 				}
+				let after = res.len() / 1000;
+				update = before != after;
 			},
 		}
-		match &mut self.mesh {
-			MeshState::None | MeshState::Done(_) => { },
-			MeshState::Progress(res, mesh, _) => {
-				*mesh = render::Mesh::new(state, res);
+		if update {
+			match &mut self.mesh {
+				MeshState::None | MeshState::Done(_) => { },
+				MeshState::Progress(res, mesh, _) => {
+					*mesh = render::Mesh::new(state, res);
+				}
 			}
 		}
 	}

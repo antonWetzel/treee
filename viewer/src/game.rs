@@ -579,7 +579,9 @@ impl render::Entry for World {
 		}
 
 		if let Some(segment) = &mut self.game.tree.segment {
-			segment.update(self.game.state);
+			if segment.render_mesh {
+				segment.update(self.game.state);
+			}
 		}
 
 		self.game.check_reload(&self.window);

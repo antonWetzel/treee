@@ -105,7 +105,7 @@ impl Node {
 			},
 			Data::Leaf { mut size, mut segments, index } if size < MAX_LEAF_SIZE => {
 				segments.insert(point.segment);
-				cache.add_point(&index, point);
+				cache.add_entry(&index, point);
 				size += 1;
 				Data::Leaf { size, segments, index }
 			},
@@ -280,9 +280,10 @@ impl FLatNode {
 					writer.save(self.index, &points.render);
 					writer.slice.save(self.index as usize, &points.slice);
 					writer
-						.sub_index
-						.save(self.index as usize, &points.sub_index);
+						.height
+						.save(self.index as usize, &points.height);
 					writer.curve.save(self.index as usize, &points.curve);
+					writer.segment.save(self.index as usize, &points.segment);
 				}
 
 				points
@@ -301,18 +302,20 @@ impl FLatNode {
 				};
 
 				let slice = data.iter().map(|p| p.slice).collect::<Vec<_>>();
-				let sub_index = data.iter().map(|p| p.sub_index).collect::<Vec<_>>();
+				let height = data.iter().map(|p| p.height).collect::<Vec<_>>();
 				let curve = data.iter().map(|p| p.curve).collect::<Vec<_>>();
+				let segment = data.iter().map(|p| p.segment.get()).collect::<Vec<_>>();
 
 				{
 					let mut writer = writer.lock().unwrap();
 					writer.save(self.index, &points);
 					writer.curve.save(self.index as usize, &curve);
-					writer.sub_index.save(self.index as usize, &sub_index);
+					writer.height.save(self.index as usize, &height);
 					writer.slice.save(self.index as usize, &slice);
+					writer.segment.save(self.index as usize, &segment)
 				}
 
-				PointsCollection { render: points, slice, sub_index, curve }
+				PointsCollection { render: points, slice, height, curve, segment }
 			},
 		}
 	}

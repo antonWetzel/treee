@@ -1,17 +1,14 @@
-use std::{
-	cmp::Ordering,
-	collections::{ HashMap, HashSet },
-	num::NonZeroUsize,
-	ops::Not,
-};
+use std::collections::{ HashMap, hash_map::Entry };
 
 use math::{ Vector, X, Y, Z };
-use rayon::prelude::*;
 
-use crate::{
-	cache::{ Cache, CacheEntry, CacheIndex },
-	quad_tree::QuadTree,
-};
+use crate::cache::{ Cache, CacheEntry, CacheIndex };
+
+
+const SLICE_HEIGHT: f32 = 0.5;
+const FIELD_SIZE: f32 = 0.5;
+const MAX_DIST: usize = 6;
+const ITERATIONS: usize = 2;
 
 
 pub struct Segment {
@@ -31,160 +28,167 @@ impl Segment {
 }
 
 
-fn discretize(point: Vector<3, f32>, min: Vector<3, f32>) -> Vector<3, usize> {
-	let x = ((point[X] - min[X]) / 0.05) as usize;
-	let y = ((point[Y] - min[Y]) / 0.05) as usize;
-	let z = ((point[Z] - min[Z]) / 0.05) as usize;
-	[x, y, z].into()
-}
-
-
 pub struct Segmenter {
-	data: HashSet<Vector<3, usize>>,
+	cache: Cache<Vector<3, f32>>,
+	slices: Vec<CacheIndex>,
 	min: Vector<3, f32>,
+	max: Vector<3, f32>,
 }
 
 
 impl Segmenter {
-	pub fn new(min: Vector<3, f32>) -> Self {
-		Self { data: HashSet::new(), min }
+	pub fn new(min: Vector<3, f32>, max: Vector<3, f32>) -> Self {
+		let slice_count = ((max[Y] - min[Y]) / SLICE_HEIGHT) as usize + 1;
+		let mut cache = Cache::new(100_000_000); // 1.2 GB
+		let slices = (0..slice_count).map(|_| cache.new_entry()).collect();
+		Self { slices, min, max, cache }
 	}
 
 
 	pub fn add_point(&mut self, point: Vector<3, f32>) {
-		self.data.insert(discretize(point, self.min));
-	}
-
-
-	pub fn segments(self) -> Segments {
-		let mut ground = HashMap::<_, usize>::new();
-		let mut min = Vector::new([usize::MAX, usize::MAX]);
-		let mut max = Vector::new([0, 0]);
-
-		for [x, y, z] in self.data.iter().copied().map(Vector::data) {
-			if x < min[X] {
-				min[X] = x;
-			}
-			if y < min[Y] {
-				min[Y] = y;
-			}
-			if x > max[X] {
-				max[X] = x;
-			}
-			if y > max[Y] {
-				max[Y] = y;
-			}
-
-			let x = x / 60;
-			let z = z / 60;
-			if let Some(ground) = ground.get_mut(&(x, z)) {
-				*ground = (*ground).min(y);
-			} else {
-				ground.insert((x, z), y);
-			}
-		}
-
-		let diff = max - min;
-
-		let mut indices = HashMap::new();
-		let mut current_index = NonZeroUsize::new(1).unwrap();
-		let mut ground_indices = HashMap::new();
-		let mut slices = Vec::new();
-		for [x, y, z] in self.data.into_iter().map(Vector::data) {
-			let ground = *ground.get(&(x / 60, z / 60)).unwrap();
-
-			let distance = y - ground;
-			if distance < 40 {
-				let index = ground_indices
-					.get(&(x / 100, z / 100))
-					.copied()
-					.unwrap_or_else(|| {
-						current_index = current_index.saturating_add(1);
-						ground_indices.insert((x / 100, z / 100), current_index);
-						current_index
-					});
-				indices.insert((x, y, z), index);
-			} else {
-				let idx = y;
-				if idx >= slices.len() {
-					slices.resize_with(idx + 1, Vec::new);
-				}
-				slices[idx].push((x, z));
-			}
-		}
-		drop(ground_indices);
-
-		let mut lookup = QuadTree::<NonZeroUsize>::new(min, diff[X].max(diff[Y]));
-		let mut segments = Vec::new();
-		for (y, slice) in slices.into_iter().enumerate().rev() {
-			slice
-				.par_iter()
-				.map(|&(x, z)| lookup.get([x, y, z].into(), 40))
-				.collect_into_vec(&mut segments);
-
-			for ((x, z), &index) in slice.into_iter().zip(&segments) {
-				let index = if let Some(index) = index {
-					index
-				} else {
-					current_index = current_index.saturating_add(1);
-					current_index
-				};
-				lookup.set([x, y, z].into(), index);
-				indices.insert((x, y, z), index);
-			}
-		}
-
-		Segments {
-			segments: Vec::new(),
-			cache: Cache::new(32),
-			min: self.min,
-			indices,
-		}
-	}
-}
-
-
-pub struct Segments {
-	cache: Cache<Vector<3, f32>>,
-	segments: Vec<CacheIndex>,
-
-	indices: HashMap<(usize, usize, usize), NonZeroUsize>,
-	min: Vector<3, f32>,
-}
-
-
-impl Segments {
-	pub fn add_point(&mut self, point: Vector<3, f32>) {
-		let x = ((point[X] - self.min[X]) / 0.05) as usize;
-		let y = ((point[Y] - self.min[Y]) / 0.05) as usize;
-		let z = ((point[Z] - self.min[Z]) / 0.05) as usize;
-
-		let idx = self.indices.get(&(x, y, z)).copied().unwrap().get();
-
-		if idx >= self.segments.len() {
-			self.segments
-				.resize_with(idx + 1, || self.cache.new_entry());
-		}
-
-		self.cache.add_point(&self.segments[idx], point);
+		let slice = ((point[Y] - self.min[Y]) / SLICE_HEIGHT) as usize;
+		self.cache.add_entry(&self.slices[slice], point);
 	}
 
 
 	pub fn segments(mut self) -> Vec<Segment> {
-		let mut res = self
-			.segments
-			.into_iter()
-			.map(|index| self.cache.read(index))
-			.filter(|d| d.is_empty().not())
-			.map(|d| Segment { data: d })
-			.collect::<Vec<_>>();
+		let mut segments = Vec::new();
+		let width = ((self.max[X] - self.min[X]) / FIELD_SIZE) as usize + 1;
+		let depth = ((self.max[Z] - self.min[Z]) / FIELD_SIZE) as usize + 1;
 
-		res.sort_by(|a, b| match (a.data.active(), b.data.active()) {
-			(true, true) | (false, false) => Ordering::Equal,
-			(true, false) => Ordering::Less,
-			(false, true) => Ordering::Greater,
-		});
+		let mut cache = Cache::new(100_000_000);
+		let mut field = Field::new(self.min, width, depth);
+		for slice in self.slices.into_iter().rev() {
+			let slice = self.cache.read(slice).read();
+			for p in slice {
+				let idx = field.index(p);
+				match field.get(idx) {
+					None => {
+						let mut id = segments.len();
+						if let Some(new_id) = field.set_seed(idx, id) {
+							id = new_id;
+						} else {
+							segments.push(cache.new_entry());
+						}
+						cache.add_entry(&segments[id], p);
+					}
+					Some(id) => {
+						cache.add_entry(&segments[id], p);
+						field.set(idx, id);
+					},
+				};
+			}
+			field.step();
+		}
 
-		res
+		let mut segments = segments.into_iter().map(|entry| Segment { data: cache.read(entry) }).collect::<Vec<_>>();
+		segments.sort_by(|a, b| b.data.active().cmp(&a.data.active()));
+		segments
+	}
+}
+
+
+struct Field {
+	data: Vec<(usize, usize)>,
+	width: usize,
+	depth: usize,
+	min: Vector<3, f32>,
+}
+
+
+impl Field {
+	pub fn new(min: Vector<3, f32>, width: usize, depth: usize) -> Self {
+		Self { width, depth, data: vec![(usize::MAX, usize::MAX); width * depth], min }
+	}
+
+
+	pub fn index(&self, p: Vector<3, f32>) -> usize {
+		let x = ((p[X] - self.min[X]) / FIELD_SIZE) as usize;
+		let z = ((p[Z] - self.min[Z]) / FIELD_SIZE) as usize;
+		x + z * self.width
+	}
+
+
+	pub fn get(&self, index: usize) -> Option<usize> {
+		let (_, id) = self.data[index];
+		(id < usize::MAX).then_some(id)
+	}
+
+
+	pub fn set(&mut self, index: usize, id: usize) {
+		self.data[index] = (0, id);
+	}
+
+
+	pub fn set_seed(&mut self, index: usize, id: usize) -> Option<usize> {
+		let x = index % self.width;
+		let z = index / self.width;
+		let mut found = HashMap::<usize, usize>::new();
+		for d_z in z.saturating_sub(5)..(z + 3).min(self.depth) {
+			for d_x in x.saturating_sub(2)..(x + 3).min(self.width) {
+				let index = d_x + d_z * self.width;
+				let (_, idx) = self.data[d_x + d_z * self.width];
+				if idx == usize::MAX {
+					continue;
+				}
+				match found.entry(idx) {
+					Entry::Occupied(mut e) => {
+						*e.get_mut() += 1;
+					},
+					Entry::Vacant(e) => {
+						e.insert(1);
+					}
+				}
+				if self.data[index].1 == usize::MAX {
+					self.data[index] = (0, id);
+				}
+			}
+		}
+		let res = found.iter().max_by_key(|(_, &v)| v).map(|(&idx, _)| idx).unwrap_or(id);
+		for d_z in z.saturating_sub(2)..(z + 3).min(self.depth) {
+			for d_x in x.saturating_sub(2)..(x + 3).min(self.width) {
+				let index = d_x + d_z * self.width;
+				self.data[index] = (0, res);
+			}
+		}
+		(res != id).then_some(res)
+	}
+
+
+	pub fn step(&mut self) {
+		for _ in 0..ITERATIONS {
+			let mut new = Vec::with_capacity(self.data.len());
+			for z in 0..self.depth {
+				for x in 0..self.width {
+					let mut found = HashMap::<usize, (usize, usize)>::new();
+					for d_z in z.saturating_sub(1)..(z + 2).min(self.depth) {
+						for d_x in x.saturating_sub(1)..(x + 2).min(self.width) {
+							let (v, idx) = self.data[d_x + d_z * self.width];
+
+							if idx == usize::MAX {
+								continue;
+							}
+							let v = v + 1 + x.abs_diff(d_x) + z.abs_diff(d_z);
+							if v > MAX_DIST {
+								continue;
+							}
+							match found.entry(idx) {
+								Entry::Occupied(mut e) => {
+									let e = e.get_mut();
+									e.0 = e.0.min(v);
+									e.1 += 1;
+								},
+								Entry::Vacant(e) => {
+									e.insert((v, 1));
+								}
+							}
+						}
+					}
+					let res = found.iter().max_by_key(|(_, (_, v))| v).map(|(&idx, &(d, _))| (d, idx)).unwrap_or((usize::MAX, usize::MAX));
+					new.push(res);
+				}
+			}
+			self.data = new;
+		}
 	}
 }

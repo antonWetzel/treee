@@ -15,8 +15,9 @@ struct Cell {
 	total_area: f32,
 
 	slice: u32,
-	sub_index: u32,
+	height: u32,
 	curve: u32,
+	segment: u32,
 }
 
 
@@ -31,8 +32,9 @@ pub fn grid(children: Vec<PointsCollection>, corner: Vector<3, f32>, size: f32, 
 			total_area: 0.0,
 
 			slice: 0,
-			sub_index: 0,
+			height: 0,
 			curve: 0,
+			segment: 0,
 		},
 	);
 	let grid_scale = GRID_SIZE as f32 / size;
@@ -55,8 +57,9 @@ pub fn grid(children: Vec<PointsCollection>, corner: Vector<3, f32>, size: f32, 
 			cell.count += 1;
 
 			cell.slice = points.slice[i];
-			cell.sub_index = points.sub_index[i];
+			cell.height = points.height[i];
 			cell.curve = points.curve[i];
+			cell.segment = points.segment[i];
 		}
 	}
 
@@ -72,8 +75,9 @@ pub fn grid(children: Vec<PointsCollection>, corner: Vector<3, f32>, size: f32, 
 				size: settings.lod_size_scale * cell.total_area.sqrt(),
 			},
 			cell.slice,
-			cell.sub_index,
+			cell.height,
 			cell.curve,
+			cell.segment,
 		);
 	}
 	res
