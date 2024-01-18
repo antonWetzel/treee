@@ -5,7 +5,7 @@ use math::{ Vector, X, Y };
 
 use crate::{
 	lod,
-	segment::{ Segment, self },
+	segment::{ Segment, self, MeshRender },
 	state::State,
 	tree::{ Tree, LookupName },
 	camera,
@@ -252,22 +252,38 @@ impl Game {
 
 				ui.horizontal(|ui| {
 					ui.add_sized([LEFT, HEIGHT], Label::new("Display"));
-					if ui.add_sized([ui.available_width() / 2.0, HEIGHT], SelectableLabel::new(seg.render_mesh.not(), "Points")).clicked() {
-						seg.render_mesh = false;
+					if ui.add_sized([ui.available_width() / 3.0, HEIGHT], SelectableLabel::new(seg.render == MeshRender::Points, "Points")).clicked() {
+						seg.render = MeshRender::Points;
 					}
 					ui.set_enabled(matches!(seg.mesh, segment::MeshState::Done(..) | segment::MeshState::Progress(..)));
-					if ui.add_sized([ui.available_width(), HEIGHT], SelectableLabel::new(seg.render_mesh, "Mesh")).clicked() {
-						seg.render_mesh = true;
+					if ui.add_sized([ui.available_width() / 2.0, HEIGHT], SelectableLabel::new(seg.render == MeshRender::Mesh, "Mesh")).clicked() {
+						seg.render = MeshRender::Mesh;
+					}
+					if ui.add_sized([ui.available_width() / 1.0, HEIGHT], SelectableLabel::new(seg.render == MeshRender::MeshLines, "Lines")).clicked() {
+						seg.render = MeshRender::MeshLines;
 					}
 				});
 
-				ui.horizontal(|ui| {
-					ui.add_sized([LEFT, HEIGHT], Label::new("Mesh"));
-					ui.add_sized([ui.available_width() / 2.0, HEIGHT], DragValue::new(&mut seg.alpha).clamp_range(0.0..=10.0).speed(0.01));
-					if ui.add_sized([ui.available_width(), HEIGHT], Button::new("Update")).clicked() {
-						seg.triangulate(self.state);
-						seg.render_mesh = true;
-					}
+				ui.group(|ui| {
+					ui.horizontal(|ui| {
+						ui.add_sized([LEFT, HEIGHT], Label::new("Triangualation"));
+						if ui.add_sized([ui.available_width(), HEIGHT], Button::new("Start")).clicked() {
+							seg.triangulate(self.state);
+							if seg.render == MeshRender::Points {
+								seg.render = MeshRender::Mesh;
+							}
+						};
+					});
+
+					ui.horizontal(|ui| {
+						ui.add_sized([LEFT, HEIGHT], Label::new("Alpha"));
+						ui.add_sized([ui.available_width(), HEIGHT], DragValue::new(&mut seg.alpha).clamp_range(0.01..=10.0).speed(0.002));
+					});
+
+					ui.horizontal(|ui| {
+						ui.add_sized([LEFT, HEIGHT], Label::new("Subsample"));
+						ui.add_sized([ui.available_width(), HEIGHT], DragValue::new(&mut seg.sub_sample_distance).clamp_range(0.01..=1.0).speed(0.002));
+					});
 				});
 
 				for info in &seg.information.values {
@@ -579,7 +595,7 @@ impl render::Entry for World {
 		}
 
 		if let Some(segment) = &mut self.game.tree.segment {
-			if segment.render_mesh {
+			if matches!(segment.render, MeshRender::Mesh | MeshRender::MeshLines) {
 				segment.update(self.game.state);
 			}
 		}

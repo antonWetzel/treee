@@ -16,7 +16,7 @@ pub struct Cache<T> {
 }
 
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CacheIndex(usize);
 
 
@@ -46,7 +46,7 @@ impl<T> Cache<T> {
 	}
 
 
-	pub fn add_entry(&mut self, index: &CacheIndex, point: T) {
+	pub fn add_value(&mut self, index: &CacheIndex, point: T) {
 		self.current += 1;
 		if self.current > self.max_values {
 			self.evict();
@@ -108,6 +108,12 @@ impl<T> Cache<T> {
 			(None, active.len())
 		};
 		CacheEntry { length, file, active }
+	}
+
+
+	pub fn size(&mut self, index: &CacheIndex) -> usize {
+		self.active.get(&index.0).map(|active| active.len()).unwrap_or_default()
+			+ self.stored.get(&index.0).map(|&(_, l)| l).unwrap_or_default()
 	}
 }
 

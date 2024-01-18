@@ -105,7 +105,7 @@ impl Node {
 			},
 			Data::Leaf { mut size, mut segments, index } if size < MAX_LEAF_SIZE => {
 				segments.insert(point.segment);
-				cache.add_entry(&index, point);
+				cache.add_value(&index, point);
 				size += 1;
 				Data::Leaf { size, segments, index }
 			},

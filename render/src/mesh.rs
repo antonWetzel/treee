@@ -18,10 +18,31 @@ pub struct MeshState {
 }
 
 
+impl Has<MeshState> for MeshState {
+	fn get(&self) -> &MeshState { self }
+}
+
+
 impl MeshState {
 	pub fn new(state: &impl Has<State>) -> Self {
 		let state = state.get();
 
+		Self {
+			pipeline: Self::create_pipeline(state, wgpu::PolygonMode::Fill, true),
+		}
+	}
+
+
+	pub fn new_as_lines(state: &impl Has<State>) -> Self {
+		let state = state.get();
+
+		Self {
+			pipeline: Self::create_pipeline(state, wgpu::PolygonMode::Line, false),
+		}
+	}
+
+
+	fn create_pipeline(state: &State, mode: wgpu::PolygonMode, cull: bool) -> wgpu::RenderPipeline {
 		let shader = state
 			.device
 			.create_shader_module(wgpu::include_wgsl!("mesh.wgsl"));
@@ -33,7 +54,7 @@ impl MeshState {
 				push_constant_ranges: &[],
 			});
 
-		let pipeline = state
+		state
 			.device
 			.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
 				label: Some("mesh"),
@@ -60,9 +81,8 @@ impl MeshState {
 					topology: wgpu::PrimitiveTopology::TriangleList,
 					strip_index_format: None,
 					front_face: wgpu::FrontFace::Ccw,
-					cull_mode: Some(wgpu::Face::Front),
-					// polygon_mode: wgpu::PolygonMode::Line,
-					polygon_mode: wgpu::PolygonMode::Fill,
+					cull_mode: cull.then_some(wgpu::Face::Front),
+					polygon_mode: mode,
 					unclipped_depth: false,
 					conservative: false,
 				},
@@ -79,9 +99,7 @@ impl MeshState {
 					alpha_to_coverage_enabled: false,
 				},
 				multiview: None,
-			});
-
-		Self { pipeline }
+			})
 	}
 }
 

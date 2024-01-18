@@ -5,6 +5,7 @@ pub struct State {
 	state: render::State,
 	pointcloud: render::PointCloudState,
 	mesh: render::MeshState,
+	pub mesh_line: render::MeshState,
 	lines: render::LinesState,
 }
 
@@ -42,6 +43,7 @@ impl State {
 		Self {
 			pointcloud: render::PointCloudState::new(&state),
 			mesh: render::MeshState::new(&state),
+			mesh_line: render::MeshState::new_as_lines(&state),
 			lines: render::LinesState::new(&state),
 			state,
 		}

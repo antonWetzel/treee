@@ -22,3 +22,4 @@ rayon.workspace = true
 termsize.workspace = true
 bytemuck.workspace =  true
 clap.workspace = true
+voronator.workspace = true

@@ -27,16 +27,33 @@ type Tree = k_nearest::KDTree<3, f32, Vector<3, f32>, Adapter, k_nearest::Euclid
 type Package = Option<Vector<3, usize>>;
 
 
-pub fn triangulate(data: &[Vector<3, f32>], alpha: f32, res: std::sync::mpsc::Sender<Package>) -> Result<(), SendError<Package>> {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum State {
+	Blocked,
+	Used,
+	Free,
+}
+
+
+pub fn triangulate(data: &[Vector<3, f32>], alpha: f32, sub_sample_distance: f32, res: std::sync::mpsc::Sender<Package>) -> Result<(), SendError<Package>> {
 	let tree = Tree::new(data);
-	let mut used = vec![false; data.len()];
+	let mut used = vec![State::Free; data.len()];
+	for index in 0..used.len() {
+		if used[index] == State::Blocked {
+			continue;
+		}
+		let around = tree.nearest(&data[index], sub_sample_distance.powi(2));
+		for entry in around.into_iter().skip(1) {
+			used[entry.index] = State::Blocked
+		}
+	}
 
 	let mut found = HashSet::new();
 	while let Some(seed) = seed(data, &used, &tree, alpha, &res) {
 		res.send(Some(seed))?;
-		used[seed[X]] = true;
-		used[seed[Y]] = true;
-		used[seed[Z]] = true;
+		used[seed[X]] = State::Used;
+		used[seed[Y]] = State::Used;
+		used[seed[Z]] = State::Used;
 
 		let mut edges = [
 			(Edge::new(seed[X], seed[Z]), seed[Y]),
@@ -53,13 +70,13 @@ pub fn triangulate(data: &[Vector<3, f32>], alpha: f32, res: std::sync::mpsc::Se
 			found.insert(edge);
 			let (first, second) = (edge.0.active_1, edge.0.active_2);
 			let old = edge.1;
-			if let Some(third) = find_third(data, first, second, &tree, old, alpha) {
+			if let Some(third) = find_third(data, first, second, &tree, old, alpha, &used) {
 				// checked in `find_third`
 				if third == old {
 					continue;
 				}
 				res.send(Some([first, second, third].into()))?;
-				used[third] = true;
+				used[third] = State::Used;
 				for edge in [
 					(Edge::new(first, third), second),
 					(Edge::new(third, second), first),
@@ -114,8 +131,8 @@ impl std::hash::Hash for Edge {
 }
 
 
-fn seed(data: &[Vector<3, f32>], used: &[bool], tree: &Tree, alpha: f32, res: &std::sync::mpsc::Sender<Package>) -> Option<Vector<3, usize>> {
-	for (first, point) in data.iter().enumerate().filter(|&(idx, _)| used[idx].not()) {
+fn seed(data: &[Vector<3, f32>], used: &[State], tree: &Tree, alpha: f32, res: &std::sync::mpsc::Sender<Package>) -> Option<Vector<3, usize>> {
+	for (first, point) in data.iter().enumerate().filter(|&(idx, _)| used[idx] == State::Free) {
 		match res.send(None) {
 			Ok(_) => { },
 			Err(_) => return None,
@@ -128,11 +145,11 @@ fn seed(data: &[Vector<3, f32>], used: &[bool], tree: &Tree, alpha: f32, res: &s
 			.iter()
 			.enumerate()
 			.skip(1)
-			.filter(|(_, entry)| used[entry.index].not()) {
+			.filter(|(_, entry)| used[entry.index] == State::Free) {
 			for third in nearest
 				.iter()
 				.skip(second_index + 1)
-				.filter(|entry| used[entry.index].not()) {
+				.filter(|entry| used[entry.index] == State::Free) {
 				let Some(center) = sphere_location(data[first], data[second.index], data[third.index], alpha) else {
 					continue;
 				};
@@ -155,7 +172,7 @@ fn seed(data: &[Vector<3, f32>], used: &[bool], tree: &Tree, alpha: f32, res: &s
 }
 
 
-fn find_third(data: &[Vector<3, f32>], first: usize, second: usize, tree: &Tree, old: usize, alpha: f32) -> Option<usize> {
+fn find_third(data: &[Vector<3, f32>], first: usize, second: usize, tree: &Tree, old: usize, alpha: f32, used: &[State]) -> Option<usize> {
 	let a = data[first];
 	let b = data[old];
 	let c = data[second];
@@ -172,6 +189,7 @@ fn find_third(data: &[Vector<3, f32>], first: usize, second: usize, tree: &Tree,
 	for third in nearest
 		.iter()
 		.skip(1)
+		.filter(|entry| used[entry.index] != State::Blocked)
 		.filter(|entry| entry.index != first && entry.index != second && entry.index != old) {
 		let Some(center_2) = sphere_location(data[first], data[second], data[third.index], alpha) else {
 			continue;

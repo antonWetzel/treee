@@ -5,7 +5,7 @@ use std::ops::Not;
 use std::path::{ Path, PathBuf };
 
 use crate::loaded_manager::LoadedManager;
-use crate::segment::Segment;
+use crate::segment::{ Segment, MeshRender };
 use crate::state::State;
 use crate::{ camera, lod };
 
@@ -478,10 +478,10 @@ impl render::RenderEntry<State> for Tree {
 
 	fn render<'a>(&'a mut self, state: &'a State, render_pass: &mut render::RenderPass<'a>) {
 		if let Some(segment) = &self.segment {
-			if segment.render_mesh {
-				render_pass.render_meshes(segment, state, &self.camera.gpu, &self.lookup);
-			} else {
-				render_pass.render_point_clouds(segment, state, &self.camera.gpu, &self.lookup, &self.environment);
+			match segment.render {
+				MeshRender::Points => render_pass.render_point_clouds(segment, state, &self.camera.gpu, &self.lookup, &self.environment),
+				MeshRender::Mesh => render_pass.render_meshes(segment, state, &self.camera.gpu, &self.lookup),
+				MeshRender::MeshLines => render_pass.render_meshes(segment, &state.mesh_line, &self.camera.gpu, &self.lookup),
 			}
 		} else {
 			render_pass.render_point_clouds(self, state, &self.camera.gpu, &self.lookup, &self.environment);

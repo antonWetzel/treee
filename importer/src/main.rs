@@ -23,7 +23,7 @@ use tree::Tree;
 use crate::{ cache::Cache, progress::Stage, segment::Segmenter };
 
 
-const IMPORT_PROGRESS_SCALE: u64 = 10_000;
+pub const IMPORT_PROGRESS_SCALE: u64 = 10_000;
 
 
 #[derive(Error, Debug)]
@@ -53,6 +53,14 @@ pub struct Settings {
 	#[arg(long, default_value_t = 100)]
 	min_segment_size: usize,
 
+	/// Width of the horizontal slice in meters
+	#[arg(long, default_value_t = 0.75)]
+	segmenting_slice_width: f32,
+
+	/// Distance to combine segments in meters
+	#[arg(long, default_value_t = 1.0)]
+	segmenting_max_distance: f32,
+
 	/// Maximum count for neighbors search
 	#[arg(long, default_value_t = 31)]
 	neighbors_count: usize,
@@ -77,7 +85,7 @@ pub struct Cli {
 	output_folder: Option<PathBuf>,
 
 	/// Maximal thread count for multithreading. 0 for the amount of logical cores.
-	#[arg(long, default_value_t = 4)]
+	#[arg(long, default_value_t = 0)]
 	max_threads: usize,
 
 	#[command(flatten)]
@@ -130,7 +138,7 @@ fn import(cli: Cli) -> Result<(), ImporterError> {
 
 	let mut progress = Progress::new("Import", progress_points as usize);
 
-	let mut segmenter = Segmenter::new((min - pos).map(|v| v as f32), (max - pos).map(|v| v as f32));
+	let mut segmenter = Segmenter::new((min - pos).map(|v| v as f32), (max - pos).map(|v| v as f32), &settings);
 
 	let (sender, reciever) = crossbeam::channel::bounded(2048);
 	rayon::join(
@@ -156,9 +164,7 @@ fn import(cli: Cli) -> Result<(), ImporterError> {
 
 	progress.finish();
 
-	let progress = Stage::new("Segmenting");
 	let segments = segmenter.segments();
-	progress.finish();
 
 	let mut progress = Progress::new("Calculate", progress_points as usize);
 
@@ -168,7 +174,7 @@ fn import(cli: Cli) -> Result<(), ImporterError> {
 		diff[X].max(diff[Y]).max(diff[Z]) as f32,
 	);
 
-	let (sender, reciever) = crossbeam::channel::bounded(2048);
+	let (sender, reciever) = crossbeam::channel::bounded(2);
 	rayon::join(
 		|| {
 			segments
@@ -225,7 +231,7 @@ fn import(cli: Cli) -> Result<(), ImporterError> {
 fn main() {
 	let cli = Cli::parse();
 	let res = rayon::ThreadPoolBuilder::new()
-		.num_threads(cli.max_threads.min(std::thread::available_parallelism().map(|v| v.get()).unwrap_or(0)))
+		.num_threads(cli.max_threads)
 		.build()
 		.unwrap()
 		.install(|| import(cli));

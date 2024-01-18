@@ -17,15 +17,24 @@ pub enum MeshState {
 }
 
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MeshRender {
+	Points,
+	Mesh,
+	MeshLines,
+}
+
+
 pub struct Segment {
 	path: PathBuf,
 	point_cloud: render::PointCloud,
 	property: render::PointCloudProperty,
 	pub mesh: MeshState,
-	pub render_mesh: bool,
+	pub render: MeshRender,
 	index: NonZeroU32,
 	points: Vec<render::Point>,
 	pub alpha: f32,
+	pub sub_sample_distance: f32,
 
 	pub information: common::Segment,
 }
@@ -60,11 +69,12 @@ impl Segment {
 			point_cloud,
 			path,
 			mesh: MeshState::None,
-			render_mesh: false,
+			render: MeshRender::Points,
 			index,
 			information,
 			points,
 			alpha: 0.5,
+			sub_sample_distance: 0.1,
 		}
 	}
 
@@ -131,8 +141,9 @@ impl Segment {
 		let (sender, reciever) = std::sync::mpsc::channel();
 		let points = self.points.iter().map(|p| p.position).collect::<Vec<_>>();
 		let alpha = self.alpha;
+		let sub_sample_distance = self.sub_sample_distance;
 		std::thread::spawn(move || {
-			_ = triangulation::triangulate(&points, alpha, sender);
+			_ = triangulation::triangulate(&points, alpha, sub_sample_distance, sender);
 		});
 		self.mesh = MeshState::Progress(Vec::new(), render::Mesh::new(state, &[]), reciever);
 	}
