@@ -1,4 +1,4 @@
-use std::{ collections::HashSet, fs::File, io::Write, ops::Not };
+use std::{ collections::HashSet, ops::Not };
 
 use math::{ Vector, X, Y, Z };
 use voronator::delaunator::Point;
@@ -64,27 +64,13 @@ impl Segmenter {
 		let mut cache = Cache::new(100_000_000);
 		let mut prev_layer = Vec::new();
 
-		let mut svg = std::fs::File::create("test.html").unwrap();
-		let size = self.max - self.min;
-		svg.write_all(HTMLSTART.as_bytes()).unwrap();
-		svg.write_all(format!("<svg viewbox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\" width=\"{}\" height=\"{}\" >\n", size[X] * 10.0, size[Z] * 10.0, size[X] * 10.0, size[Z] * 10.0).as_bytes()).unwrap();
-		let mut x = 0;
-
 		let min = Point { x: self.min[X] as f64, y: self.min[Z] as f64 };
 		let max = Point { x: self.max[X] as f64, y: self.max[Z] as f64 };
 		for slice in self.slices.into_iter().rev() {
 			let slice = self.cache.read(slice).read();
 			let tree_set = TreeSet::new(&slice, self.max_distance);
 
-			tree_set.save(&mut svg, x, self.min);
-			x += 1;
 			let mut centroids = tree_set.tree_positions(&prev_layer);
-
-			svg.write_all(format!("  <g visibility=\"hidden\">\n").as_bytes()).unwrap();
-			for &(_, point) in &centroids {
-				svg.write_all(format!("    <circle cx=\"{}\" cy=\"{}\" r=\"10\" />", (point[X] - self.min[X]) * 10.0, (point[Y]- self.min[Z]) * 10.0).as_bytes()).unwrap();
-			}
-			svg.write_all(b"  </g>\n").unwrap();
 
 			let points = centroids.iter().map(|(_, p)| Point { x: p[X] as f64, y: p[Y] as f64 }).collect::<Vec<_>>();
 			let vor = voronator::VoronoiDiagram::new(&min, &max, &points).unwrap();
@@ -112,8 +98,6 @@ impl Segmenter {
 			prev_layer = centroids;
 		}
 		progress.finish();
-		svg.write_all(b"</svg>\n").unwrap();
-		svg.write_all(HTMLEND.as_bytes()).unwrap();
 
 		let mut segments = segments.into_iter().map(|entry| Segment { data: cache.read(entry) }).collect::<Vec<_>>();
 		segments.sort_by(|a, b| b.data.active().cmp(&a.data.active()));
@@ -263,21 +247,6 @@ impl Tree {
 		}
 		res
 	}
-
-
-	pub fn save_svg(&self, file: &mut File, min: Vector<3, f32>) {
-		file.write_all(b"    <polygon points=\"").unwrap();
-		for &point in &self.points {
-			file.write_all(format!("{},{} ", (point[X] - min[X]) * 10.0, (point[Y] - min[Z]) * 10.0).as_bytes()).unwrap();
-		}
-
-		file.write_all(format!(
-			"\" fill=\"rgb({}, {}, {})\"/>\n",
-			rand::random::<u8>(),
-			rand::random::<u8>(),
-			rand::random::<u8>(),
-		).as_bytes()).unwrap();
-	}
 }
 
 
@@ -370,55 +339,4 @@ impl TreeSet {
 		res.dedup();
 		res
 	}
-
-	// pub fn find(&mut self, point: Vector<3, f32>) -> Option<&mut Tree> {
-	// 	let p = Vector::new([point[X], point[Z]]);
-	// 	for tree in &mut self.trees {
-	// 		if tree.distance(p) <= 0.1 {
-	// 			return Some(tree);
-	// 		}
-	// 	}
-	// 	None
-	// }
-
-	pub fn save(&self, svg: &mut File, id: usize, min: Vector<3, f32>) {
-		svg.write_all(format!("  <g id=\"{}\" visibility=\"hidden\">\n", id).as_bytes()).unwrap();
-		for tree in &self.trees {
-			tree.save_svg(svg, min);
-		}
-		svg.write_all(b"  </g>\n").unwrap();
-	}
 }
-
-
-const HTMLSTART: &str = r#"
-<!DOCTYPE html>
-
-<head></head>
-
-<body>
-"#;
-
-const HTMLEND: &str = r#"
-</body>
-
-<script>
-  let id = 0;
-  let svg = window.document.body.children[0];
-  addEventListener("wheel", (event) => {
-    svg.children[id].setAttribute("visibility", "hidden");
-    if (event.deltaY >= 0.0) {
-      id += 1;
-      if (id >= svg.children.length) {
-        id = svg.children.length - 1;
-      }
-    } else {
-      id -= 1;
-      if (id < 0) {
-        id = 1;
-      }
-    }
-    svg.children[id].setAttribute("visibility", null);
-  });
-</script>
-"#;
