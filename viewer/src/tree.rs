@@ -22,8 +22,7 @@ pub const DEFAULT_BACKGROUND: Vector<3, f32> = Vector::new([0.1, 0.2, 0.3]);
 pub enum LookupName {
 	Warm,
 	Cold,
-	#[allow(dead_code)]
-	Wood,
+	Turbo,
 }
 
 
@@ -32,7 +31,7 @@ impl LookupName {
 		match self {
 			LookupName::Warm => include_bytes!("../assets/grad_warm.png"),
 			LookupName::Cold => include_bytes!("../assets/grad_cold.png"),
-			LookupName::Wood => include_bytes!("../assets/grad_wood.png"),
+			LookupName::Turbo => include_bytes!("../assets/grad_turbo.png"),
 		}
 	}
 }

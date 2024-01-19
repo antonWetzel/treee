@@ -28,7 +28,7 @@ k-nearest = { path = "./k-nearest" }
 triangulation = { path = "./triangulation" }
 
 pollster = "0.3"
-rfd = "0.12"
+rfd = "0.13"
 crossbeam-channel = "0.5"
 env_logger = "0.10"
 image = { version = "0.24", default-features = false, features = ["png"] }

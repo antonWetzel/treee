@@ -251,7 +251,6 @@ impl Tree {
 
 
 impl TreeSet {
-	// todo: Problem if wrapping around points.
 	pub fn new(points: &[Vector<3, f32>], max_distance: f32) -> TreeSet {
 		let mut trees = Vec::<Tree>::new();
 		'iter_points: for &point in points {
@@ -322,12 +321,11 @@ impl TreeSet {
 				}
 			}
 			match contains.len() {
-				0 | 1 => {
-					let mut centroid = Vector::new([0.0, 0.0]);
-					for &p in &tree.points {
-						centroid += p;
-					}
-					res.push((contains.first().map(|&(idx, _)| idx).flatten(), centroid / tree.points.len() as f32));
+				0 => {
+					res.push((None, centroid(&tree.points)));
+				},
+				1 => {
+					res.push((contains[0].0, centroid(&tree.points)));
 				},
 				_ => {
 					for entry in contains {
@@ -338,5 +336,44 @@ impl TreeSet {
 		}
 		res.dedup();
 		res
+	}
+}
+
+
+//https://math.stackexchange.com/questions/90463/how-can-i-calculate-the-centroid-of-polygon
+fn centroid(points: &[Vector<2, f32>]) -> Vector<2, f32> {
+	let mut center = Vector::new([0.0, 0.0]);
+	let mut area = 0.0;
+
+	let a = points[0];
+	for i in 1..(points.len() - 1) {
+		let b = points[i] - a;
+		let c = points[i + 1] - a;
+		let t_center = (b + c) / 3.0;
+		let t_area = (b[X] * c[Y] - b[Y] * c[X]) / 2.0;
+		assert!(t_area >= 0.0);
+
+		center += t_center * t_area;
+		area += t_area;
+	}
+
+	a + center / area
+}
+
+
+#[cfg(test)] mod tests {
+	use super::*;
+
+
+	#[test]
+	fn it_works() {
+		let points = [
+			Vector::new([10.0, 10.0]),
+			Vector::new([11.0, 10.0]),
+			Vector::new([11.0, 11.0]),
+			Vector::new([10.0, 11.0]),
+		];
+		let cetrer = centroid(&points);
+		panic!("{}", cetrer);
 	}
 }

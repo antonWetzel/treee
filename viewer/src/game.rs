@@ -353,7 +353,7 @@ impl Game {
 							let mut changed = false;
 							changed |= ui.selectable_value(&mut self.tree.lookup_name, LookupName::Warm, "Warm").changed();
 							changed |= ui.selectable_value(&mut self.tree.lookup_name, LookupName::Cold, "Cold").changed();
-							// changed |= ui.selectable_value(&mut self.tree.lookup_name, LookupName::Wood, "Wood").changed();
+							changed |= ui.selectable_value(&mut self.tree.lookup_name, LookupName::Turbo, "Turbo").changed();
 							if changed {
 								self.tree.update_lookup(self.state);
 							}
