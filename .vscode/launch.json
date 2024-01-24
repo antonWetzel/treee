@@ -13,7 +13,7 @@
 				"rust"
 			],
 			"cwd": "${workspaceFolder}/cwd",
-			"preLaunchTask": "cargo debug",
+			"preLaunchTask": "cargo debug importer",
 		},
 		{
 			"type": "lldb",
@@ -25,7 +25,7 @@
 			],
 			"cwd": "${workspaceFolder}/cwd",
 			"args": [],
-			"preLaunchTask": "cargo debug",
+			"preLaunchTask": "cargo debug viewer",
 		},
 		{
 			"type": "lldb",
@@ -36,7 +36,7 @@
 				"rust"
 			],
 			"cwd": "${workspaceFolder}/cwd",
-			"preLaunchTask": "cargo release",
+			"preLaunchTask": "cargo release importer",
 		},
 		{
 			"type": "lldb",
@@ -48,7 +48,7 @@
 			],
 			"cwd": "${workspaceFolder}/cwd",
 			"args": [],
-			"preLaunchTask": "cargo release",
+			"preLaunchTask": "cargo release viewer",
 		},
 	],
 }

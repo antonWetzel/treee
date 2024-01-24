@@ -7,8 +7,11 @@
 			"problemMatcher": [
 				"$rustc"
 			],
+			"args": [
+				"--bin=viewer",
+			],
 			"group": "build",
-			"label": "cargo debug"
+			"label": "cargo debug viewer"
 		},
 		{
 			"type": "cargo",
@@ -17,10 +20,36 @@
 				"$rustc"
 			],
 			"args": [
-				"--release"
+				"--release",
+				"--bin=viewer",
 			],
 			"group": "build",
-			"label": "cargo release"
+			"label": "cargo release viewer"
+		},
+		{
+			"type": "cargo",
+			"command": "build",
+			"problemMatcher": [
+				"$rustc"
+			],
+			"args": [
+				"--bin=importer",
+			],
+			"group": "build",
+			"label": "cargo debug importer"
+		},
+		{
+			"type": "cargo",
+			"command": "build",
+			"problemMatcher": [
+				"$rustc"
+			],
+			"args": [
+				"--release",
+				"--bin=importer",
+			],
+			"group": "build",
+			"label": "cargo release importer"
 		}
 	]
 }
