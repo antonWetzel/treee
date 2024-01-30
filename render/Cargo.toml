@@ -13,7 +13,6 @@ image.workspace = true
 log.workspace = true
 wgpu.workspace = true
 winit.workspace = true
-wgpu_text.workspace = true
 common.workspace = true
 egui-wgpu.workspace = true
 egui.workspace = true

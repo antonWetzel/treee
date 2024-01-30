@@ -1,4 +1,4 @@
-use std::collections::{ HashMap, HashSet };
+use std::collections::{HashMap, HashSet};
 use std::hint::spin_loop;
 use std::path::PathBuf;
 
@@ -6,14 +6,13 @@ use common::DataFile;
 
 use crate::State;
 
-
 pub struct LoadedManager {
 	available: HashMap<usize, render::PointCloud>,
 	requested: HashSet<usize>,
-	sender: crossbeam_channel::Sender<WorkerTask>,
-	reciever: crossbeam_channel::Receiver<Response>,
+	sender: crossbeam::channel::Sender<WorkerTask>,
+	reciever: crossbeam::channel::Receiver<Response>,
 
-	update_senders: Vec<crossbeam_channel::Sender<WorkerUpdate>>,
+	update_senders: Vec<crossbeam::channel::Sender<WorkerUpdate>>,
 
 	property_default: render::PointCloudProperty,
 	property_available: HashMap<usize, render::PointCloudProperty>,
@@ -23,12 +22,10 @@ pub struct LoadedManager {
 	property_path: PathBuf,
 }
 
-
 enum WorkerTask {
 	PointCloud(usize),
 	Property(usize),
 }
-
 
 enum Response {
 	PointCloud(usize, render::PointCloud),
@@ -37,23 +34,21 @@ enum Response {
 	FailedProperty(usize),
 }
 
-
 enum WorkerUpdate {
 	ChangeProperty(PathBuf, usize),
 }
 
-
 impl LoadedManager {
 	pub fn new(state: &'static State, mut path: PathBuf, property: &str) -> Self {
-		let (index_tx, index_rx) = crossbeam_channel::bounded(512);
-		let (pc_tx, pc_rx) = crossbeam_channel::bounded(512);
+		let (index_tx, index_rx) = crossbeam::channel::bounded(512);
+		let (pc_tx, pc_rx) = crossbeam::channel::bounded(512);
 		path.push("points.data");
 		let mut property_path = path.clone();
 		property_path.set_file_name(format!("{}.data", property));
 
 		let mut update_senders = Vec::new();
 		for _ in 0..2 {
-			let (update_sender, update_reciever) = crossbeam_channel::bounded(2);
+			let (update_sender, update_reciever) = crossbeam::channel::bounded(2);
 			update_senders.push(update_sender);
 			let index_rx = index_rx.clone();
 			let pc_tx = pc_tx.clone();
@@ -73,8 +68,8 @@ impl LoadedManager {
 
 				let task = match index_rx.try_recv() {
 					Ok(v) => v,
-					Err(crossbeam_channel::TryRecvError::Disconnected) => return,
-					Err(crossbeam_channel::TryRecvError::Empty) => {
+					Err(crossbeam::channel::TryRecvError::Disconnected) => return,
+					Err(crossbeam::channel::TryRecvError::Empty) => {
 						spin_loop();
 						continue;
 					},
@@ -114,7 +109,6 @@ impl LoadedManager {
 		}
 	}
 
-
 	pub fn change_property(&mut self, name: &str) {
 		self.property_index = self.property_index.overflowing_add(1).0;
 		self.property_path.set_file_name(format!("{}.data", name));
@@ -130,7 +124,6 @@ impl LoadedManager {
 		self.property_requested.clear();
 	}
 
-
 	pub fn request(&mut self, index: usize) {
 		if !self.requested.contains(&index) && self.sender.try_send(WorkerTask::PointCloud(index)).is_ok() {
 			self.requested.insert(index);
@@ -140,7 +133,6 @@ impl LoadedManager {
 		}
 	}
 
-
 	pub fn unload(&mut self, index: usize) {
 		self.available.remove(&index);
 		self.requested.remove(&index);
@@ -148,21 +140,18 @@ impl LoadedManager {
 		self.property_requested.remove(&index);
 	}
 
-
 	pub fn exist(&self, index: usize) -> bool {
 		self.available.contains_key(&index)
 	}
-
 
 	pub fn is_requested(&self, index: usize) -> bool {
 		self.requested.contains(&index)
 	}
 
-
 	pub fn render<'a>(&'a self, index: usize, point_cloud_pass: &mut render::PointCloudPass<'a>) {
 		let pc = self.available.get(&index);
 		match pc {
-			None => { },
+			None => {},
 			Some(pc) => pc.render(
 				point_cloud_pass,
 				self.property_available
@@ -172,11 +161,9 @@ impl LoadedManager {
 		}
 	}
 
-
 	pub fn loaded(&self) -> usize {
 		self.available.len()
 	}
-
 
 	pub fn update(&mut self) -> bool {
 		if self.reciever.is_empty() {
@@ -211,7 +198,6 @@ impl LoadedManager {
 	}
 }
 
-
 fn load_pointcloud(state: &State, data_file: &mut DataFile<render::Point>, index: usize) -> Option<render::PointCloud> {
 	let data = data_file.read(index);
 	if data.is_empty() {
@@ -219,7 +205,6 @@ fn load_pointcloud(state: &State, data_file: &mut DataFile<render::Point>, index
 	}
 	Some(render::PointCloud::new(state, &data))
 }
-
 
 fn load_property(state: &State, data_file: &mut DataFile<u32>, index: usize) -> Option<render::PointCloudProperty> {
 	let data = data_file.read(index);
