@@ -1,24 +1,21 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc};
 
-use math::{ Vector, X, Y, Z };
+use math::{Vector, X, Y, Z};
 
 use super::*;
-
 
 pub type WindowId = winit::window::WindowId;
 pub type EventResponse = egui_winit::EventResponse;
 
-
 pub struct Window {
-	pub window: winit::window::Window,
+	pub window: Arc<winit::window::Window>,
 	config: wgpu::SurfaceConfiguration,
-	surface: wgpu::Surface,
+	surface: wgpu::Surface<'static>,
 	depth_texture: DepthTexture,
 
 	pub egui_winit: egui_winit::State,
 	egui_wgpu: egui_wgpu::renderer::Renderer,
 }
-
 
 impl Window {
 	pub fn new<T: Into<String>>(
@@ -33,10 +30,9 @@ impl Window {
 			.with_min_inner_size(winit::dpi::LogicalSize { width: 10, height: 10 })
 			.build(window_target)
 			.unwrap();
+		let window = Arc::new(window);
 		let size = window.inner_size();
-		let surface = unsafe {
-			state.instance.create_surface(&window)
-		}.unwrap();
+		let surface = state.instance.create_surface(window.clone()).unwrap();
 		let surface_caps = surface.get_capabilities(&state.adapter);
 		let surface_format = *surface_caps
 			.formats
@@ -50,18 +46,14 @@ impl Window {
 			height: size.height,
 			present_mode: surface_caps.present_modes[0],
 			alpha_mode: surface_caps.alpha_modes[0],
+			desired_maximum_frame_latency: 2,
 			view_formats: Vec::new(),
 		};
 		surface.configure(&state.device, &config);
 
 		let depth_texture = DepthTexture::new(&state.device, &config, "depth");
 
-		let egui_wgpu = egui_wgpu::renderer::Renderer::new(
-			&state.device,
-			config.format,
-			None,
-			1,
-		);
+		let egui_wgpu = egui_wgpu::renderer::Renderer::new(&state.device, config.format, None, 1);
 
 		let id = egui.viewport_id();
 		Self {
@@ -69,59 +61,44 @@ impl Window {
 			depth_texture,
 			config,
 
-			egui_winit: egui_winit::State::new(
-				egui.clone(),
-				id,
-				&window,
-				None,
-				None,
-			),
+			egui_winit: egui_winit::State::new(egui.clone(), id, &window, None, None),
 			egui_wgpu,
 
 			window,
 		}
 	}
 
-
 	pub fn get_aspect(&self) -> f32 {
 		self.config.width as f32 / self.config.height as f32
 	}
-
 
 	pub fn get_size(&self) -> Vector<2, f32> {
 		[self.config.width as f32, self.config.height as f32].into()
 	}
 
-
 	pub fn set_title(&self, title: &str) {
 		self.window.set_title(title)
 	}
-
 
 	pub fn id(&self) -> WindowId {
 		self.window.id()
 	}
 
-
 	pub fn request_redraw(&self) {
 		self.window.request_redraw();
 	}
-
 
 	pub fn config(&self) -> &wgpu::SurfaceConfiguration {
 		&self.config
 	}
 
-
 	pub fn depth_texture(&self) -> &DepthTexture {
 		&self.depth_texture
 	}
 
-
 	pub fn window_event(&mut self, event: &winit::event::WindowEvent) -> EventResponse {
 		self.egui_winit.on_window_event(&self.window, event)
 	}
-
 
 	pub fn set_window_icon(&self, png: &[u8]) {
 		let img = image::load_from_memory(png).unwrap();
@@ -129,17 +106,14 @@ impl Window {
 		self.window.set_window_icon(Some(icon));
 	}
 
-
 	#[cfg(target_os = "windows")]
 	pub fn set_taskbar_icon(&self, png: &[u8]) {
 		use winit::platform::windows::WindowExtWindows;
-
 
 		let img = image::load_from_memory(png).unwrap();
 		let icon = winit::window::Icon::from_rgba(img.to_rgba8().into_vec(), img.width(), img.height()).unwrap();
 		self.window.set_taskbar_icon(Some(icon));
 	}
-
 
 	pub fn resized(&mut self, state: &impl Has<State>) {
 		let state = state.get();
@@ -150,12 +124,15 @@ impl Window {
 		self.depth_texture = DepthTexture::new(&state.device, &self.config, "depth");
 	}
 
-
-	pub fn screen_shot<S: Has<State>>(&mut self, state: &'static S, renderable: &mut impl RenderEntry<S>, path: PathBuf) {
+	pub fn screen_shot<S: Has<State>>(
+		&mut self,
+		state: &'static S,
+		renderable: &mut impl RenderEntry<S>,
+		path: PathBuf,
+	) {
 		fn ceil_to_multiple(value: u32, base: u32) -> u32 {
 			(value + (base - 1)) / base * base
 		}
-
 
 		let render_state: &State = state.get();
 		let (texture_width, texture_height, format) = {
@@ -185,7 +162,14 @@ impl Window {
 		let texture = render_state.device.create_texture(&texture_desc);
 		let view = texture.create_view(&Default::default());
 
-		self.render_to(state, renderable, &view, renderable.background(), 0.0, (&[], &[], &[]));
+		self.render_to(
+			state,
+			renderable,
+			&view,
+			renderable.background(),
+			0.0,
+			(&[], &[], &[]),
+		);
 
 		let u32_size = std::mem::size_of::<u32>() as u32;
 		let texture_width = ceil_to_multiple(texture_width, 256 / 4);
@@ -231,7 +215,7 @@ impl Window {
 				texture_height,
 				data.iter().copied().collect(),
 			)
-				.unwrap();
+			.unwrap();
 			drop(data);
 
 			for pixel in image.pixels_mut() {
@@ -242,7 +226,6 @@ impl Window {
 		});
 		tx.send(buffer).unwrap();
 	}
-
 
 	fn render_to<S: Has<State>>(
 		&mut self,
@@ -306,12 +289,19 @@ impl Window {
 			pixels_per_point: 1.0,
 		};
 		for (id, delta) in ui.1 {
-			self.egui_wgpu.update_texture(&render_state.device, &render_state.queue, *id, delta);
+			self.egui_wgpu
+				.update_texture(&render_state.device, &render_state.queue, *id, delta);
 		}
 		for id in ui.2 {
 			self.egui_wgpu.free_texture(id);
 		}
-		let commands = self.egui_wgpu.update_buffers(&render_state.device, &render_state.queue, &mut encoder, ui.0, screen);
+		let commands = self.egui_wgpu.update_buffers(
+			&render_state.device,
+			&render_state.queue,
+			&mut encoder,
+			ui.0,
+			screen,
+		);
 		render_state.queue.submit(commands);
 
 		let mut render_pass = RenderPass::new(encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -357,7 +347,7 @@ impl Window {
 
 		render_state.queue.submit(Some(encoder.finish()));
 		{
-			map_buffer.slice(..).map_async(wgpu::MapMode::Read, |_| { });
+			map_buffer.slice(..).map_async(wgpu::MapMode::Read, |_| {});
 
 			render_state.device.poll(wgpu::Maintain::Wait);
 
@@ -368,17 +358,28 @@ impl Window {
 		}
 	}
 
-
-	pub fn render<S: Has<State>>(&mut self, state: &'static S, renderable: &mut impl RenderEntry<S>, ui: egui::FullOutput, egui: &egui::Context) -> Option<f32> {
+	pub fn render<S: Has<State>>(
+		&mut self,
+		state: &'static S,
+		renderable: &mut impl RenderEntry<S>,
+		ui: egui::FullOutput,
+		egui: &egui::Context,
+	) -> Option<f32> {
 		let output = self.surface.get_current_texture().ok()?;
-		let view = output
-			.texture
-			.create_view(&Default::default());
+		let view = output.texture.create_view(&Default::default());
 
-		self.egui_winit.handle_platform_output(&self.window, ui.platform_output);
+		self.egui_winit
+			.handle_platform_output(&self.window, ui.platform_output);
 		let paint_jobs = egui.tessellate(ui.shapes, ui.pixels_per_point);
 
-		let res = self.render_to(state, renderable, &view, renderable.background(), 1.0, (&paint_jobs, &ui.textures_delta.set, &ui.textures_delta.free));
+		let res = self.render_to(
+			state,
+			renderable,
+			&view,
+			renderable.background(),
+			1.0,
+			(&paint_jobs, &ui.textures_delta.set, &ui.textures_delta.free),
+		);
 		output.present();
 		Some(res)
 	}

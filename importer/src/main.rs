@@ -52,7 +52,7 @@ pub struct Settings {
 	segmenting_slice_width: f32,
 
 	/// Distance to combine segments in meters
-	#[arg(long, default_value_t = 0.75)]
+	#[arg(long, default_value_t = 1.0)]
 	segmenting_max_distance: f32,
 
 	/// Maximum count for neighbors search

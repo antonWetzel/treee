@@ -9,7 +9,6 @@ edition.workspace = true
 math.workspace = true
 input.workspace = true
 bytemuck.workspace = true
-env_logger.workspace = true
 image.workspace = true
 log.workspace = true
 wgpu.workspace = true

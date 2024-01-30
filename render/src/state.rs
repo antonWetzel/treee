@@ -2,7 +2,6 @@ use math::Vector;
 
 use super::*;
 
-
 pub struct State {
 	pub(crate) device: wgpu::Device,
 	pub(crate) queue: wgpu::Queue,
@@ -11,18 +10,16 @@ pub struct State {
 	pub(crate) surface_format: wgpu::TextureFormat,
 }
 
-
 impl Has<State> for State {
-	fn get(&self) -> &State { self }
+	fn get(&self) -> &State {
+		self
+	}
 }
-
 
 pub type RenderError = winit::error::EventLoopError;
 
-
 impl State {
 	pub async fn new() -> Result<(Self, Runner), RenderError> {
-		env_logger::init();
 		let event_loop = winit::event_loop::EventLoop::new()?;
 
 		let window = winit::window::WindowBuilder::new()
@@ -37,9 +34,7 @@ impl State {
 			gles_minor_version: wgpu::Gles3MinorVersion::default(),
 		});
 
-		let surface = unsafe {
-			instance.create_surface(&window)
-		}.unwrap();
+		let surface = instance.create_surface(&window).unwrap();
 
 		let adapter = instance
 			.request_adapter(&wgpu::RequestAdapterOptions {
@@ -53,8 +48,8 @@ impl State {
 		let (device, queue) = adapter
 			.request_device(
 				&wgpu::DeviceDescriptor {
-					features: wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::POLYGON_MODE_LINE,
-					limits: wgpu::Limits {
+					required_features: wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::POLYGON_MODE_LINE,
+					required_limits: wgpu::Limits {
 						max_buffer_size: u64::MAX,
 						..Default::default()
 					},
@@ -85,11 +80,9 @@ impl State {
 	}
 }
 
-
 pub struct Runner {
 	pub event_loop: winit::event_loop::EventLoop<()>,
 }
-
 
 impl Runner {
 	pub fn run<T: Entry>(self, game: &mut T) -> Result<(), RenderError> {
@@ -109,7 +102,7 @@ impl Runner {
 						winit::event::WindowEvent::ScaleFactorChanged { .. } => todo!(),
 						winit::event::WindowEvent::KeyboardInput { event, .. } => match event.physical_key {
 							winit::keyboard::PhysicalKey::Code(key) => game.key_changed(window_id, key, event.state),
-							winit::keyboard::PhysicalKey::Unidentified(_) => { },
+							winit::keyboard::PhysicalKey::Unidentified(_) => {},
 						},
 						winit::event::WindowEvent::MouseInput { state: button_state, button, .. } => {
 							game.mouse_button_changed(window_id, (button).into(), button_state)
@@ -125,13 +118,15 @@ impl Runner {
 							let position = Vector::from([position.x as f32, position.y as f32]);
 							game.mouse_moved(window_id, position)
 						},
-						winit::event::WindowEvent::ModifiersChanged(modifiers) => game.modifiers_changed(modifiers.state()),
+						winit::event::WindowEvent::ModifiersChanged(modifiers) => {
+							game.modifiers_changed(modifiers.state())
+						},
 						winit::event::WindowEvent::RedrawRequested => game.render(window_id),
-						_ => { },
+						_ => {},
 					}
 				},
 				winit::event::Event::AboutToWait => game.time(),
-				_ => { },
+				_ => {},
 			}
 
 			if game.exit() {

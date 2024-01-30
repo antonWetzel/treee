@@ -2,7 +2,6 @@ use pollster::FutureExt;
 use state::State;
 use thiserror::Error;
 
-
 mod camera;
 mod game;
 mod loaded_manager;
@@ -10,7 +9,6 @@ mod lod;
 mod segment;
 mod state;
 mod tree;
-
 
 #[derive(Debug, Error)]
 enum ViewerError {
@@ -20,8 +18,11 @@ enum ViewerError {
 	RenderError(#[from] render::RenderError),
 }
 
-
 fn main() -> Result<(), ViewerError> {
+	simple_logger::SimpleLogger::new()
+		.with_level(log::LevelFilter::Info)
+		.init()
+		.unwrap();
 	let path = rfd::FileDialog::new()
 		.set_title("Select Project File")
 		.add_filter("Project File", &["epc"])

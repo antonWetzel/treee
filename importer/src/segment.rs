@@ -1,4 +1,4 @@
-use std::{collections::HashSet, io::Write, ops::Not};
+use std::{collections::HashSet, ops::Not};
 
 use math::{Vector, X, Y, Z};
 use voronator::delaunator::Point;
@@ -95,7 +95,7 @@ impl Segmenter {
 			// 	tree.save_svg(&mut svg, self.min, true);
 			// }
 
-			let mut centroids = tree_set.tree_positions(&prev_layer);
+			let mut centroids = tree_set.tree_positions(&prev_layer, self.max_distance);
 
 			// for &(_, point) in &centroids {
 			// 	svg.write_all(
@@ -375,26 +375,13 @@ impl TreeSet {
 				},
 			}
 		}
-		// single merge pass
-		// loop {
-		// 	let mut merged = false;
-		for i in (1..trees.len()).rev() {
-			let tree = &trees[i];
-			let intersect = tree.intersections(&trees[0..i]);
-			let Some(other) = intersect.first().copied() else {
+
+		for i in (0..trees.len()).rev() {
+			if area(&trees[i].points) >= (max_distance * max_distance) / 4.0 {
 				continue;
-			};
-			let tree = trees.remove(i);
-			let target = &mut trees[other];
-			for point in tree.points {
-				target.insert(point, max_distance);
 			}
-			// merged = true;
+			trees.remove(i);
 		}
-		// 	if !merged {
-		// 		break;
-		// 	}
-		// }
 
 		Self { trees }
 	}
@@ -402,12 +389,13 @@ impl TreeSet {
 	pub fn tree_positions(
 		&self,
 		prev: &[(Option<CacheIndex>, Vector<2, f32>)],
+		max_distance: f32,
 	) -> Vec<(Option<CacheIndex>, Vector<2, f32>)> {
 		let mut res = Vec::new();
 		for tree in &self.trees {
 			let mut contains = Vec::new();
 			for &(idx, p) in prev {
-				if tree.distance(p) < 0.1 {
+				if tree.distance(p) <= max_distance {
 					contains.push((idx, p));
 				}
 			}
@@ -448,6 +436,20 @@ fn centroid(points: &[Vector<2, f32>]) -> Vector<2, f32> {
 	}
 
 	a + center / area
+}
+
+fn area(points: &[Vector<2, f32>]) -> f32 {
+	let mut area = 0.0;
+
+	let a = points[0];
+	for i in 1..(points.len() - 1) {
+		let b = points[i] - a;
+		let c = points[i + 1] - a;
+		let t_area = (b[X] * c[Y] - b[Y] * c[X]) / 2.0;
+		area += t_area;
+	}
+
+	area
 }
 
 #[cfg(test)]

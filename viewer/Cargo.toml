@@ -19,3 +19,5 @@ thiserror.workspace = true
 bytemuck.workspace = true
 bincode.workspace = true
 serde.workspace = true
+simple_logger.workspace = true
+log.workspace = true
