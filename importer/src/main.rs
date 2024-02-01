@@ -111,6 +111,7 @@ fn import(cli: Cli) -> Result<(), ImporterError> {
 	};
 	let settings = cli.settings;
 
+	let mut statistics = Statistics::default();
 	let stage = Stage::new("Setup Files");
 
 	Writer::setup(&output)?;
@@ -124,8 +125,9 @@ fn import(cli: Cli) -> Result<(), ImporterError> {
 	let diff = max - min;
 	let pos = min + diff / 2.0;
 	let total_points = header.number_of_points() as usize;
+	statistics.source_points = total_points;
 
-	stage.finish();
+	statistics.times.setup = stage.finish();
 
 	let mut progress = Progress::new("Import", total_points);
 
@@ -135,7 +137,7 @@ fn import(cli: Cli) -> Result<(), ImporterError> {
 		&settings,
 	);
 
-	let (sender, reciever) = crossbeam::channel::bounded(2048);
+	let (sender, reciever) = crossbeam::channel::bounded(16);
 	rayon::join(
 		|| {
 			const CHUNK_SIZE: usize = 1024;
@@ -161,9 +163,10 @@ fn import(cli: Cli) -> Result<(), ImporterError> {
 		},
 	);
 
-	progress.finish();
+	statistics.times.import = progress.finish();
 
-	let segments = segmenter.segments();
+	let segments = segmenter.segments(&mut statistics);
+	statistics.segments = segments.len();
 
 	let mut progress = Progress::new("Calculate", total_points);
 
@@ -198,7 +201,7 @@ fn import(cli: Cli) -> Result<(), ImporterError> {
 		},
 	);
 
-	progress.finish();
+	statistics.times.calculate = progress.finish();
 
 	let stage = Stage::new("Save Project");
 
@@ -212,9 +215,9 @@ fn import(cli: Cli) -> Result<(), ImporterError> {
 
 	let writer = Writer::new(output, &project)?;
 
-	stage.finish();
+	statistics.times.project = stage.finish();
 
-	tree.save(writer, &settings);
+	tree.save(writer, &settings, statistics);
 
 	Ok(())
 }
@@ -230,4 +233,23 @@ fn main() {
 		Ok(()) => {},
 		Err(err) => eprintln!("Error: {}", err),
 	}
+}
+
+#[derive(Default, serde::Serialize)]
+pub struct Statistics {
+	source_points: usize,
+	leaf_points: usize,
+	branch_points: usize,
+	segments: usize,
+	times: Times,
+}
+
+#[derive(Default, serde::Serialize)]
+pub struct Times {
+	setup: f32,
+	import: f32,
+	segment: f32,
+	calculate: f32,
+	project: f32,
+	lods: f32,
 }

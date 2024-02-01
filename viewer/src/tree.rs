@@ -2,21 +2,19 @@ use std::collections::HashSet;
 use std::io::Read;
 use std::num::NonZeroU32;
 use std::ops::Not;
-use std::path::{ Path, PathBuf };
+use std::path::{Path, PathBuf};
 
 use crate::loaded_manager::LoadedManager;
-use crate::segment::{ Segment, MeshRender };
+use crate::segment::{MeshRender, Segment};
 use crate::state::State;
-use crate::{ camera, lod };
+use crate::{camera, lod};
 
 use common::IndexNode;
-use common::{ IndexData, Project };
-use math::{ Dimension, Vector, X, Y, Z };
-use render::{ Window, LinesRenderExt, MeshRenderExt, PointCloudExt };
-
+use common::{IndexData, Project};
+use math::{Dimension, Vector, X, Y, Z};
+use render::{LinesRenderExt, MeshRenderExt, PointCloudExt, Window};
 
 pub const DEFAULT_BACKGROUND: Vector<3, f32> = Vector::new([0.1, 0.2, 0.3]);
-
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum LookupName {
@@ -24,7 +22,6 @@ pub enum LookupName {
 	Cold,
 	Turbo,
 }
-
 
 impl LookupName {
 	pub fn data(self) -> &'static [u8] {
@@ -35,7 +32,6 @@ impl LookupName {
 		}
 	}
 }
-
 
 pub struct Tree {
 	pub root: Node,
@@ -54,7 +50,6 @@ pub struct Tree {
 	pub property: (String, String),
 }
 
-
 pub struct Node {
 	data: Data,
 	pub corner: Vector<3, f32>,
@@ -63,7 +58,6 @@ pub struct Node {
 
 	lines: render::Lines,
 }
-
 
 pub enum Data {
 	Branch {
@@ -75,7 +69,6 @@ pub enum Data {
 	},
 }
 
-
 impl Node {
 	pub fn new(node: &IndexNode, state: &State) -> Self {
 		let data = match &node.data {
@@ -85,7 +78,8 @@ impl Node {
 				for (i, child) in index_children
 					.iter()
 					.enumerate()
-					.filter_map(|(i, child)| child.as_ref().map(|c| (i, c))) {
+					.filter_map(|(i, child)| child.as_ref().map(|c| (i, c)))
+				{
 					let node = Node::new(child, state);
 					node.get_segments(&mut segments);
 					children[i] = Some(node);
@@ -101,14 +95,15 @@ impl Node {
 			node.position + Vector::new([node.size, 0.0, 0.0]),
 			node.position + Vector::new([node.size, 0.0, node.size]),
 			node.position + Vector::new([0.0, 0.0, node.size]),
-
 			node.position + Vector::new([0.0, node.size, 0.0]),
 			node.position + Vector::new([node.size, node.size, 0.0]),
 			node.position + Vector::new([node.size, node.size, node.size]),
 			node.position + Vector::new([0.0, node.size, node.size]),
 		];
 
-		let indices = [0, 1, 1, 2, 2, 3, 3, 0, 4, 5, 5, 6, 6, 7, 7, 4, 0, 4, 1, 5, 2, 6, 3, 7];
+		let indices = [
+			0, 1, 1, 2, 2, 3, 3, 0, 4, 5, 5, 6, 6, 7, 7, 4, 0, 4, 1, 5, 2, 6, 3, 7,
+		];
 
 		Node {
 			lines: render::Lines::new(state, &points, &indices),
@@ -118,7 +113,6 @@ impl Node {
 			data,
 		}
 	}
-
 
 	fn get_segments(&self, set: &mut HashSet<NonZeroU32>) {
 		match &self.data {
@@ -134,7 +128,6 @@ impl Node {
 			},
 		}
 	}
-
 
 	pub fn render<'a>(
 		&'a self,
@@ -166,7 +159,6 @@ impl Node {
 		}
 	}
 
-
 	pub fn render_lines<'a>(
 		&'a self,
 		lines_pass: &mut render::LinesPass<'a>,
@@ -197,7 +189,6 @@ impl Node {
 		}
 	}
 
-
 	pub fn can_render_children(
 		children: &[Option<Node>; 8],
 		loaded_manager: &LoadedManager,
@@ -214,7 +205,6 @@ impl Node {
 		}
 		count < 1
 	}
-
 
 	pub fn update(&mut self, view_checker: lod::Checker, camera: &camera::Camera, loaded_manager: &mut LoadedManager) {
 		if !camera.inside_moved_frustrum(self.corner, self.size, -10.0) {
@@ -243,7 +233,6 @@ impl Node {
 		}
 	}
 
-
 	pub fn clear(&self, loaded_manager: &mut LoadedManager) {
 		if !loaded_manager.is_requested(self.index) {
 			return;
@@ -255,10 +244,9 @@ impl Node {
 					child.clear(loaded_manager);
 				}
 			},
-			Data::Leaf { segments: _ } => { },
+			Data::Leaf { segments: _ } => {},
 		}
 	}
-
 
 	pub fn raycast_distance(&self, start: Vector<3, f32>, direction: Vector<3, f32>) -> Option<f32> {
 		let size = Vector::new([self.size, self.size, self.size]);
@@ -279,7 +267,6 @@ impl Node {
 				(None, None) => None,
 			})
 	}
-
 
 	pub fn raycast(
 		&self,
@@ -331,8 +318,8 @@ impl Node {
 						continue;
 					};
 					let length = file.metadata().unwrap().len();
-					let mut data
-						= bytemuck::zeroed_vec::<render::Point>(length as usize / std::mem::size_of::<render::Point>());
+					let mut data =
+						bytemuck::zeroed_vec::<render::Point>(length as usize / std::mem::size_of::<render::Point>());
 					file.read_exact(bytemuck::cast_slice_mut(&mut data))
 						.unwrap();
 
@@ -362,10 +349,16 @@ impl Node {
 	}
 }
 
-
 impl Tree {
-	pub fn new(state: &'static State, project: &Project, path: PathBuf, property: (String, String), window: &Window) -> Self {
+	pub fn new(
+		state: &'static State,
+		project: &Project,
+		path: PathBuf,
+		property: (String, String),
+		window: &Window,
+	) -> Self {
 		let lookup_name = LookupName::Warm;
+
 		Self {
 			background: DEFAULT_BACKGROUND,
 			camera: camera::Camera::new(state, window.get_aspect()),
@@ -383,11 +376,9 @@ impl Tree {
 		}
 	}
 
-
 	pub fn update_lookup(&mut self, state: &'static State) {
 		self.lookup = render::Lookup::new_png(state, self.lookup_name.data());
 	}
-
 
 	pub fn raycast(&self, start: Vector<3, f32>, direction: Vector<3, f32>, path: &Path) -> Option<NonZeroU32> {
 		self.root.raycast_distance(start, direction)?;
@@ -397,7 +388,6 @@ impl Tree {
 			.map(|(seg, _)| seg)
 	}
 
-
 	pub fn update(&mut self) {
 		self.root.update(
 			lod::Checker::new(&self.camera.lod),
@@ -406,7 +396,6 @@ impl Tree {
 		);
 	}
 }
-
 
 fn raycast_check(
 	start: Vector<3, f32>,
@@ -444,7 +433,6 @@ fn raycast_check(
 	Some(dist)
 }
 
-
 impl render::PointCloudRender for Tree {
 	fn render<'a>(&'a self, point_cloud_pass: &mut render::PointCloudPass<'a>) {
 		self.root.render(
@@ -455,7 +443,6 @@ impl render::PointCloudRender for Tree {
 		);
 	}
 }
-
 
 impl render::LinesRender for Tree {
 	fn render<'a>(&'a self, lines_pass: &mut render::LinesPass<'a>) {
@@ -468,28 +455,39 @@ impl render::LinesRender for Tree {
 	}
 }
 
-
 impl render::RenderEntry<State> for Tree {
 	fn background(&self) -> Vector<3, f32> {
 		self.background
 	}
 
-
 	fn render<'a>(&'a mut self, state: &'a State, render_pass: &mut render::RenderPass<'a>) {
 		if let Some(segment) = &self.segment {
 			match segment.render {
-				MeshRender::Points => render_pass.render_point_clouds(segment, state, &self.camera.gpu, &self.lookup, &self.environment),
+				MeshRender::Points => render_pass.render_point_clouds(
+					segment,
+					state,
+					&self.camera.gpu,
+					&self.lookup,
+					&self.environment,
+				),
 				MeshRender::Mesh => render_pass.render_meshes(segment, state, &self.camera.gpu, &self.lookup),
-				MeshRender::MeshLines => render_pass.render_meshes(segment, &state.mesh_line, &self.camera.gpu, &self.lookup),
+				MeshRender::MeshLines => {
+					render_pass.render_meshes(segment, &state.mesh_line, &self.camera.gpu, &self.lookup)
+				},
 			}
 		} else {
-			render_pass.render_point_clouds(self, state, &self.camera.gpu, &self.lookup, &self.environment);
+			render_pass.render_point_clouds(
+				self,
+				state,
+				&self.camera.gpu,
+				&self.lookup,
+				&self.environment,
+			);
 			if self.voxels_active {
 				render_pass.render_lines(self, state, &self.camera.gpu);
 			}
 		}
 	}
-
 
 	fn post_process<'a>(&'a mut self, _state: &'a State, render_pass: &mut render::RenderPass<'a>) {
 		if self.eye_dome_active {

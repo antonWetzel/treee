@@ -1,8 +1,7 @@
 use std::{
 	io::Write,
-	time::{ Duration, Instant },
+	time::{Duration, Instant},
 };
-
 
 pub struct Progress<'a> {
 	start: Instant,
@@ -11,7 +10,6 @@ pub struct Progress<'a> {
 	goal: usize,
 	name: &'a str,
 }
-
 
 impl<'a> Progress<'a> {
 	pub fn new(name: &'a str, goal: usize) -> Self {
@@ -26,12 +24,10 @@ impl<'a> Progress<'a> {
 		}
 	}
 
-
 	pub fn step(&mut self) {
 		self.current += 1;
 		self.maybe_print();
 	}
-
 
 	fn maybe_print(&mut self) {
 		let now = Instant::now();
@@ -41,16 +37,13 @@ impl<'a> Progress<'a> {
 		}
 	}
 
-
 	#[allow(dead_code)]
 	pub fn step_by(&mut self, amount: usize) {
 		self.current += amount;
 		self.maybe_print();
 	}
 
-
 	const SUB_STEPS: &'static str = " ▏▎▍▌▋▊▉";
-
 
 	fn print(name: &str, progress: usize, goal: usize, start: Instant) {
 		let (hours, minutes, seconds) = time(start);
@@ -90,13 +83,12 @@ impl<'a> Progress<'a> {
 		std::io::stdout().flush().unwrap();
 	}
 
-
-	pub fn finish(self) {
+	pub fn finish(self) -> f32 {
 		Self::print(self.name, self.goal, self.goal, self.start);
-		println!()
+		println!();
+		self.start.elapsed().as_secs_f32()
 	}
 }
-
 
 fn time(start: Instant) -> (u64, u64, u64) {
 	let seconds = start.elapsed().as_secs();
@@ -109,12 +101,10 @@ fn time(start: Instant) -> (u64, u64, u64) {
 	(hours, minutes, seconds)
 }
 
-
 pub struct Stage<'a> {
 	start: Instant,
 	name: &'a str,
 }
-
 
 impl<'a> Stage<'a> {
 	pub fn new(name: &'a str) -> Self {
@@ -129,8 +119,7 @@ impl<'a> Stage<'a> {
 		Self { start: Instant::now(), name }
 	}
 
-
-	pub fn finish(self) {
+	pub fn finish(self) -> f32 {
 		let (hours, minutes, seconds) = time(self.start);
 		println!(
 			"{}:{: >width$} [{:0>2}:{:0>2}:{:0>2}] ...",
@@ -141,5 +130,6 @@ impl<'a> Stage<'a> {
 			seconds,
 			width = 15 - self.name.len()
 		);
+		self.start.elapsed().as_secs_f32()
 	}
 }

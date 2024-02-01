@@ -1,17 +1,15 @@
 use std::{
 	collections::HashSet,
 	fs::File,
-	io::{ Read, Seek, Write },
+	io::{Read, Seek, Write},
 	num::NonZeroU32,
 	path::Path,
 };
 
 use math::Vector;
-use serde::{ Deserialize, Serialize };
-
+use serde::{Deserialize, Serialize};
 
 pub const MAX_LEAF_SIZE: usize = 1 << 15;
-
 
 #[derive(Debug, Deserialize, Serialize)]
 pub enum IndexData {
@@ -23,7 +21,6 @@ pub enum IndexData {
 	},
 }
 
-
 #[derive(Debug, Deserialize, Serialize)]
 pub struct IndexNode {
 	pub data: IndexData,
@@ -31,7 +28,6 @@ pub struct IndexNode {
 	pub size: f32,
 	pub index: u32,
 }
-
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Project {
@@ -41,13 +37,11 @@ pub struct Project {
 	pub properties: Vec<(String, String)>,
 }
 
-
 impl Project {
 	pub fn from_file(path: impl AsRef<Path>) -> Self {
 		let file = std::fs::OpenOptions::new().read(true).open(path).unwrap();
 		bincode::deserialize_from(file).unwrap()
 	}
-
 
 	pub fn save(&self, path: impl AsRef<Path>) {
 		let file = std::fs::OpenOptions::new()
@@ -59,14 +53,12 @@ impl Project {
 	}
 }
 
-
 #[derive(Debug, Deserialize, Serialize)]
 pub enum Value {
 	Index(NonZeroU32),
 	Percent(f32),
 	RelativeHeight { absolute: f32, percent: f32 },
 }
-
 
 impl std::fmt::Display for Value {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -78,7 +70,6 @@ impl std::fmt::Display for Value {
 	}
 }
 
-
 pub struct DataFile<T>
 where
 	T: Copy + bytemuck::Pod,
@@ -86,7 +77,6 @@ where
 	file: File,
 	phantom: std::marker::PhantomData<T>,
 }
-
 
 impl<T> DataFile<T>
 where
@@ -103,7 +93,6 @@ where
 		Self { file, phantom: std::marker::PhantomData }
 	}
 
-
 	pub fn open(path: impl AsRef<Path>) -> Self {
 		Self {
 			file: std::fs::OpenOptions::new()
@@ -113,7 +102,6 @@ where
 			phantom: std::marker::PhantomData,
 		}
 	}
-
 
 	pub fn save(&mut self, idx: usize, data: &[T]) {
 		self.file.seek(std::io::SeekFrom::End(0)).unwrap();
@@ -126,7 +114,6 @@ where
 			.unwrap();
 		self.file.write_all(bytemuck::cast_slice(&pos)).unwrap();
 	}
-
 
 	pub fn read(&mut self, idx: usize) -> Vec<T> {
 		let mut pos = [0u64, 0u64];
@@ -145,20 +132,26 @@ where
 			.unwrap();
 		buffer
 	}
-}
 
+	pub fn sizes(&mut self, size: usize) -> Vec<[usize; 2]> {
+		let mut buffer = vec![[0usize, 0usize]; size];
+		self.file.seek(std::io::SeekFrom::Start(0)).unwrap();
+		self.file
+			.read_exact(bytemuck::cast_slice_mut(&mut buffer))
+			.unwrap();
+		buffer
+	}
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Segment {
 	pub values: Vec<(String, Value)>,
 }
 
-
 impl Segment {
 	pub fn new(values: Vec<(String, Value)>) -> Self {
 		Self { values }
 	}
-
 
 	pub fn save(&self, path: &Path) {
 		let file = std::fs::OpenOptions::new()
@@ -168,7 +161,6 @@ impl Segment {
 			.unwrap();
 		bincode::serialize_into(file, self).unwrap();
 	}
-
 
 	pub fn load(path: &Path) -> Self {
 		let file = std::fs::OpenOptions::new().read(true).open(path).unwrap();

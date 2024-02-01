@@ -1,21 +1,20 @@
 use common::Project;
 use std::{
-	io::{ BufWriter, Write },
+	io::{BufWriter, Write},
 	num::NonZeroU32,
-	path::{ Path, PathBuf },
+	path::{Path, PathBuf},
 };
 
-use crate::{ point, ImporterError, calculations::SegmentInformation };
-
+use crate::{calculations::SegmentInformation, point, ImporterError, Statistics};
 
 pub struct Writer {
+	path: PathBuf,
 	pub points: common::DataFile<render::Point>,
 	pub slice: common::DataFile<u32>,
 	pub curve: common::DataFile<u32>,
 	pub height: common::DataFile<u32>,
 	pub segment: common::DataFile<u32>,
 }
-
 
 impl Writer {
 	pub fn setup(path: &Path) -> Result<(), ImporterError> {
@@ -33,7 +32,6 @@ impl Writer {
 		std::fs::create_dir_all(path).unwrap();
 		Ok(())
 	}
-
 
 	pub fn new(mut path: PathBuf, project: &Project) -> Result<Self, ImporterError> {
 		let size = project.root.index as usize + 1;
@@ -56,14 +54,25 @@ impl Writer {
 		path.set_file_name("segment.data");
 		let segment = common::DataFile::new(size, &path);
 
-		Ok(Self { points, slice, curve, height, segment })
+		Ok(Self {
+			points,
+			slice,
+			curve,
+			height,
+			segment,
+			path,
+		})
 	}
-
 
 	pub fn save(&mut self, index: u32, points: &[render::Point]) {
 		self.points.save(index as usize, points);
 	}
 
+	pub fn save_statisitcs(&mut self, statistics: Statistics) {
+		self.path.set_file_name("statistics.json");
+		let file = std::fs::File::create(&self.path).unwrap();
+		serde_json::to_writer_pretty(file, &statistics).unwrap();
+	}
 
 	pub fn save_segment(path: &Path, segment: NonZeroU32, data: &[point::Point], information: SegmentInformation) {
 		let mut path = path.to_path_buf();
@@ -126,13 +135,19 @@ impl Writer {
 			curve
 				.write_all(bytemuck::cast_slice(&[point.curve]))
 				.unwrap();
-			segment_values.write_all(bytemuck::cast_slice(&[segment.get()])).unwrap();
+			segment_values
+				.write_all(bytemuck::cast_slice(&[segment.get()]))
+				.unwrap();
 		}
 
-		let information = common::Segment::new([
-			("Trunk".into(), information.trunk_height),
-			("Crown".into(), information.crown_height),
-		].into_iter().collect());
+		let information = common::Segment::new(
+			[
+				("Trunk".into(), information.trunk_height),
+				("Crown".into(), information.crown_height),
+			]
+			.into_iter()
+			.collect(),
+		);
 		path.set_file_name("segment.information");
 		information.save(&path);
 	}

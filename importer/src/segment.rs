@@ -1,4 +1,4 @@
-use std::{collections::HashSet, ops::Not};
+use std::collections::HashSet;
 
 use math::{Vector, X, Y, Z};
 use voronator::delaunator::Point;
@@ -6,7 +6,7 @@ use voronator::delaunator::Point;
 use crate::{
 	cache::{Cache, CacheEntry, CacheIndex},
 	progress::Progress,
-	Settings,
+	Settings, Statistics,
 };
 
 pub struct Segment {
@@ -52,18 +52,18 @@ impl Segmenter {
 		self.cache.add_value(&self.slices[slice], point);
 	}
 
-	pub fn segments(mut self) -> Vec<Segment> {
+	pub fn segments(mut self, statisitcs: &mut Statistics) -> Vec<Segment> {
 		let total = self
 			.slices
 			.iter()
 			.map(|slice| self.cache.size(slice))
 			.sum::<usize>();
-		let mut progress = Progress::new("Segment", total);
+		let mut progress = Progress::new("Segmenting", total);
 
 		let mut segments = Vec::new();
 
 		let mut cache = Cache::new(100_000_000);
-		let mut prev_layer = Vec::new();
+		let mut centroids = Vec::new();
 
 		let min = Point {
 			x: self.min[X] as f64,
@@ -95,7 +95,7 @@ impl Segmenter {
 			// 	tree.save_svg(&mut svg, self.min, true);
 			// }
 
-			let mut centroids = tree_set.tree_positions(&prev_layer, self.max_distance);
+			tree_set.tree_positions(&mut centroids, self.max_distance);
 
 			// for &(_, point) in &centroids {
 			// 	svg.write_all(
@@ -113,7 +113,9 @@ impl Segmenter {
 				.iter()
 				.map(|(_, p)| Point { x: p[X] as f64, y: p[Y] as f64 })
 				.collect::<Vec<_>>();
-			let vor = voronator::VoronoiDiagram::new(&min, &max, &points).unwrap();
+			let Some(vor) = voronator::VoronoiDiagram::new(&min, &max, &points) else {
+				continue;
+			};
 			let mut trees = vor
 				.cells()
 				.iter()
@@ -133,11 +135,13 @@ impl Segmenter {
 
 			let l = slice.len();
 			for p in slice {
-				let (idx, _) = trees
+				let Some((idx, _)) = trees
 					.iter_mut()
 					.enumerate()
 					.find(|(_, tree)| tree.distance(Vector::new([p[X], p[Z]])) < 0.1)
-					.unwrap();
+				else {
+					continue;
+				};
 				match &mut centroids[idx].0 {
 					Some(seg) => cache.add_value(seg, p),
 					idx @ None => {
@@ -149,9 +153,8 @@ impl Segmenter {
 				}
 			}
 			progress.step_by(l);
-			prev_layer = centroids;
 		}
-		progress.finish();
+		statisitcs.times.segment = progress.finish();
 
 		let mut segments = segments
 			.into_iter()
@@ -280,32 +283,32 @@ impl Tree {
 			.max(point + Vector::new([max_distance, max_distance]));
 	}
 
-	pub fn intersections(&self, trees: &[Tree]) -> Vec<usize> {
-		let mut res = Vec::new();
-		for (idx, tree) in trees.iter().enumerate() {
-			if self.max[X] < tree.min[X]
-				|| tree.max[X] < self.min[X]
-				|| self.max[Y] < tree.min[Y]
-				|| tree.max[Y] < self.min[Y]
-			{
-				continue;
-			}
-			let seperated = (0..self.points.len()).any(|i| {
-				let a = self.points[i];
-				let b = self.points[(i + 1) % self.points.len()];
-				let dir = b - a;
-				let out = Vector::new([dir[Y], -dir[X]]).normalized();
-				tree.points.iter().all(|&p| {
-					let diff = p - a;
-					diff.dot(out) >= 0.0
-				})
-			});
-			if seperated.not() {
-				res.push(idx);
-			}
-		}
-		res
-	}
+	// pub fn intersections(&self, trees: &[Tree]) -> Vec<usize> {
+	// 	let mut res = Vec::new();
+	// 	for (idx, tree) in trees.iter().enumerate() {
+	// 		if self.max[X] < tree.min[X]
+	// 			|| tree.max[X] < self.min[X]
+	// 			|| self.max[Y] < tree.min[Y]
+	// 			|| tree.max[Y] < self.min[Y]
+	// 		{
+	// 			continue;
+	// 		}
+	// 		let seperated = (0..self.points.len()).any(|i| {
+	// 			let a = self.points[i];
+	// 			let b = self.points[(i + 1) % self.points.len()];
+	// 			let dir = b - a;
+	// 			let out = Vector::new([dir[Y], -dir[X]]).normalized();
+	// 			tree.points.iter().all(|&p| {
+	// 				let diff = p - a;
+	// 				diff.dot(out) >= 0.0
+	// 			})
+	// 		});
+	// 		if seperated.not() {
+	// 			res.push(idx);
+	// 		}
+	// 	}
+	// 	res
+	// }
 
 	// pub fn save_svg(&self, file: &mut std::fs::File, min: Vector<3, f32>, fill: bool) {
 	// 	file.write_all(b"  <polygon points=\"").unwrap();
@@ -386,35 +389,23 @@ impl TreeSet {
 		Self { trees }
 	}
 
-	pub fn tree_positions(
-		&self,
-		prev: &[(Option<CacheIndex>, Vector<2, f32>)],
-		max_distance: f32,
-	) -> Vec<(Option<CacheIndex>, Vector<2, f32>)> {
-		let mut res = Vec::new();
+	pub fn tree_positions(&self, prev: &mut Vec<(Option<CacheIndex>, Vector<2, f32>)>, max_distance: f32) {
+		// let mut res = Vec::new();
 		for tree in &self.trees {
 			let mut contains = Vec::new();
-			for &(idx, p) in prev {
-				if tree.distance(p) <= max_distance {
+			for (idx, p) in prev.iter_mut() {
+				if tree.distance(*p) <= max_distance {
 					contains.push((idx, p));
 				}
 			}
 			match contains.len() {
-				0 => {
-					res.push((None, centroid(&tree.points)));
-				},
+				0 => prev.push((None, centroid(&tree.points))),
 				1 => {
-					res.push((contains[0].0, centroid(&tree.points)));
+					*contains[0].1 = centroid(&tree.points);
 				},
-				_ => {
-					for entry in contains {
-						res.push(entry);
-					}
-				},
+				_ => {},
 			}
 		}
-		res.dedup();
-		res
 	}
 }
 
@@ -450,21 +441,4 @@ fn area(points: &[Vector<2, f32>]) -> f32 {
 	}
 
 	area
-}
-
-#[cfg(test)]
-mod tests {
-	use super::*;
-
-	#[test]
-	fn it_works() {
-		let points = [
-			Vector::new([10.0, 10.0]),
-			Vector::new([11.0, 10.0]),
-			Vector::new([11.0, 11.0]),
-			Vector::new([10.0, 11.0]),
-		];
-		let cetrer = centroid(&points);
-		panic!("{}", cetrer);
-	}
 }

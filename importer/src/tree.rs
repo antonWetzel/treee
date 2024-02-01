@@ -2,17 +2,16 @@ use std::collections::HashSet;
 use std::num::NonZeroU32;
 use std::sync::Mutex;
 
-use common::{ IndexData, IndexNode, Project, MAX_LEAF_SIZE };
+use common::{IndexData, IndexNode, Project, MAX_LEAF_SIZE};
 use crossbeam::atomic::AtomicCell;
 use math::Vector;
-use math::{ X, Z };
+use math::{X, Z};
 use rayon::prelude::*;
 
-use crate::cache::{ Cache, CacheEntry, CacheIndex };
-use crate::point::{ Point, PointsCollection };
+use crate::cache::{Cache, CacheEntry, CacheIndex};
+use crate::point::{Point, PointsCollection};
 use crate::progress::Progress;
-use crate::{ level_of_detail, Writer, Settings };
-
+use crate::{level_of_detail, Settings, Statistics, Writer};
 
 #[derive(Debug)]
 pub enum Data {
@@ -26,14 +25,12 @@ pub enum Data {
 	},
 }
 
-
 #[derive(Debug)]
 pub struct Node {
 	corner: Vector<3, f32>,
 	size: f32,
 	data: Data,
 }
-
 
 impl Node {
 	fn new_branch(corner: Vector<3, f32>, size: f32) -> Self {
@@ -43,7 +40,6 @@ impl Node {
 			data: Data::Branch { children: Box::default() },
 		}
 	}
-
 
 	fn new_leaf(corner: Vector<3, f32>, size: f32, cache: &mut Cache<Point>) -> Self {
 		Node {
@@ -56,7 +52,6 @@ impl Node {
 			},
 		}
 	}
-
 
 	fn insert_position(&mut self, point: Point, cache: &mut Cache<Point>) {
 		fn insert_into_children(
@@ -88,7 +83,6 @@ impl Node {
 			}
 		}
 
-
 		fn update_value<T>(value: &mut T, update: impl FnOnce(T) -> T) {
 			unsafe {
 				let v = std::ptr::read(value);
@@ -96,7 +90,6 @@ impl Node {
 				std::ptr::write(value, v);
 			}
 		}
-
 
 		update_value(&mut self.data, |data| match data {
 			Data::Branch { mut children, .. } => {
@@ -120,7 +113,6 @@ impl Node {
 			},
 		});
 	}
-
 
 	fn flatten(self, nodes: &mut Vec<FLatNode>, cache: &mut Cache<Point>) -> (IndexNode, u32) {
 		let (flat_data, index_data, depth) = match self.data {
@@ -168,29 +160,20 @@ impl Node {
 	}
 }
 
-
 pub struct Tree {
 	root: Node,
 }
-
 
 impl Tree {
 	pub fn new(corner: Vector<3, f32>, size: f32) -> Self {
 		Self { root: Node::new_branch(corner, size) }
 	}
 
-
 	pub fn insert(&mut self, point: Point, cache: &mut Cache<Point>) {
 		self.root.insert_position(point, cache);
 	}
 
-
-	pub fn flatten(
-		self,
-		calculators: &[(&str, &str)],
-		name: String,
-		mut cache: Cache<Point>,
-	) -> (FlatTree, Project) {
+	pub fn flatten(self, calculators: &[(&str, &str)], name: String, mut cache: Cache<Point>) -> (FlatTree, Project) {
 		let mut nodes = Vec::new();
 		let (tree, depth) = self.root.flatten(&mut nodes, &mut cache);
 		let flat = FlatTree { nodes };
@@ -198,13 +181,15 @@ impl Tree {
 			name,
 			depth,
 			root: tree,
-			properties: calculators.iter().map(|&(name, file)| (String::from(name), String::from(file))).collect(),
+			properties: calculators
+				.iter()
+				.map(|&(name, file)| (String::from(name), String::from(file)))
+				.collect(),
 		};
 
 		(flat, project)
 	}
 }
-
 
 #[derive(Debug)]
 pub enum FlatData {
@@ -217,7 +202,6 @@ pub enum FlatData {
 	},
 }
 
-
 #[derive(Debug)]
 pub struct FLatNode {
 	corner: Vector<3, f32>,
@@ -226,40 +210,55 @@ pub struct FLatNode {
 	index: u32,
 }
 
-
 #[derive(Debug)]
 pub struct FlatTree {
 	nodes: Vec<FLatNode>,
 }
 
-
 impl FlatTree {
-	pub fn save(self, writer: Writer, settings: &Settings) {
-		let progress = Mutex::new(Progress::new("Save Data", self.nodes.len()));
+	pub fn save(self, writer: Writer, settings: &Settings, statistics: Statistics) {
+		let progress = Progress::new("Save Data", self.nodes.len());
 
 		let mut data = Vec::with_capacity(self.nodes.len());
 		for _ in 0..self.nodes.len() {
 			data.push(AtomicCell::new(None));
 		}
 
-		let writer = Mutex::new(writer);
+		let state = Mutex::new((progress, writer, statistics));
 
 		self.nodes
 			.into_par_iter()
 			.enumerate()
 			.for_each(|(i, node)| {
-				let res = node.save(&data, &writer, settings);
-				data[i].store(Some(res));
-				progress.lock().unwrap().step();
+				let is_leaf = matches!(&node.data, FlatData::Leaf { .. });
+				let index = node.index as usize;
+				let points = node.save(&data, settings);
+				let mut state = state.lock().unwrap();
+				state.0.step();
+				{
+					let writer = &mut state.1;
+					writer.save(index as u32, &points.render);
+					writer.slice.save(index, &points.slice);
+					writer.height.save(index, &points.height);
+					writer.curve.save(index, &points.curve);
+					writer.segment.save(index, &points.segment);
+				}
+				if is_leaf {
+					state.2.leaf_points += points.render.len();
+				} else {
+					state.2.branch_points += points.render.len();
+				}
+				drop(state);
+				data[i].store(Some(points));
 			});
-
-		progress.into_inner().unwrap().finish();
+		let (progress, mut writer, mut statistics) = state.into_inner().unwrap();
+		statistics.times.lods = progress.finish();
+		writer.save_statisitcs(statistics);
 	}
 }
 
-
 impl FLatNode {
-	fn save(self, data: &[AtomicCell<Option<PointsCollection>>], writer: &Mutex<Writer>, settings: &Settings) -> PointsCollection {
+	fn save(self, data: &[AtomicCell<Option<PointsCollection>>], settings: &Settings) -> PointsCollection {
 		match self.data {
 			FlatData::Branch { mut children } => {
 				let mut points = Vec::with_capacity(8);
@@ -272,21 +271,7 @@ impl FLatNode {
 					};
 					points.push(lod);
 				}
-
-				let points = level_of_detail::grid(points, self.corner, self.size, settings);
-
-				{
-					let mut writer = writer.lock().unwrap();
-					writer.save(self.index, &points.render);
-					writer.slice.save(self.index as usize, &points.slice);
-					writer
-						.height
-						.save(self.index as usize, &points.height);
-					writer.curve.save(self.index as usize, &points.curve);
-					writer.segment.save(self.index as usize, &points.segment);
-				}
-
-				points
+				level_of_detail::grid(points, self.corner, self.size, settings)
 			},
 
 			FlatData::Leaf { data, .. } => {
@@ -301,21 +286,13 @@ impl FLatNode {
 					points
 				};
 
-				let slice = data.iter().map(|p| p.slice).collect::<Vec<_>>();
-				let height = data.iter().map(|p| p.height).collect::<Vec<_>>();
-				let curve = data.iter().map(|p| p.curve).collect::<Vec<_>>();
-				let segment = data.iter().map(|p| p.segment.get()).collect::<Vec<_>>();
-
-				{
-					let mut writer = writer.lock().unwrap();
-					writer.save(self.index, &points);
-					writer.curve.save(self.index as usize, &curve);
-					writer.height.save(self.index as usize, &height);
-					writer.slice.save(self.index as usize, &slice);
-					writer.segment.save(self.index as usize, &segment)
+				PointsCollection {
+					render: points,
+					slice: data.iter().map(|p| p.slice).collect::<Vec<_>>(),
+					height: data.iter().map(|p| p.height).collect::<Vec<_>>(),
+					curve: data.iter().map(|p| p.curve).collect::<Vec<_>>(),
+					segment: data.iter().map(|p| p.segment.get()).collect::<Vec<_>>(),
 				}
-
-				PointsCollection { render: points, slice, height, curve, segment }
 			},
 		}
 	}
