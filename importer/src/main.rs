@@ -170,7 +170,7 @@ fn import(cli: Cli) -> Result<(), ImporterError> {
 
 	let mut progress = Progress::new("Calculate", total_points);
 
-	let mut cache = Cache::new(1024);
+	let mut cache = Cache::new(100_000_000);
 	let mut tree = Tree::new(
 		(min - pos).map(|v| v as f32),
 		diff[X].max(diff[Y]).max(diff[Z]) as f32,

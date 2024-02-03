@@ -1,11 +1,10 @@
 use std::{
 	collections::HashMap,
 	fs::File,
-	io::{ Read, Seek, Write },
+	io::{Read, Seek, Write},
 	mem::MaybeUninit,
 	ops::Not,
 };
-
 
 pub struct Cache<T> {
 	active: HashMap<usize, Vec<T>>,
@@ -15,10 +14,8 @@ pub struct Cache<T> {
 	entry_index: usize,
 }
 
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CacheIndex(usize);
-
 
 #[derive(Debug)]
 pub struct CacheEntry<T> {
@@ -26,7 +23,6 @@ pub struct CacheEntry<T> {
 	active: Vec<T>,
 	length: usize,
 }
-
 
 impl<T> Cache<T> {
 	pub fn new(max_values: usize) -> Self {
@@ -39,12 +35,10 @@ impl<T> Cache<T> {
 		}
 	}
 
-
 	pub fn new_entry(&mut self) -> CacheIndex {
 		self.entry_index += 1;
 		CacheIndex(self.entry_index)
 	}
-
 
 	pub fn add_value(&mut self, index: &CacheIndex, point: T) {
 		self.current += 1;
@@ -61,12 +55,10 @@ impl<T> Cache<T> {
 		}
 	}
 
-
 	fn evict(&mut self) {
 		let Some((&key, entry)) = self.active.iter_mut().max_by_key(|(_, entry)| entry.len()) else {
 			return;
 		};
-
 
 		fn write_to<T>(file: &mut File, data: Vec<T>) {
 			unsafe {
@@ -77,7 +69,6 @@ impl<T> Cache<T> {
 				file.write_all(view).unwrap();
 			}
 		}
-
 
 		let entry = std::mem::take(entry);
 		self.current -= entry.len();
@@ -96,12 +87,9 @@ impl<T> Cache<T> {
 		}
 	}
 
-
 	pub fn read(&mut self, index: CacheIndex) -> CacheEntry<T> {
-		let active = self
-			.active
-			.remove(&index.0)
-			.unwrap_or_default();
+		let active = self.active.remove(&index.0).unwrap_or_default();
+		self.current -= active.len();
 		let (file, length) = if let Some((file, length)) = self.stored.remove(&index.0) {
 			(Some(file), length + active.len())
 		} else {
@@ -110,13 +98,18 @@ impl<T> Cache<T> {
 		CacheEntry { length, file, active }
 	}
 
-
 	pub fn size(&mut self, index: &CacheIndex) -> usize {
-		self.active.get(&index.0).map(|active| active.len()).unwrap_or_default()
-			+ self.stored.get(&index.0).map(|&(_, l)| l).unwrap_or_default()
+		self.active
+			.get(&index.0)
+			.map(|active| active.len())
+			.unwrap_or_default()
+			+ self
+				.stored
+				.get(&index.0)
+				.map(|&(_, l)| l)
+				.unwrap_or_default()
 	}
 }
-
 
 impl<T> CacheEntry<T> {
 	pub fn read(mut self) -> Vec<T> {
@@ -138,11 +131,9 @@ impl<T> CacheEntry<T> {
 		}
 	}
 
-
 	pub fn active(&self) -> bool {
 		self.active.is_empty().not()
 	}
-
 
 	pub fn length(&self) -> usize {
 		self.length
