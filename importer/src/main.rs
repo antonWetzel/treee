@@ -111,6 +111,7 @@ fn import(cli: Cli) -> Result<(), ImporterError> {
 	};
 	let settings = cli.settings;
 
+	let mut cache = Cache::new(4_000_000_000);
 	let mut statistics = Statistics::default();
 	let stage = Stage::new("Setup Files");
 
@@ -134,6 +135,7 @@ fn import(cli: Cli) -> Result<(), ImporterError> {
 	let mut segmenter = Segmenter::new(
 		(min - pos).map(|v| v as f32),
 		(max - pos).map(|v| v as f32),
+		&mut cache,
 		&settings,
 	);
 
@@ -156,7 +158,7 @@ fn import(cli: Cli) -> Result<(), ImporterError> {
 			for points in reciever {
 				let l = points.len();
 				for point in points {
-					segmenter.add_point(point);
+					segmenter.add_point(point, &mut cache);
 				}
 				progress.step_by(l);
 			}
@@ -165,12 +167,11 @@ fn import(cli: Cli) -> Result<(), ImporterError> {
 
 	statistics.times.import = progress.finish();
 
-	let segments = segmenter.segments(&mut statistics);
+	let segments = segmenter.segments(&mut statistics, &mut cache);
 	statistics.segments = segments.len();
 
 	let mut progress = Progress::new("Calculate", total_points);
 
-	let mut cache = Cache::new(100_000_000);
 	let mut tree = Tree::new(
 		(min - pos).map(|v| v as f32),
 		diff[X].max(diff[Y]).max(diff[Z]) as f32,

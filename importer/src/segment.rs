@@ -24,8 +24,7 @@ impl Segment {
 }
 
 pub struct Segmenter {
-	cache: Cache<Vector<3, f32>>,
-	slices: Vec<CacheIndex>,
+	slices: Vec<CacheIndex<Vector<3, f32>>>,
 	min: Vector<3, f32>,
 	max: Vector<3, f32>,
 	slice_height: f32,
@@ -33,36 +32,33 @@ pub struct Segmenter {
 }
 
 impl Segmenter {
-	pub fn new(min: Vector<3, f32>, max: Vector<3, f32>, settings: &Settings) -> Self {
+	pub fn new(min: Vector<3, f32>, max: Vector<3, f32>, cache: &mut Cache, settings: &Settings) -> Self {
 		let slice_count = ((max[Y] - min[Y]) / settings.segmenting_slice_width) as usize + 1;
-		let mut cache = Cache::new(100_000_000); // 1.2 GB
 		let slices = (0..slice_count).map(|_| cache.new_entry()).collect();
 		Self {
 			slices,
 			min,
 			max,
-			cache,
 			slice_height: settings.segmenting_slice_width,
 			max_distance: settings.segmenting_max_distance,
 		}
 	}
 
-	pub fn add_point(&mut self, point: Vector<3, f32>) {
+	pub fn add_point(&mut self, point: Vector<3, f32>, cache: &mut Cache) {
 		let slice = ((point[Y] - self.min[Y]) / self.slice_height) as usize;
-		self.cache.add_value(&self.slices[slice], point);
+		cache.add_value(&self.slices[slice], point);
 	}
 
-	pub fn segments(mut self, statisitcs: &mut Statistics) -> Vec<Segment> {
+	pub fn segments(self, statisitcs: &mut Statistics, cache: &mut Cache) -> Vec<Segment> {
 		let total = self
 			.slices
 			.iter()
-			.map(|slice| self.cache.size(slice))
+			.map(|slice| cache.size(slice))
 			.sum::<usize>();
 		let mut progress = Progress::new("Segmenting", total);
 
 		let mut segments = Vec::new();
 
-		let mut cache = Cache::new(100_000_000);
 		let mut centroids = Vec::new();
 
 		let min = Point {
@@ -89,7 +85,7 @@ impl Segmenter {
 			// )
 			// .unwrap();
 
-			let slice = self.cache.read(slice).read();
+			let slice = cache.read(slice).read();
 			let tree_set = TreeSet::new(&slice, self.max_distance);
 			// for tree in &tree_set.trees {
 			// 	tree.save_svg(&mut svg, self.min, true);
@@ -389,7 +385,11 @@ impl TreeSet {
 		Self { trees }
 	}
 
-	pub fn tree_positions(&self, prev: &mut Vec<(Option<CacheIndex>, Vector<2, f32>)>, max_distance: f32) {
+	pub fn tree_positions(
+		&self,
+		prev: &mut Vec<(Option<CacheIndex<Vector<3, f32>>>, Vector<2, f32>)>,
+		max_distance: f32,
+	) {
 		// let mut res = Vec::new();
 		for tree in &self.trees {
 			let mut contains = Vec::new();
@@ -420,7 +420,6 @@ fn centroid(points: &[Vector<2, f32>]) -> Vector<2, f32> {
 		let c = points[i + 1] - a;
 		let t_center = (b + c) / 3.0;
 		let t_area = (b[X] * c[Y] - b[Y] * c[X]) / 2.0;
-		assert!(t_area >= 0.0);
 
 		center += t_center * t_area;
 		area += t_area;

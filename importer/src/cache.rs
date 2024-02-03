@@ -6,8 +6,8 @@ use std::{
 	ops::Not,
 };
 
-pub struct Cache<T> {
-	active: HashMap<usize, Vec<T>>,
+pub struct Cache {
+	active: HashMap<usize, (Vec<u8>, usize)>,
 	stored: HashMap<usize, (File, usize)>,
 	current: usize,
 	max_values: usize,
@@ -15,7 +15,7 @@ pub struct Cache<T> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CacheIndex(usize);
+pub struct CacheIndex<T>(usize, std::marker::PhantomData<T>);
 
 #[derive(Debug)]
 pub struct CacheEntry<T> {
@@ -24,7 +24,7 @@ pub struct CacheEntry<T> {
 	length: usize,
 }
 
-impl<T> Cache<T> {
+impl Cache {
 	pub fn new(max_values: usize) -> Self {
 		Self {
 			active: HashMap::new(),
@@ -35,61 +35,73 @@ impl<T> Cache<T> {
 		}
 	}
 
-	pub fn new_entry(&mut self) -> CacheIndex {
+	pub fn new_entry<T>(&mut self) -> CacheIndex<T> {
 		self.entry_index += 1;
-		CacheIndex(self.entry_index)
+		CacheIndex(self.entry_index, std::marker::PhantomData)
 	}
 
-	pub fn add_value(&mut self, index: &CacheIndex, point: T) {
-		self.current += 1;
-		if self.current > self.max_values {
-			self.evict();
-		}
+	pub fn add_value<T>(&mut self, index: &CacheIndex<T>, point: T) {
 		match self.active.get_mut(&index.0) {
 			None => {
-				self.active.insert(index.0, vec![point]);
+				let vec = vec![point];
+				self.current += vec.capacity() * std::mem::size_of::<T>();
+				self.active.insert(
+					index.0,
+					(
+						unsafe { std::mem::transmute(vec) },
+						std::mem::size_of::<T>(),
+					),
+				);
 			},
 			Some(entry) => {
-				entry.push(point);
+				let data = unsafe { std::mem::transmute::<_, &mut Vec<T>>(&mut entry.0) };
+				let c = data.capacity();
+				data.push(point);
+				self.current += entry.1 * (data.capacity() - c);
 			},
+		}
+
+		if self.current >= self.max_values {
+			self.evict();
 		}
 	}
 
 	fn evict(&mut self) {
-		let Some((&key, entry)) = self.active.iter_mut().max_by_key(|(_, entry)| entry.len()) else {
+		let Some((&key, _)) = self
+			.active
+			.iter()
+			.max_by_key(|(_, entry)| entry.0.len() * entry.1)
+		else {
 			return;
 		};
 
-		fn write_to<T>(file: &mut File, data: Vec<T>) {
+		fn write_to(file: &mut File, data: Vec<u8>, size: usize) {
 			unsafe {
-				let view = std::slice::from_raw_parts(
-					data.as_ptr() as *const u8,
-					std::mem::size_of::<T>() * data.len(),
-				);
+				let view = std::slice::from_raw_parts(data.as_ptr() as *const u8, size * data.len());
 				file.write_all(view).unwrap();
 			}
 		}
-
-		let entry = std::mem::take(entry);
-		self.current -= entry.len();
+		let entry = self.active.remove(&key).unwrap();
+		self.current -= entry.0.capacity() * entry.1;
 
 		match self.stored.get_mut(&key) {
 			None => {
 				let mut file = tempfile::tempfile().unwrap();
-				let l = entry.len();
-				write_to(&mut file, entry);
+				let l = entry.0.len();
+				write_to(&mut file, entry.0, entry.1);
 				self.stored.insert(key, (file, l));
 			},
 			Some((file, length)) => {
-				*length += entry.len();
-				write_to(file, entry);
+				*length += entry.0.len();
+				write_to(file, entry.0, entry.1);
 			},
 		}
 	}
 
-	pub fn read(&mut self, index: CacheIndex) -> CacheEntry<T> {
+	pub fn read<T>(&mut self, index: CacheIndex<T>) -> CacheEntry<T> {
 		let active = self.active.remove(&index.0).unwrap_or_default();
-		self.current -= active.len();
+		let active = unsafe { std::mem::transmute::<_, Vec<T>>(active.0) };
+		self.current -= active.capacity() * std::mem::size_of::<T>();
 		let (file, length) = if let Some((file, length)) = self.stored.remove(&index.0) {
 			(Some(file), length + active.len())
 		} else {
@@ -98,10 +110,10 @@ impl<T> Cache<T> {
 		CacheEntry { length, file, active }
 	}
 
-	pub fn size(&mut self, index: &CacheIndex) -> usize {
+	pub fn size<T>(&mut self, index: &CacheIndex<T>) -> usize {
 		self.active
 			.get(&index.0)
-			.map(|active| active.len())
+			.map(|active| active.0.len())
 			.unwrap_or_default()
 			+ self
 				.stored

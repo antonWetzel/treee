@@ -18,7 +18,7 @@ pub enum Data {
 	Leaf {
 		size: usize,
 		segments: HashSet<NonZeroU32>,
-		index: CacheIndex,
+		index: CacheIndex<Point>,
 	},
 	Branch {
 		children: Box<[Option<Node>; 8]>,
@@ -41,7 +41,7 @@ impl Node {
 		}
 	}
 
-	fn new_leaf(corner: Vector<3, f32>, size: f32, cache: &mut Cache<Point>) -> Self {
+	fn new_leaf(corner: Vector<3, f32>, size: f32, cache: &mut Cache) -> Self {
 		Node {
 			corner,
 			size,
@@ -53,13 +53,13 @@ impl Node {
 		}
 	}
 
-	fn insert_position(&mut self, point: Point, cache: &mut Cache<Point>) {
+	fn insert_position(&mut self, point: Point, cache: &mut Cache) {
 		fn insert_into_children(
 			children: &mut [Option<Node>; 8],
 			point: Point,
 			corner: Vector<3, f32>,
 			size: f32,
-			cache: &mut Cache<Point>,
+			cache: &mut Cache,
 		) {
 			let mut index = 0;
 			for dim in X.to(Z) {
@@ -114,7 +114,7 @@ impl Node {
 		});
 	}
 
-	fn flatten(self, nodes: &mut Vec<FLatNode>, cache: &mut Cache<Point>) -> (IndexNode, u32) {
+	fn flatten(self, nodes: &mut Vec<FLatNode>, cache: &mut Cache) -> (IndexNode, u32) {
 		let (flat_data, index_data, depth) = match self.data {
 			Data::Branch { children } => {
 				let mut indices = [None; 8];
@@ -169,11 +169,11 @@ impl Tree {
 		Self { root: Node::new_branch(corner, size) }
 	}
 
-	pub fn insert(&mut self, point: Point, cache: &mut Cache<Point>) {
+	pub fn insert(&mut self, point: Point, cache: &mut Cache) {
 		self.root.insert_position(point, cache);
 	}
 
-	pub fn flatten(self, calculators: &[(&str, &str)], name: String, mut cache: Cache<Point>) -> (FlatTree, Project) {
+	pub fn flatten(self, calculators: &[(&str, &str)], name: String, mut cache: Cache) -> (FlatTree, Project) {
 		let mut nodes = Vec::new();
 		let (tree, depth) = self.root.flatten(&mut nodes, &mut cache);
 		let flat = FlatTree { nodes };
