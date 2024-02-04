@@ -5,7 +5,7 @@ use std::{
 	path::{Path, PathBuf},
 };
 
-use crate::{calculations::SegmentInformation, point, ImporterError, Statistics};
+use crate::{calculations::SegmentInformation, point, Error, Statistics};
 
 pub struct Writer {
 	path: PathBuf,
@@ -17,15 +17,15 @@ pub struct Writer {
 }
 
 impl Writer {
-	pub fn setup(path: &Path) -> Result<(), ImporterError> {
+	pub fn setup(path: &Path) -> Result<(), Error> {
 		if path.is_file() {
-			return Err(ImporterError::OutputFolderIsFile);
+			return Err(Error::OutputFolderIsFile);
 		}
 		if path.is_dir() {
 			let mut project_path = path.to_path_buf();
 			project_path.push("project.epc");
 			if path.read_dir().into_iter().flatten().next().is_some() && !project_path.exists() {
-				return Err(ImporterError::OutputFolderIsNotEmpty);
+				return Err(Error::OutputFolderIsNotEmpty);
 			}
 			std::fs::remove_dir_all(path).unwrap();
 		}
@@ -33,7 +33,7 @@ impl Writer {
 		Ok(())
 	}
 
-	pub fn new(mut path: PathBuf, project: &Project) -> Result<Self, ImporterError> {
+	pub fn new(mut path: PathBuf, project: &Project) -> Result<Self, Error> {
 		let size = project.root.index as usize + 1;
 
 		path.push("project.epc");

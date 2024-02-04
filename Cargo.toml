@@ -8,9 +8,13 @@ members = [
 	"k-nearest",
 	"math",
 	"render",
+	"treee",
 	"triangulation",
 	"viewer",
+	"treee",
 ]
+default-members = ["treee", "importer", "viewer"]
+
 resolver = "2"
 
 [workspace.package]
@@ -25,6 +29,8 @@ input = { path = "./input" }
 common = { path = "./common" }
 k-nearest = { path = "./k-nearest" }
 triangulation = { path = "./triangulation" }
+importer = { path = "./importer" }
+viewer = { path = "./viewer" }
 
 pollster = "0.3"
 rfd = "0.13"

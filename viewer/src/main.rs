@@ -1,40 +1,5 @@
-use pollster::FutureExt;
-use state::State;
-use thiserror::Error;
+use viewer::*;
 
-mod camera;
-mod game;
-mod loaded_manager;
-mod lod;
-mod segment;
-mod state;
-mod tree;
-
-#[derive(Debug, Error)]
-enum ViewerError {
-	#[error("no file")]
-	NoFile,
-	#[error("{0}")]
-	RenderError(#[from] render::RenderError),
-}
-
-fn main() -> Result<(), ViewerError> {
-	simple_logger::SimpleLogger::new()
-		.with_level(log::LevelFilter::Info)
-		.init()
-		.unwrap();
-	let path = rfd::FileDialog::new()
-		.set_title("Select Project File")
-		.add_filter("Project File", &["epc"])
-		.pick_file()
-		.ok_or(ViewerError::NoFile)?;
-
-	let (state, runner) = render::State::new().block_on()?;
-	let state = State::new(state);
-	let state = Box::leak(Box::new(state));
-
-	let mut game = game::World::new(state, path, &runner);
-	runner.run(&mut game)?;
-
-	Ok(())
+fn main() -> Result<(), Error> {
+	run()
 }
