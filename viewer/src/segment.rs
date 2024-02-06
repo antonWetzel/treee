@@ -1,21 +1,23 @@
 use std::{
-	io::Read,
+	io::{BufWriter, Read, Write},
 	num::NonZeroU32,
-	path::{ Path, PathBuf },
+	path::{Path, PathBuf},
 	sync::mpsc::TryRecvError,
 };
 
-use math::{ Vector, X, Y, Z };
+use math::{Vector, X, Y, Z};
 
 use crate::state::State;
 
-
 pub enum MeshState {
 	None,
-	Progress(Vec<u32>, render::Mesh, std::sync::mpsc::Receiver<Option<Vector<3, usize>>>),
+	Progress(
+		Vec<u32>,
+		render::Mesh,
+		std::sync::mpsc::Receiver<Option<Vector<3, usize>>>,
+	),
 	Done(render::Mesh),
 }
-
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MeshRender {
@@ -23,7 +25,6 @@ pub enum MeshRender {
 	Mesh,
 	MeshLines,
 }
-
 
 pub struct Segment {
 	path: PathBuf,
@@ -38,7 +39,6 @@ pub struct Segment {
 
 	pub information: common::Segment,
 }
-
 
 impl Segment {
 	pub fn new(state: &State, mut path: PathBuf, property: &str, index: NonZeroU32) -> Self {
@@ -78,12 +78,10 @@ impl Segment {
 		}
 	}
 
-
 	pub fn change_property(&mut self, state: &State, property: &str) {
 		self.path.set_file_name(format!("{}.data", property));
 		self.property = Self::load_property(state, &self.path);
 	}
-
 
 	fn load_property(state: &State, path: &Path) -> render::PointCloudProperty {
 		let mut file = std::fs::OpenOptions::new().read(true).open(path).unwrap();
@@ -94,21 +92,19 @@ impl Segment {
 		render::PointCloudProperty::new(state, &data)
 	}
 
-
 	pub fn index(&self) -> NonZeroU32 {
 		self.index
 	}
 
-
 	pub fn update(&mut self, state: &State) {
 		let mut update = false;
 		match &mut self.mesh {
-			MeshState::None | MeshState::Done(_) => { },
+			MeshState::None | MeshState::Done(_) => {},
 			MeshState::Progress(res, _, reciever) => {
 				let before = res.len() / 1000;
 				loop {
 					match reciever.try_recv() {
-						Ok(None) => { },
+						Ok(None) => {},
 						Ok(Some(triangle)) => {
 							res.push(triangle[X] as u32);
 							res.push(triangle[Y] as u32);
@@ -119,7 +115,7 @@ impl Segment {
 							let mesh = render::Mesh::new(state, res);
 							self.mesh = MeshState::Done(mesh);
 							return;
-						}
+						},
 					}
 				}
 				let after = res.len() / 1000;
@@ -128,14 +124,13 @@ impl Segment {
 		}
 		if update {
 			match &mut self.mesh {
-				MeshState::None | MeshState::Done(_) => { },
+				MeshState::None | MeshState::Done(_) => {},
 				MeshState::Progress(res, mesh, _) => {
 					*mesh = render::Mesh::new(state, res);
-				}
+				},
 			}
 		}
 	}
-
 
 	pub fn triangulate(&mut self, state: &State) {
 		let (sender, reciever) = std::sync::mpsc::channel();
@@ -147,15 +142,52 @@ impl Segment {
 		});
 		self.mesh = MeshState::Progress(Vec::new(), render::Mesh::new(state, &[]), reciever);
 	}
-}
 
+	pub fn save(&self) {
+		let Some(location) = rfd::FileDialog::new()
+			.add_filter("File", &["ply"])
+			.save_file()
+		else {
+			return;
+		};
+		let mut file = BufWriter::new(std::fs::File::create(location).unwrap());
+		file.write_all(b"ply\n").unwrap();
+		file.write_all(b"format ascii 1.0\n").unwrap();
+		file.write_all(format!("element vertex {}\n", self.points.len()).as_bytes())
+			.unwrap();
+		file.write_all(b"property float x\n").unwrap();
+		file.write_all(b"property float y\n").unwrap();
+		file.write_all(b"property float z\n").unwrap();
+		// file.write_all(b"property float nx\n").unwrap();
+		// file.write_all(b"property float ny\n").unwrap();
+		// file.write_all(b"property float nz\n").unwrap();
+		// file.write_all(b"property float radius\n").unwrap();
+		file.write_all(b"end_header\n").unwrap();
+		for &point in &self.points {
+			file.write_all(
+				format!(
+					// "{} {} {} {} {} {} {}\n",
+					"{} {} {}\n",
+					point.position[X],
+					-point.position[Z],
+					point.position[Y],
+					// point.normal[X],
+					// -point.normal[Z],
+					// point.normal[Y],
+					// point.size
+				)
+				.as_bytes(),
+			)
+			.unwrap();
+		}
+	}
+}
 
 impl render::PointCloudRender for Segment {
 	fn render<'a>(&'a self, point_cloud_pass: &mut render::PointCloudPass<'a>) {
 		self.point_cloud.render(point_cloud_pass, &self.property);
 	}
 }
-
 
 impl render::MeshRender for Segment {
 	fn render<'a>(&'a self, mesh_pass: &mut render::MeshPass<'a>) {

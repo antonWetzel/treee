@@ -327,6 +327,16 @@ impl Game {
 							ui.add_sized([LEFT, HEIGHT], Label::new(format!("{}", info.1)));
 						});
 					}
+
+					ui.horizontal(|ui| {
+						ui.add_sized([LEFT, HEIGHT], Label::new("Points"));
+						if ui
+							.add_sized([RIGHT, HEIGHT], Button::new(format!("Save")))
+							.clicked()
+						{
+							seg.save();
+						};
+					});
 				}
 				ui.separator();
 
