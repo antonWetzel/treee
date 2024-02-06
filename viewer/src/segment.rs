@@ -150,6 +150,15 @@ impl Segment {
 		else {
 			return;
 		};
+
+		let mut min = Vector::new([f32::MAX, f32::MAX, f32::MAX]);
+		let mut max = Vector::new([f32::MIN, f32::MIN, f32::MIN]);
+		for &point in &self.points {
+			min = min.min(point.position);
+			max = max.max(point.position);
+		}
+		let diff = (max + min) / 2.0;
+
 		let mut file = BufWriter::new(std::fs::File::create(location).unwrap());
 		file.write_all(b"ply\n").unwrap();
 		file.write_all(b"format ascii 1.0\n").unwrap();
@@ -168,9 +177,9 @@ impl Segment {
 				format!(
 					// "{} {} {} {} {} {} {}\n",
 					"{} {} {}\n",
-					point.position[X],
-					-point.position[Z],
-					point.position[Y],
+					point.position[X] - diff[X],
+					-(point.position[Z] - diff[Z]),
+					point.position[Y] - min[Y],
 					// point.normal[X],
 					// -point.normal[Z],
 					// point.normal[Y],
