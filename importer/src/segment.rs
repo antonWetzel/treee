@@ -170,6 +170,9 @@ impl Segmenter {
 						*idx = Some(seg)
 					},
 				}
+				// hope next point is in the same segment
+				trees.swap(0, idx);
+				centroids.swap(0, idx);
 			}
 			progress.step_by(l);
 		}
