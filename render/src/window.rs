@@ -14,7 +14,7 @@ pub struct Window {
 	depth_texture: DepthTexture,
 
 	pub egui_winit: egui_winit::State,
-	egui_wgpu: egui_wgpu::renderer::Renderer,
+	egui_wgpu: egui_wgpu::Renderer,
 }
 
 impl Window {
@@ -53,7 +53,7 @@ impl Window {
 
 		let depth_texture = DepthTexture::new(&state.device, &config, "depth");
 
-		let egui_wgpu = egui_wgpu::renderer::Renderer::new(&state.device, config.format, None, 1);
+		let egui_wgpu = egui_wgpu::Renderer::new(&state.device, config.format, None, 1);
 
 		let id = egui.viewport_id();
 		Self {
@@ -284,7 +284,7 @@ impl Window {
 		drop(render_pass);
 
 		let size = self.window.inner_size();
-		let screen = &egui_wgpu::renderer::ScreenDescriptor {
+		let screen = &egui_wgpu::ScreenDescriptor {
 			size_in_pixels: [size.width, size.height],
 			pixels_per_point: 1.0,
 		};

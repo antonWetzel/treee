@@ -88,7 +88,7 @@ where
 			.create(true)
 			.open(path.as_ref())
 			.unwrap();
-		file.set_len((size * 2 * std::mem::size_of::<usize>()) as u64)
+		file.set_len((size * 2 * std::mem::size_of::<u64>()) as u64)
 			.unwrap();
 		Self { file, phantom: std::marker::PhantomData }
 	}
@@ -109,7 +109,7 @@ where
 		self.file.write_all(bytemuck::cast_slice(data)).unwrap();
 		self.file
 			.seek(std::io::SeekFrom::Start(
-				(idx * 2 * std::mem::size_of::<usize>()) as u64,
+				(idx * 2 * std::mem::size_of::<u64>()) as u64,
 			))
 			.unwrap();
 		self.file.write_all(bytemuck::cast_slice(&pos)).unwrap();
@@ -119,7 +119,7 @@ where
 		let mut pos = [0u64, 0u64];
 		self.file
 			.seek(std::io::SeekFrom::Start(
-				(idx * 2 * std::mem::size_of::<usize>()) as u64,
+				(idx * 2 * std::mem::size_of::<u64>()) as u64,
 			))
 			.unwrap();
 		self.file
@@ -133,8 +133,8 @@ where
 		buffer
 	}
 
-	pub fn sizes(&mut self, size: usize) -> Vec<[usize; 2]> {
-		let mut buffer = vec![[0usize, 0usize]; size];
+	pub fn sizes(&mut self, size: usize) -> Vec<[u64; 2]> {
+		let mut buffer = vec![[0, 0]; size];
 		self.file.seek(std::io::SeekFrom::Start(0)).unwrap();
 		self.file
 			.read_exact(bytemuck::cast_slice_mut(&mut buffer))

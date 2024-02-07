@@ -51,8 +51,8 @@ thiserror = "1.0"
 tempfile = "3.8.1"
 rayon = "1.8.0"
 termsize = "0.1"
-egui-wgpu = { git = "https://github.com/emilk/egui.git", features = ["winit"] }
-egui = { git = "https://github.com/emilk/egui.git" }
-egui-winit = { git = "https://github.com/emilk/egui.git" }
+egui-wgpu = { version = "0.26", features = ["winit"] }
+egui = "0.26"
+egui-winit = "0.26"
 clap = { version = "4.4", features = ["derive"] }
 voronator = "0.2.1"
