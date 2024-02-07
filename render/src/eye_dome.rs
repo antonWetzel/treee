@@ -1,8 +1,7 @@
-use math::{ Vector, X, Y, Z };
+use math::{Vector, X, Y, Z};
 use wgpu::util::DeviceExt;
 
-use crate::{ depth_texture::DepthTexture, Has, Render, RenderPass, State, Vertex2D };
-
+use crate::{depth_texture::DepthTexture, Has, Render, RenderPass, State, Vertex2D};
 
 const FULL_SCREEN_VERTICES: [Vertex2D; 3] = [
 	Vertex2D {
@@ -19,7 +18,6 @@ const FULL_SCREEN_VERTICES: [Vertex2D; 3] = [
 	},
 ];
 
-
 pub struct EyeDome {
 	depth_layout: wgpu::BindGroupLayout,
 	depth_bind_group: wgpu::BindGroup,
@@ -34,14 +32,12 @@ pub struct EyeDome {
 	pub strength: f32,
 }
 
-
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct EyeDomeUniform {
 	color: [f32; 3],
 	strength: f32,
 }
-
 
 impl EyeDome {
 	pub fn new(
@@ -164,11 +160,9 @@ impl EyeDome {
 		}
 	}
 
-
 	pub fn update_depth(&mut self, state: &impl Has<State>, depth: &DepthTexture) {
 		self.depth_bind_group = Self::get_depth_bindgroup(state.get(), &self.depth_layout, depth);
 	}
-
 
 	fn get_depth_bindgroup(state: &State, layout: &wgpu::BindGroupLayout, depth: &DepthTexture) -> wgpu::BindGroup {
 		state.device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -181,7 +175,6 @@ impl EyeDome {
 		})
 	}
 
-
 	pub fn update_settings(&mut self, state: &impl Has<State>) {
 		self.settings_bind_group = Self::get_settings_bindgroup(
 			state.get(),
@@ -190,7 +183,6 @@ impl EyeDome {
 			self.strength,
 		);
 	}
-
 
 	fn get_settings_bindgroup(
 		state: &State,
@@ -201,9 +193,7 @@ impl EyeDome {
 		let strength = 1.0 - strength;
 		let uniform = EyeDomeUniform {
 			color: [color[X], color[Y], color[Z]],
-			strength: if strength < 0.1 { 0.1 } else {
-				strength
-			}.powi(6),
+			strength: if strength < 0.1 { 0.1 } else { strength }.powi(6),
 		};
 		let buffer = state
 			.device
@@ -223,7 +213,6 @@ impl EyeDome {
 		})
 	}
 }
-
 
 impl<'a> Render<'a, ()> for EyeDome {
 	fn render(&'a self, render_pass: &mut RenderPass<'a>, _data: ()) {

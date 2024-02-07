@@ -1,6 +1,5 @@
 use render::Has;
 
-
 pub struct State {
 	state: render::State,
 	pointcloud: render::PointCloudState,
@@ -9,13 +8,11 @@ pub struct State {
 	lines: render::LinesState,
 }
 
-
 impl Has<render::State> for State {
 	fn get(&self) -> &render::State {
 		&self.state
 	}
 }
-
 
 impl Has<render::PointCloudState> for State {
 	fn get(&self) -> &render::PointCloudState {
@@ -23,20 +20,17 @@ impl Has<render::PointCloudState> for State {
 	}
 }
 
-
 impl Has<render::MeshState> for State {
 	fn get(&self) -> &render::MeshState {
 		&self.mesh
 	}
 }
 
-
 impl Has<render::LinesState> for State {
 	fn get(&self) -> &render::LinesState {
 		&self.lines
 	}
 }
-
 
 impl State {
 	pub fn new(state: render::State) -> Self {

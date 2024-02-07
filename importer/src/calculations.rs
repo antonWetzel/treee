@@ -1,17 +1,19 @@
 use std::num::NonZeroU32;
 
-use math::{ Dimension, Mat, Vector, X, Y, Z };
+use math::{Dimension, Mat, Vector, X, Y, Z};
 
-use crate::{ point::Point, Settings };
-
+use crate::{point::Point, Settings};
 
 pub struct SegmentInformation {
 	pub trunk_height: common::Value,
 	pub crown_height: common::Value,
 }
 
-
-pub fn calculate(data: Vec<Vector<3, f32>>, segment: NonZeroU32, settings: &Settings) -> (Vec<Point>, SegmentInformation) {
+pub fn calculate(
+	data: Vec<Vector<3, f32>>,
+	segment: NonZeroU32,
+	settings: &Settings,
+) -> (Vec<Point>, SegmentInformation) {
 	let neighbors_tree = NeighborsTree::new(&data);
 
 	let (min, max) = {
@@ -145,34 +147,29 @@ pub fn calculate(data: Vec<Vector<3, f32>>, segment: NonZeroU32, settings: &Sett
 	)
 }
 
-
 pub struct Adapter;
-
 
 impl k_nearest::Adapter<3, f32, Vector<3, f32>> for Adapter {
 	fn get(point: &Vector<3, f32>, dimension: Dimension) -> f32 {
 		point[dimension]
 	}
 
-
 	fn get_all(point: &Vector<3, f32>) -> [f32; 3] {
 		point.data()
 	}
 }
 
-
 pub struct NeighborsTree {
 	tree: k_nearest::KDTree<3, f32, Vector<3, f32>, Adapter, k_nearest::EuclideanDistanceSquared>,
 }
 
-
 impl NeighborsTree {
 	pub fn new(points: &[Vector<3, f32>]) -> Self {
-		let tree = <k_nearest::KDTree<3, f32, Vector<3, f32>, Adapter, k_nearest::EuclideanDistanceSquared>>::new(points);
+		let tree =
+			<k_nearest::KDTree<3, f32, Vector<3, f32>, Adapter, k_nearest::EuclideanDistanceSquared>>::new(points);
 
 		Self { tree }
 	}
-
 
 	pub fn get<'a>(
 		&self,
@@ -185,7 +182,6 @@ impl NeighborsTree {
 		&location[0..l]
 	}
 }
-
 
 pub fn map_to_u32(value: f32) -> u32 {
 	(value * u32::MAX as f32) as u32

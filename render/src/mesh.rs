@@ -1,27 +1,18 @@
 use wgpu::util::DeviceExt;
 
 use crate::{
-	depth_texture::DepthTexture,
-	Camera3DGPU,
-	Has,
-	Lookup,
-	Point,
-	PointCloud,
-	PointCloudProperty,
-	RenderPass,
-	State,
+	depth_texture::DepthTexture, Camera3DGPU, Has, Lookup, Point, PointCloud, PointCloudProperty, RenderPass, State,
 };
-
 
 pub struct MeshState {
 	pipeline: wgpu::RenderPipeline,
 }
 
-
 impl Has<MeshState> for MeshState {
-	fn get(&self) -> &MeshState { self }
+	fn get(&self) -> &MeshState {
+		self
+	}
 }
-
 
 impl MeshState {
 	pub fn new(state: &impl Has<State>) -> Self {
@@ -32,7 +23,6 @@ impl MeshState {
 		}
 	}
 
-
 	pub fn new_as_lines(state: &impl Has<State>) -> Self {
 		let state = state.get();
 
@@ -40,7 +30,6 @@ impl MeshState {
 			pipeline: Self::create_pipeline(state, wgpu::PolygonMode::Line, false),
 		}
 	}
-
 
 	fn create_pipeline(state: &State, mode: wgpu::PolygonMode, cull: bool) -> wgpu::RenderPipeline {
 		let shader = state
@@ -103,20 +92,16 @@ impl MeshState {
 	}
 }
 
-
 #[repr(transparent)]
 pub struct MeshPass<'a>(wgpu::RenderPass<'a>);
-
 
 pub trait MeshRender {
 	fn render<'a>(&'a self, mesh_pass: &mut MeshPass<'a>);
 }
 
-
 pub trait MeshRenderExt<'a, V, S> {
 	fn render_meshes(&mut self, value: &'a V, state: &'a S, camera: &'a Camera3DGPU, lookup: &'a Lookup);
 }
-
 
 impl<'a, V, S> MeshRenderExt<'a, V, S> for RenderPass<'a>
 where
@@ -127,20 +112,16 @@ where
 		self.set_pipeline(&state.get().pipeline);
 		self.set_bind_group(0, camera.get_bind_group(), &[]);
 		self.set_bind_group(1, lookup.get_bind_group(), &[]);
-		let lines_pass = unsafe {
-			std::mem::transmute::<_, &mut MeshPass<'a>>(self)
-		};
+		let lines_pass = unsafe { std::mem::transmute::<_, &mut MeshPass<'a>>(self) };
 		value.render(lines_pass);
 	}
 }
-
 
 #[derive(Debug)]
 pub struct Mesh {
 	pub buffer: wgpu::Buffer,
 	pub instances: u32,
 }
-
 
 impl Mesh {
 	pub fn new(state: &impl Has<State>, indices: &[u32]) -> Self {
@@ -155,7 +136,6 @@ impl Mesh {
 
 		Self { buffer, instances: indices.len() as u32 }
 	}
-
 
 	pub fn render<'a>(
 		&'a self,

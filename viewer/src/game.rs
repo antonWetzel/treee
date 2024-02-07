@@ -2,12 +2,14 @@ use std::{ops::Not, path::PathBuf};
 
 use common::Project;
 use math::{Vector, X, Y};
+use pollster::FutureExt;
 
 use crate::{
 	camera, lod,
 	segment::{self, MeshRender, Segment},
 	state::State,
 	tree::{LookupName, Tree},
+	Error,
 };
 
 pub struct World {
@@ -54,11 +56,13 @@ pub struct Game {
 }
 
 impl World {
-	pub fn new(state: &'static State, path: PathBuf, runner: &render::Runner) -> Self {
+	pub fn new(path: PathBuf) -> Result<(Self, render::Runner), Error> {
 		let project = Project::from_file(&path);
-
 		let egui = render::egui::Context::default();
-		let window = render::Window::new(state, &runner.event_loop, &project.name, &egui);
+
+		let (state, window, runner) = render::State::new(&project.name, &egui).block_on()?;
+		let state = State::new(state);
+		let state = Box::leak(Box::new(state));
 
 		window.set_window_icon(include_bytes!("../assets/png/tree-fill-big.png"));
 
@@ -73,32 +77,35 @@ impl World {
 			&window,
 		);
 
-		Self {
-			window,
-			egui,
-			game: Game {
-				paused: false,
+		Ok((
+			Self {
+				window,
+				egui,
+				game: Game {
+					paused: false,
 
-				tree,
-				project,
-				project_time: std::fs::metadata(&path).unwrap().modified().unwrap(),
-				path,
+					tree,
+					project,
+					project_time: std::fs::metadata(&path).unwrap().modified().unwrap(),
+					path,
 
-				state,
-				mouse: input::Mouse::new(),
-				mouse_start: None,
-				keyboard: input::Keyboard::new(),
-				time: Time::new(),
+					state,
+					mouse: input::Mouse::new(),
+					mouse_start: None,
+					keyboard: input::Keyboard::new(),
+					time: Time::new(),
 
-				property_options: false,
-				level_of_detail_options: false,
-				camera_options: false,
-				visual_options: false,
-				quit: false,
+					property_options: false,
+					level_of_detail_options: false,
+					camera_options: false,
+					visual_options: false,
+					quit: false,
 
-				render_time: 0.01,
+					render_time: 0.01,
+				},
 			},
-		}
+			runner,
+		))
 	}
 
 	fn request_redraw(&mut self) {

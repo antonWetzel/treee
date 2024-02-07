@@ -3,17 +3,15 @@ use std::fs::File;
 use math::Angle;
 use math::Transform;
 use math::Vector;
-use math::{ X, Y, Z };
-use serde::{ Deserialize, Serialize };
+use math::{X, Y, Z};
+use serde::{Deserialize, Serialize};
 
 use crate::lod;
 use crate::State;
 
-
 const BASE_MOVE_SPEED: f32 = 0.1;
 const BASE_ROTATE_SPEED: f32 = 0.002;
 const FIELD_OF_VIEW: f32 = 45.0;
-
 
 pub struct Camera {
 	pub gpu: render::Camera3DGPU,
@@ -22,7 +20,6 @@ pub struct Camera {
 	pub controller: Controller,
 	pub lod: lod::Mode,
 }
-
 
 impl Camera {
 	pub fn new(state: &State, aspect: f32) -> Self {
@@ -53,24 +50,20 @@ impl Camera {
 		}
 	}
 
-
 	pub fn movement(&mut self, direction: Vector<2, f32>, state: &State) {
 		self.controller.movement(direction, &mut self.transform);
 		self.gpu = render::Camera3DGPU::new(state, &self.cam, &self.transform);
 	}
-
 
 	pub fn move_in_view_direction(&mut self, amount: f32, state: &State) {
 		self.transform.position += self.transform.basis[Z] * amount;
 		self.gpu = render::Camera3DGPU::new(state, &self.cam, &self.transform);
 	}
 
-
 	pub fn rotate(&mut self, delta: Vector<2, f32>, state: &State) {
 		self.controller.rotate(delta, &mut self.transform);
 		self.gpu = render::Camera3DGPU::new(state, &self.cam, &self.transform);
 	}
-
 
 	pub fn scroll(&mut self, value: f32, state: &State) {
 		match &mut self.cam {
@@ -80,11 +73,9 @@ impl Camera {
 		self.gpu = render::Camera3DGPU::new(state, &self.cam, &self.transform);
 	}
 
-
 	pub fn position(&self) -> Vector<3, f32> {
 		self.transform.position
 	}
-
 
 	pub fn time(&mut self, render_time: f32) -> bool {
 		match &mut self.lod {
@@ -105,14 +96,12 @@ impl Camera {
 		}
 	}
 
-
 	pub fn first_person(&self) -> Controller {
 		match &self.controller {
 			c @ Controller::FirstPerson { .. } => *c,
 			Controller::Orbital { offset } => Controller::FirstPerson { sensitivity: *offset },
 		}
 	}
-
 
 	pub fn orbital(&self) -> Controller {
 		match &self.controller {
@@ -121,11 +110,9 @@ impl Camera {
 		}
 	}
 
-
 	pub fn inside_frustrum(&self, corner: Vector<3, f32>, size: f32) -> bool {
 		self.cam.inside(corner, size, self.transform)
 	}
-
 
 	pub fn inside_moved_frustrum(&self, corner: Vector<3, f32>, size: f32, difference: f32) -> bool {
 		self.cam.inside(
@@ -134,7 +121,6 @@ impl Camera {
 			self.transform * Transform::translation([0.0, 0.0, -difference].into()),
 		)
 	}
-
 
 	pub fn ray_origin(&self, position: Vector<2, f32>, window_size: Vector<2, f32>) -> Vector<3, f32> {
 		match self.cam {
@@ -146,7 +132,6 @@ impl Camera {
 			},
 		}
 	}
-
 
 	pub fn ray_direction(&self, position: Vector<2, f32>, window_size: Vector<2, f32>) -> Vector<3, f32> {
 		match self.cam {
@@ -161,7 +146,6 @@ impl Camera {
 			render::Camera3D::Orthographic { .. } => -self.transform.basis[Z],
 		}
 	}
-
 
 	pub fn save(&self) {
 		let Some(path) = rfd::FileDialog::new()
@@ -180,7 +164,6 @@ impl Camera {
 		};
 		bincode::serialize_into(file, &data).unwrap();
 	}
-
 
 	pub fn load(&mut self, state: &State) {
 		let Some(path) = rfd::FileDialog::new()
@@ -201,7 +184,6 @@ impl Camera {
 	}
 }
 
-
 #[derive(Serialize, Deserialize)]
 struct CameraData {
 	transform: Transform<3, f32>,
@@ -209,13 +191,11 @@ struct CameraData {
 	lod: lod::Mode,
 }
 
-
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq)]
 pub enum Controller {
 	FirstPerson { sensitivity: f32 },
 	Orbital { offset: f32 },
 }
-
 
 impl Controller {
 	pub fn movement(&mut self, direction: Vector<2, f32>, transform: &mut Transform<3, f32>) {
@@ -226,7 +206,7 @@ impl Controller {
 					0.0,
 					direction[Y] * sensitivity * BASE_MOVE_SPEED,
 				]
-					.into();
+				.into();
 				*transform *= Transform::translation(direction);
 			},
 			Controller::Orbital { offset } => {
@@ -236,7 +216,6 @@ impl Controller {
 			},
 		}
 	}
-
 
 	pub fn rotate(&mut self, delta: Vector<2, f32>, transform: &mut Transform<3, f32>) {
 		match *self {
@@ -265,7 +244,6 @@ impl Controller {
 		}
 	}
 
-
 	pub fn scroll(&mut self, value: f32, transform: &mut Transform<3, f32>) {
 		match self {
 			Controller::FirstPerson { sensitivity } => {
@@ -273,7 +251,7 @@ impl Controller {
 				if *sensitivity < 0.01 {
 					*sensitivity = 0.01;
 				}
-			}
+			},
 			Controller::Orbital { offset } => {
 				let mut new_offset = *offset * (1.0 + value / 10.0);
 				if new_offset < 0.01 {

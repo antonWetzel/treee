@@ -2,96 +2,73 @@ use common::MAX_LEAF_SIZE;
 use math::Vector;
 use wgpu::util::DeviceExt;
 
-use crate::{depth_texture::DepthTexture, Camera3DGPU, Has, Lookup, Point, RenderPass, State};
+use crate::{depth_texture::DepthTexture, Camera3DGPU, Has, Lookup, Point, PointEdge, RenderPass, State};
 
 pub struct PointCloudState {
 	base: wgpu::Buffer,
 	pipeline: wgpu::RenderPipeline,
 }
 
-//tan(60°)
-const TAN_60_DEGREES: f32 = 1.732_050_8;
+#[cfg(not(all(feature = "quad_point", feature = "oct_point")))]
+mod vertices {
+	use super::*;
 
-const BASE_VERTICES: [crate::PointEdge; 3] = [
-	crate::PointEdge {
-		position: Vector::new([-TAN_60_DEGREES, -1.0]),
-	},
-	crate::PointEdge {
-		position: Vector::new([TAN_60_DEGREES, -1.0]),
-	},
-	crate::PointEdge { position: Vector::new([0.0, 2.0]) },
-];
+	//tan(60°)
+	const DIFF: f32 = 1.732_050_8;
 
-// Triangle is a lot faster then Square
-// const BASE_VERTICES: [crate::PointEdge; 6] = [
-// 	crate::PointEdge { position: Vector::new([-1.0, -1.0]) },
-// 	crate::PointEdge { position: Vector::new([1.0, -1.0]) },
-// 	crate::PointEdge { position: Vector::new([1.0, 1.0]) },
-// 	crate::PointEdge { position: Vector::new([-1.0, -1.0]) },
-// 	crate::PointEdge { position: Vector::new([1.0, 1.0]) },
-// 	crate::PointEdge { position: Vector::new([-1.0, 1.0]) },
-// ];
+	pub const BASE_VERTICES: [PointEdge; 3] = [
+		PointEdge { position: Vector::new([-DIFF, -1.0]) },
+		PointEdge { position: Vector::new([DIFF, -1.0]) },
+		PointEdge { position: Vector::new([0.0, 2.0]) },
+	];
+}
 
-// Triangle is a lot faster then Octagon
-//tan(22.5°)
-// const TAN_225_DEGREES: f32 = 0.41421356237309503;
+#[cfg(all(feature = "quad_point", not(feature = "oct_point")))]
+mod vertices {
+	use super::*;
 
-// const BASE_VERTICES: [crate::PointEdge; 18] = [
-// 	crate::PointEdge {
-// 		position: Vector::new([-TAN_225_DEGREES, -1.0]),
-// 	},
-// 	crate::PointEdge {
-// 		position: Vector::new([TAN_225_DEGREES, -1.0]),
-// 	},
-// 	crate::PointEdge {
-// 		position: Vector::new([-1.0, -TAN_225_DEGREES]),
-// 	},
-// 	crate::PointEdge {
-// 		position: Vector::new([-1.0, -TAN_225_DEGREES]),
-// 	},
-// 	crate::PointEdge {
-// 		position: Vector::new([TAN_225_DEGREES, -1.0]),
-// 	},
-// 	crate::PointEdge {
-// 		position: Vector::new([1.0, -TAN_225_DEGREES]),
-// 	},
-// 	crate::PointEdge {
-// 		position: Vector::new([-1.0, -TAN_225_DEGREES]),
-// 	},
-// 	crate::PointEdge {
-// 		position: Vector::new([1.0, -TAN_225_DEGREES]),
-// 	},
-// 	crate::PointEdge {
-// 		position: Vector::new([-1.0, TAN_225_DEGREES]),
-// 	},
-// 	crate::PointEdge {
-// 		position: Vector::new([-1.0, TAN_225_DEGREES]),
-// 	},
-// 	crate::PointEdge {
-// 		position: Vector::new([1.0, -TAN_225_DEGREES]),
-// 	},
-// 	crate::PointEdge {
-// 		position: Vector::new([1.0, TAN_225_DEGREES]),
-// 	},
-// 	crate::PointEdge {
-// 		position: Vector::new([-1.0, TAN_225_DEGREES]),
-// 	},
-// 	crate::PointEdge {
-// 		position: Vector::new([1.0, TAN_225_DEGREES]),
-// 	},
-// 	crate::PointEdge {
-// 		position: Vector::new([-TAN_225_DEGREES, 1.0]),
-// 	},
-// 	crate::PointEdge {
-// 		position: Vector::new([-TAN_225_DEGREES, 1.0]),
-// 	},
-// 	crate::PointEdge {
-// 		position: Vector::new([TAN_225_DEGREES, 1.0]),
-// 	},
-// 	crate::PointEdge {
-// 		position: Vector::new([1.0, TAN_225_DEGREES]),
-// 	},
-// ];
+	//Triangle is a lot faster then Square
+	pub const BASE_VERTICES: [PointEdge; 6] = [
+		PointEdge { position: Vector::new([-1.0, -1.0]) },
+		PointEdge { position: Vector::new([1.0, -1.0]) },
+		PointEdge { position: Vector::new([1.0, 1.0]) },
+		PointEdge { position: Vector::new([-1.0, -1.0]) },
+		PointEdge { position: Vector::new([1.0, 1.0]) },
+		PointEdge { position: Vector::new([-1.0, 1.0]) },
+	];
+}
+
+#[cfg(all(not(feature = "quad_point"), feature = "oct_point"))]
+mod vertices {
+	use super::*;
+
+	//tan(22.5°)
+	const DIFF: f32 = 0.41421356237309503;
+
+	// Triangle is a lot faster then Octagon
+	pub const BASE_VERTICES: [PointEdge; 18] = [
+		PointEdge { position: Vector::new([-DIFF, -1.0]) },
+		PointEdge { position: Vector::new([DIFF, -1.0]) },
+		PointEdge { position: Vector::new([-1.0, -DIFF]) },
+		PointEdge { position: Vector::new([-1.0, -DIFF]) },
+		PointEdge { position: Vector::new([DIFF, -1.0]) },
+		PointEdge { position: Vector::new([1.0, -DIFF]) },
+		PointEdge { position: Vector::new([-1.0, -DIFF]) },
+		PointEdge { position: Vector::new([1.0, -DIFF]) },
+		PointEdge { position: Vector::new([-1.0, DIFF]) },
+		PointEdge { position: Vector::new([-1.0, DIFF]) },
+		PointEdge { position: Vector::new([1.0, -DIFF]) },
+		PointEdge { position: Vector::new([1.0, DIFF]) },
+		PointEdge { position: Vector::new([-1.0, DIFF]) },
+		PointEdge { position: Vector::new([1.0, DIFF]) },
+		PointEdge { position: Vector::new([-DIFF, 1.0]) },
+		PointEdge { position: Vector::new([-DIFF, 1.0]) },
+		PointEdge { position: Vector::new([DIFF, 1.0]) },
+		PointEdge { position: Vector::new([1.0, DIFF]) },
+	];
+}
+
+use vertices::*;
 
 impl PointCloudState {
 	pub fn new(state: &impl Has<State>) -> Self {

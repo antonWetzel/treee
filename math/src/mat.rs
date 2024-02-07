@@ -1,19 +1,14 @@
-use std::ops::{ Add, AddAssign, Div, Mul, MulAssign, Neg, Sub };
+use std::ops::{Add, AddAssign, Div, Mul, MulAssign, Neg, Sub};
 
 use crate::{
 	angle::Angle,
 	matrix::Matrix,
-	requirements::{ FromF64, Identity, PowI, Sqrt, Trigonometry, Zero },
+	requirements::{FromF64, Identity, PowI, Sqrt, Trigonometry, Zero},
 	vector::Vector,
-	Dimensions,
-	X,
-	Y,
-	Z,
+	Dimensions, X, Y, Z,
 };
 
-
 pub type Mat<const N: usize, T> = Matrix<N, N, T>;
-
 
 impl<const N: usize, T> Mat<N, T>
 where
@@ -29,7 +24,6 @@ where
 	}
 }
 
-
 impl<const N: usize, T> MulAssign<Mat<N, T>> for Mat<N, T>
 where
 	T: Zero,
@@ -41,7 +35,6 @@ where
 		*self = *self * other;
 	}
 }
-
 
 impl<T> Mat<2, T>
 where
@@ -61,7 +54,6 @@ where
 	}
 }
 
-
 impl<T> Mat<2, T>
 where
 	T: FromF64,
@@ -78,7 +70,6 @@ where
 		[[cos, sin].into(), [-sin, cos].into()].into()
 	}
 }
-
 
 impl<T> Mat<3, T> {
 	pub fn inverse(self) -> Self
@@ -99,22 +90,21 @@ impl<T> Mat<3, T> {
 				(self[X + Z] * self[Z + Y] - self[X + Y] * self[Z + Z]),
 				(self[X + Y] * self[Y + Z] - self[X + Z] * self[Y + Y]),
 			]
-				.into(),
+			.into(),
 			[
 				(self[Y + Z] * self[Z + X] - self[Y + X] * self[Z + Z]),
 				(self[X + X] * self[Z + Z] - self[X + Z] * self[Z + X]),
 				(self[Y + X] * self[X + Z] - self[X + X] * self[Y + Z]),
 			]
-				.into(),
+			.into(),
 			[
 				(self[Y + X] * self[Z + Y] - self[Z + X] * self[Y + Y]),
 				(self[Z + X] * self[X + Y] - self[X + X] * self[Z + Y]),
 				(self[X + X] * self[Y + Y] - self[Y + X] * self[X + Y]),
 			]
-				.into(),
+			.into(),
 		]) * (T::IDENTITY / det)
 	}
-
 
 	pub fn raw(self) -> [[T; 4]; 3]
 	where
@@ -127,7 +117,6 @@ impl<T> Mat<3, T> {
 			[self[Z + X], self[Z + Y], self[Z + Z], T::ZERO],
 		]
 	}
-
 
 	pub fn rotation(axis: Vector<3, T>, angle: Angle<T>) -> Self
 	where
@@ -153,23 +142,22 @@ impl<T> Mat<3, T> {
 				y * x * neg_cos + z * sin,
 				z * x * neg_cos - y * sin,
 			]
-				.into(),
+			.into(),
 			[
 				x * y * neg_cos - z * sin,
 				y * y * neg_cos + cos,
 				z * y * neg_cos + x * sin,
 			]
-				.into(),
+			.into(),
 			[
 				x * z * neg_cos + y * sin,
 				y * z * neg_cos - x * sin,
 				z * z * neg_cos + cos,
 			]
-				.into(),
+			.into(),
 		]
-			.into()
+		.into()
 	}
-
 
 	pub fn determinant(&self) -> T
 	where
@@ -184,7 +172,6 @@ impl<T> Mat<3, T> {
 			- self[X + Y] * (self[Y + X] * self[Z + Z] - self[Y + Z] * self[Z + X])
 			+ self[X + Z] * (self[Y + X] * self[Z + Y] - self[Y + Y] * self[Z + X])
 	}
-
 
 	// https://en.wikipedia.org/wiki/Eigenvalue_algorithm#3%C3%973_matrices
 	// the matrix must be real and symmetric
@@ -236,7 +223,6 @@ impl<T> Mat<3, T> {
 		[eig_1, eig_2, eig_3].into()
 	}
 
-
 	pub fn calculate_last_eigenvector(&self, eigen_values: Vector<3, T>) -> Vector<3, T>
 	where
 		T: Zero,
@@ -252,20 +238,12 @@ impl<T> Mat<3, T> {
 		let mut eigen_vector = Vector::<3, T>::default();
 		for j in X.to(Z) {
 			for k in X.to(Z) {
-				eigen_vector[j] += (self[k + j] - if k == j {
-					eigen_values[X]
-				} else {
-					T::ZERO
-				}) * (self[Z + k] - if Z == k {
-					eigen_values[Y]
-				} else {
-					T::ZERO
-				});
+				eigen_vector[j] += (self[k + j] - if k == j { eigen_values[X] } else { T::ZERO })
+					* (self[Z + k] - if Z == k { eigen_values[Y] } else { T::ZERO });
 			}
 		}
 		eigen_vector / eigen_vector.length()
 	}
-
 
 	pub fn calculate_eigenvectors(&self, eigen_values: Vector<3, T>) -> Mat<3, T>
 	where
@@ -285,16 +263,8 @@ impl<T> Mat<3, T> {
 			let prev = i.previous(Z);
 			for j in X.to(Z) {
 				for k in X.to(Z) {
-					let l = self[k + j] - if k == j {
-						eigen_values[next]
-					} else {
-						T::ZERO
-					};
-					let r = self[i + k] - if i == k {
-						eigen_values[prev]
-					} else {
-						T::ZERO
-					};
+					let l = self[k + j] - if k == j { eigen_values[next] } else { T::ZERO };
+					let r = self[i + k] - if i == k { eigen_values[prev] } else { T::ZERO };
 					eigen_vectors[i + j] += l * r;
 				}
 			}

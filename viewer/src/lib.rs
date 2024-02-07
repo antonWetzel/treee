@@ -28,11 +28,7 @@ pub fn run() -> Result<(), Error> {
 		.pick_file()
 		.ok_or(Error::NoFile)?;
 
-	let (state, runner) = render::State::new().block_on()?;
-	let state = State::new(state);
-	let state = Box::leak(Box::new(state));
-
-	let mut game = game::World::new(state, path, &runner);
+	let (mut game, runner) = game::World::new(path)?;
 	runner.run(&mut game)?;
 
 	Ok(())

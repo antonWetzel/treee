@@ -1,19 +1,11 @@
 use math::Vector;
-use wgpu::{ util::DeviceExt, vertex_attr_array };
+use wgpu::{util::DeviceExt, vertex_attr_array};
 
-use crate::{
-	depth_texture::DepthTexture,
-	Camera3DGPU,
-	Has,
-	RenderPass,
-	State,
-};
-
+use crate::{depth_texture::DepthTexture, Camera3DGPU, Has, RenderPass, State};
 
 pub struct LinesState {
 	pipeline: wgpu::RenderPipeline,
 }
-
 
 impl LinesState {
 	pub fn new(state: &impl Has<State>) -> Self {
@@ -38,9 +30,7 @@ impl LinesState {
 				vertex: wgpu::VertexState {
 					module: &shader,
 					entry_point: "vs_main",
-					buffers: &[
-						description(wgpu::VertexStepMode::Vertex),
-					],
+					buffers: &[description(wgpu::VertexStepMode::Vertex)],
 				},
 				fragment: Some(wgpu::FragmentState {
 					module: &shader,
@@ -79,20 +69,16 @@ impl LinesState {
 	}
 }
 
-
 #[repr(transparent)]
 pub struct LinesPass<'a>(wgpu::RenderPass<'a>);
-
 
 pub trait LinesRender {
 	fn render<'a>(&'a self, lines_pass: &mut LinesPass<'a>);
 }
 
-
 pub trait LinesRenderExt<'a, V, S> {
 	fn render_lines(&mut self, value: &'a V, state: &'a S, camera: &'a Camera3DGPU);
 }
-
 
 impl<'a, V, S> LinesRenderExt<'a, V, S> for RenderPass<'a>
 where
@@ -102,13 +88,10 @@ where
 	fn render_lines(&mut self, value: &'a V, state: &'a S, camera: &'a Camera3DGPU) {
 		self.set_pipeline(&state.get().pipeline);
 		self.set_bind_group(0, camera.get_bind_group(), &[]);
-		let lines_pass = unsafe {
-			std::mem::transmute::<_, &mut LinesPass<'a>>(self)
-		};
+		let lines_pass = unsafe { std::mem::transmute::<_, &mut LinesPass<'a>>(self) };
 		value.render(lines_pass);
 	}
 }
-
 
 #[derive(Debug)]
 pub struct Lines {
@@ -116,7 +99,6 @@ pub struct Lines {
 	pub indices: wgpu::Buffer,
 	pub instances: u32,
 }
-
 
 impl Lines {
 	pub fn new(state: &impl Has<State>, points: &[Vector<3, f32>], indices: &[u32]) -> Self {
@@ -138,17 +120,15 @@ impl Lines {
 				usage: wgpu::BufferUsages::INDEX,
 			});
 
-		Self { buffer, indices: indices_buffer, instances: indices.len() as u32 }
+		Self {
+			buffer,
+			indices: indices_buffer,
+			instances: indices.len() as u32,
+		}
 	}
 
-
-	pub fn render<'a>(
-		&'a self,
-		lines_pass: &mut LinesPass<'a>,
-	) {
-		lines_pass
-			.0
-			.set_vertex_buffer(0, self.buffer.slice(..));
+	pub fn render<'a>(&'a self, lines_pass: &mut LinesPass<'a>) {
+		lines_pass.0.set_vertex_buffer(0, self.buffer.slice(..));
 		lines_pass
 			.0
 			.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint32);
@@ -156,9 +136,7 @@ impl Lines {
 	}
 }
 
-
 const ATTRIBUTES: [wgpu::VertexAttribute; 1] = vertex_attr_array![0 => Float32x3];
-
 
 pub fn description<'a>(step_mode: wgpu::VertexStepMode) -> wgpu::VertexBufferLayout<'a> {
 	wgpu::VertexBufferLayout {

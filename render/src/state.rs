@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use math::Vector;
 
 use super::*;
@@ -5,8 +7,6 @@ use super::*;
 pub struct State {
 	pub(crate) device: wgpu::Device,
 	pub(crate) queue: wgpu::Queue,
-	pub(crate) instance: wgpu::Instance,
-	pub(crate) adapter: wgpu::Adapter,
 	pub(crate) surface_format: wgpu::TextureFormat,
 }
 
@@ -19,7 +19,7 @@ impl Has<State> for State {
 pub type RenderError = winit::error::EventLoopError;
 
 impl State {
-	pub async fn new() -> Result<(Self, Runner), RenderError> {
+	pub async fn new(title: &str, egui: &egui::Context) -> Result<(Self, Window, Runner), RenderError> {
 		let event_loop = winit::event_loop::EventLoop::new()?;
 
 		let window = winit::window::WindowBuilder::new()
@@ -55,26 +55,57 @@ impl State {
 					},
 					label: None,
 				},
-				None, // Trace path
+				None,
 			)
 			.await
 			.unwrap();
 
+		let window = winit::window::WindowBuilder::new()
+			.with_title(title)
+			.with_min_inner_size(winit::dpi::LogicalSize { width: 10, height: 10 })
+			.build(&event_loop)
+			.unwrap();
+		let window = Arc::new(window);
+
+		let size = window.inner_size();
+		let surface = instance.create_surface(window.clone()).unwrap();
 		let surface_caps = surface.get_capabilities(&adapter);
 		let surface_format = *surface_caps
 			.formats
 			.iter()
 			.find(|f| f.is_srgb())
 			.unwrap_or(&surface_caps.formats[0]);
+		let config = wgpu::SurfaceConfiguration {
+			usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+			format: surface_format,
+			width: size.width,
+			height: size.height,
+			present_mode: surface_caps.present_modes[0],
+			alpha_mode: surface_caps.alpha_modes[0],
+			desired_maximum_frame_latency: 2,
+			view_formats: Vec::new(),
+		};
+		surface.configure(&device, &config);
+
+		let depth_texture = DepthTexture::new(&device, &config, "depth");
+		let id = egui.viewport_id();
+		let egui_wgpu = egui_wgpu::Renderer::new(&device, config.format, None, 1);
+		let egui_winit = egui_winit::State::new(egui.clone(), id, &window, None, None);
+
+		let window = Window {
+			surface,
+			depth_texture,
+			config,
+
+			egui_wgpu,
+			egui_winit,
+
+			window,
+		};
 
 		Ok((
-			Self {
-				instance,
-				adapter,
-				device,
-				queue,
-				surface_format,
-			},
+			Self { device, queue, surface_format },
+			window,
 			Runner { event_loop },
 		))
 	}

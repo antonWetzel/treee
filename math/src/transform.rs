@@ -1,26 +1,21 @@
-use std::ops::{ Add, Div, Mul, MulAssign, Neg, Sub };
+use std::ops::{Add, Div, Mul, MulAssign, Neg, Sub};
 
 use crate::{
 	angle::Angle,
 	mat::Mat,
 	matrix::Matrix,
-	requirements::{ FromF64, Identity, Trigonometry, Zero },
+	requirements::{FromF64, Identity, Trigonometry, Zero},
 	vector::Vector,
-	Dimensions,
-	X,
-	Y,
-	Z,
+	Dimensions, X, Y, Z,
 };
 
-use serde::{ Deserialize, Serialize };
-
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug)]
 pub struct Transform<const N: usize, T> {
 	pub basis: Mat<N, T>,
 	pub position: Vector<N, T>,
 }
-
 
 impl<const N: usize, T> Default for Transform<N, T>
 where
@@ -35,7 +30,6 @@ where
 	}
 }
 
-
 impl<const N: usize, T> Transform<N, T> {
 	pub fn identity() -> Self
 	where
@@ -49,7 +43,6 @@ impl<const N: usize, T> Transform<N, T> {
 		}
 	}
 
-
 	pub fn translation(position: Vector<N, T>) -> Self
 	where
 		T: Identity,
@@ -57,7 +50,6 @@ impl<const N: usize, T> Transform<N, T> {
 	{
 		Self { basis: Mat::<N, T>::identity(), position }
 	}
-
 
 	pub fn scale(scale: Vector<N, T>) -> Self
 	where
@@ -74,7 +66,6 @@ impl<const N: usize, T> Transform<N, T> {
 	}
 }
 
-
 impl<T> Transform<2, T>
 where
 	T: Zero + Identity,
@@ -90,10 +81,9 @@ where
 			[self.basis[Y + X], self.basis[Y + Y], T::ZERO].into(),
 			[self.position[X], self.position[Y], T::IDENTITY].into(),
 		]
-			.into()
+		.into()
 	}
 }
-
 
 impl<T> Transform<3, T>
 where
@@ -112,33 +102,32 @@ where
 				self.basis[X + Z],
 				T::ZERO,
 			]
-				.into(),
+			.into(),
 			[
 				self.basis[Y + X],
 				self.basis[Y + Y],
 				self.basis[Y + Z],
 				T::ZERO,
 			]
-				.into(),
+			.into(),
 			[
 				self.basis[Z + X],
 				self.basis[Z + Y],
 				self.basis[Z + Z],
 				T::ZERO,
 			]
-				.into(),
+			.into(),
 			[
 				self.position[X],
 				self.position[Y],
 				self.position[Z],
 				T::IDENTITY,
 			]
-				.into(),
+			.into(),
 		]
-			.into()
+		.into()
 	}
 }
-
 
 impl<const N: usize, T> Mul<Vector<N, T>> for Transform<N, T>
 where
@@ -149,12 +138,10 @@ where
 {
 	type Output = Vector<N, T>;
 
-
 	fn mul(self, other: Vector<N, T>) -> Vector<N, T> {
 		self.basis * other + self.position
 	}
 }
-
 
 impl<const N: usize, T> Mul<Self> for Transform<N, T>
 where
@@ -165,7 +152,6 @@ where
 {
 	type Output = Self;
 
-
 	fn mul(self, rhs: Self) -> Self::Output {
 		let basis = self.basis * rhs.basis;
 		let mut position = self.position;
@@ -175,7 +161,6 @@ where
 		Self { position, basis }
 	}
 }
-
 
 impl<const N: usize, T> MulAssign for Transform<N, T>
 where
@@ -188,7 +173,6 @@ where
 		*self = *self * rhs;
 	}
 }
-
 
 impl<T> Transform<2, T> {
 	pub fn inverse(self) -> Self
@@ -207,7 +191,6 @@ impl<T> Transform<2, T> {
 		Self { basis: inv, position: pos }
 	}
 
-
 	pub fn padded_matrix(self) -> Matrix<3, 4, T>
 	where
 		T: Zero,
@@ -219,9 +202,8 @@ impl<T> Transform<2, T> {
 			[self.basis[Y + X], self.basis[Y + Y], T::ZERO, T::ZERO].into(),
 			[self.position[X], self.position[Y], T::IDENTITY, T::ZERO].into(),
 		]
-			.into()
+		.into()
 	}
-
 
 	pub fn rotatation(angle: Angle<T>) -> Self
 	where
@@ -238,7 +220,6 @@ impl<T> Transform<2, T> {
 		}
 	}
 
-
 	pub fn rotate_local(&mut self, angle: Angle<T>)
 	where
 		T: FromF64,
@@ -251,7 +232,6 @@ impl<T> Transform<2, T> {
 	{
 		self.basis *= Mat::<2, T>::rotation(angle);
 	}
-
 
 	pub fn rotate_world(&mut self, angle: Angle<T>)
 	where
@@ -266,7 +246,6 @@ impl<T> Transform<2, T> {
 		*self = Self::rotatation(angle) * *self;
 	}
 }
-
 
 impl<T> Transform<3, T> {
 	pub fn inverse(self) -> Self
@@ -285,7 +264,6 @@ impl<T> Transform<3, T> {
 		Self { basis: inv, position: pos }
 	}
 
-
 	pub fn rotatation(axis: Vector<3, T>, angle: Angle<T>) -> Self
 	where
 		T: Zero,
@@ -303,7 +281,6 @@ impl<T> Transform<3, T> {
 		}
 	}
 
-
 	pub fn rotate_local(&mut self, axis: Vector<3, T>, angle: Angle<T>)
 	where
 		T: Zero,
@@ -317,7 +294,6 @@ impl<T> Transform<3, T> {
 	{
 		self.basis *= Mat::<3, T>::rotation(axis, angle);
 	}
-
 
 	// todo: better name
 	pub fn rotate_local_before(&mut self, axis: Vector<3, T>, angle: Angle<T>)
@@ -334,7 +310,6 @@ impl<T> Transform<3, T> {
 		self.basis = Mat::<3, T>::rotation(axis, angle) * self.basis;
 	}
 
-
 	pub fn rotate_world(&mut self, axis: Vector<3, T>, angle: Angle<T>)
 	where
 		T: Zero,
@@ -350,7 +325,6 @@ impl<T> Transform<3, T> {
 	}
 }
 
-
 #[derive(Serialize, Deserialize)]
 struct SerialzeHelper<const N: usize, T>
 where
@@ -360,7 +334,6 @@ where
 	pub basis: Mat<N, T>,
 	pub position: Vector<N, T>,
 }
-
 
 impl<const N: usize, T> Serialize for Transform<N, T>
 where
@@ -373,17 +346,12 @@ where
 		S: serde::Serializer,
 	{
 		let helper = std::mem::ManuallyDrop::new(SerialzeHelper {
-			basis: unsafe {
-				std::ptr::read(&self.basis)
-			},
-			position: unsafe {
-				std::ptr::read(&self.position)
-			},
+			basis: unsafe { std::ptr::read(&self.basis) },
+			position: unsafe { std::ptr::read(&self.position) },
 		});
 		helper.serialize(serializer)
 	}
 }
-
 
 impl<'de, const N: usize, T> Deserialize<'de> for Transform<N, T>
 where

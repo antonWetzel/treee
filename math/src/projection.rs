@@ -1,14 +1,12 @@
-use std::ops::{ Add, Div, Mul, Neg, Sub };
+use std::ops::{Add, Div, Mul, Neg, Sub};
 
 use crate::{
 	matrix::Matrix,
-	requirements::{ FromF64, Identity, Trigonometry, Zero },
+	requirements::{FromF64, Identity, Trigonometry, Zero},
 	vector::Vector,
 };
 
-
 pub struct Projection;
-
 
 impl Projection {
 	pub fn create_perspective<T>(aspect_ratio: T, vertical_fov: T, near: T, far: T) -> Matrix<4, 4, T>
@@ -40,7 +38,6 @@ impl Projection {
 		])
 	}
 
-
 	pub fn create_orthographic<T>(aspect: T, height: T, near: T, far: T) -> Matrix<4, 4, T>
 	where
 		T: FromF64,
@@ -58,11 +55,11 @@ impl Projection {
 				T::ZERO,
 				T::ZERO,
 			]
-				.into(),
+			.into(),
 			[T::ZERO, T::from_f64(2.0) / height, T::ZERO, T::ZERO].into(),
 			[T::ZERO, T::ZERO, T::from_f64(2.0) / (near - far), T::ZERO].into(),
 			[T::ZERO, T::ZERO, T::ZERO, T::IDENTITY].into(),
 		]
-			.into()
+		.into()
 	}
 }

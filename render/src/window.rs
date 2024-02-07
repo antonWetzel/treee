@@ -9,65 +9,15 @@ pub type EventResponse = egui_winit::EventResponse;
 
 pub struct Window {
 	pub window: Arc<winit::window::Window>,
-	config: wgpu::SurfaceConfiguration,
-	surface: wgpu::Surface<'static>,
-	depth_texture: DepthTexture,
+	pub(crate) config: wgpu::SurfaceConfiguration,
+	pub(crate) surface: wgpu::Surface<'static>,
+	pub(crate) depth_texture: DepthTexture,
 
 	pub egui_winit: egui_winit::State,
-	egui_wgpu: egui_wgpu::Renderer,
+	pub(crate) egui_wgpu: egui_wgpu::Renderer,
 }
 
 impl Window {
-	pub fn new<T: Into<String>>(
-		state: &impl Has<State>,
-		window_target: &winit::event_loop::EventLoopWindowTarget<()>,
-		title: T,
-		egui: &egui::Context,
-	) -> Self {
-		let state = state.get();
-		let window = winit::window::WindowBuilder::new()
-			.with_title(title)
-			.with_min_inner_size(winit::dpi::LogicalSize { width: 10, height: 10 })
-			.build(window_target)
-			.unwrap();
-		let window = Arc::new(window);
-		let size = window.inner_size();
-		let surface = state.instance.create_surface(window.clone()).unwrap();
-		let surface_caps = surface.get_capabilities(&state.adapter);
-		let surface_format = *surface_caps
-			.formats
-			.iter()
-			.find(|f| f.is_srgb())
-			.unwrap_or(&surface_caps.formats[0]);
-		let config = wgpu::SurfaceConfiguration {
-			usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-			format: surface_format,
-			width: size.width,
-			height: size.height,
-			present_mode: surface_caps.present_modes[0],
-			alpha_mode: surface_caps.alpha_modes[0],
-			desired_maximum_frame_latency: 2,
-			view_formats: Vec::new(),
-		};
-		surface.configure(&state.device, &config);
-
-		let depth_texture = DepthTexture::new(&state.device, &config, "depth");
-
-		let egui_wgpu = egui_wgpu::Renderer::new(&state.device, config.format, None, 1);
-
-		let id = egui.viewport_id();
-		Self {
-			surface,
-			depth_texture,
-			config,
-
-			egui_winit: egui_winit::State::new(egui.clone(), id, &window, None, None),
-			egui_wgpu,
-
-			window,
-		}
-	}
-
 	pub fn get_aspect(&self) -> f32 {
 		self.config.width as f32 / self.config.height as f32
 	}

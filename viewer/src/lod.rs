@@ -1,8 +1,7 @@
 use math::Vector;
-use serde::{ Deserialize, Serialize };
+use serde::{Deserialize, Serialize};
 
 use crate::camera;
-
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq)]
 pub enum Mode {
@@ -11,30 +10,25 @@ pub enum Mode {
 	Level { target: usize, max: usize },
 }
 
-
 #[derive(Clone, Copy)]
 pub enum Checker {
 	Normal { threshold: f32 },
 	Level { current: usize, target: usize },
 }
 
-
 impl Mode {
 	pub fn new_auto(_max_level: usize) -> Self {
 		Self::Auto { threshold: 1.0 }
 	}
 
-
 	pub fn new_normal(_max_level: usize) -> Self {
 		Self::Normal { threshold: 1.0 }
 	}
-
 
 	pub fn new_level(max_level: usize) -> Self {
 		Self::Level { target: 0, max: max_level }
 	}
 }
-
 
 impl Checker {
 	pub fn new(mode: &Mode) -> Self {
@@ -44,14 +38,12 @@ impl Checker {
 		}
 	}
 
-
 	pub fn level_down(self) -> Self {
 		match self {
 			Self::Level { current, target } => Self::Level { current: current + 1, target },
 			_ => self,
 		}
 	}
-
 
 	pub fn should_render(self, corner: Vector<3, f32>, size: f32, camera: &camera::Camera) -> bool {
 		match self {
