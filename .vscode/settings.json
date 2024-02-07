@@ -9,4 +9,5 @@
 	"lldb.consoleMode": "commands",
 	"rust-analyzer.showUnlinkedFileNotification": false,
 	"ltex.language": "en-US",
+	"rust-analyzer.cargo.features": "all"
 }

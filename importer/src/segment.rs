@@ -3,6 +3,9 @@ use std::collections::HashSet;
 use math::{Vector, X, Y, Z};
 use voronator::delaunator::Point;
 
+#[cfg(feature = "segmentation-svgs")]
+use std::io::Write;
+
 use crate::{
 	cache::{Cache, CacheEntry, CacheIndex},
 	progress::Progress,
@@ -69,41 +72,57 @@ impl Segmenter {
 			x: self.max[X] as f64,
 			y: self.max[Z] as f64,
 		};
-		// let size = self.max - self.min;
 
-		for (_index, slice) in self.slices.into_iter().rev().enumerate() {
-			// let mut svg = std::fs::File::create(format!("test_{}.svg", index)).unwrap();
-			// svg.write_all(
-			// 	format!(
-			// 		"<svg viewbox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\" width=\"{}\" height=\"{}\" >\n",
-			// 		size[X] * 10.0,
-			// 		size[Z] * 10.0,
-			// 		size[X] * 10.0,
-			// 		size[Z] * 10.0
-			// 	)
-			// 	.as_bytes(),
-			// )
-			// .unwrap();
+		cfg_if::cfg_if! {
+			if #[cfg(feature = "segmentation-svgs")] {
+				let size = self.max - self.min;
+				let mut index = 0;
+				_ = std::fs::remove_dir_all("./svg");
+				std::fs::create_dir_all("./svg").unwrap();
+			}
+		}
+
+		for slice in self.slices.into_iter().rev() {
+			cfg_if::cfg_if! {
+				if #[cfg(feature = "segmentation-svgs")] {
+					let mut svg = std::fs::File::create(format!("./svg/test_{}.svg", index)).unwrap();
+					index += 1;
+					svg.write_all(
+						format!(
+							"<svg viewbox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\" width=\"{}\" height=\"{}\" >\n",
+							size[X] * 10.0,
+							size[Z] * 10.0,
+							size[X] * 10.0,
+							size[Z] * 10.0
+						)
+						.as_bytes(),
+					)
+					.unwrap();
+				}
+			}
 
 			let slice = cache.read(slice).read();
 			let tree_set = TreeSet::new(&slice, self.max_distance);
-			// for tree in &tree_set.trees {
-			// 	tree.save_svg(&mut svg, self.min, true);
-			// }
+
+			#[cfg(feature = "segmentation-svgs")]
+			for tree in &tree_set.trees {
+				tree.save_svg(&mut svg, self.min, true);
+			}
 
 			tree_set.tree_positions(&mut centroids, self.max_distance);
 
-			// for &(_, point) in &centroids {
-			// 	svg.write_all(
-			// 		format!(
-			// 			"  <circle cx=\"{}\" cy=\"{}\" r=\"10\" />",
-			// 			(point[X] - self.min[X]) * 10.0,
-			// 			(point[Y] - self.min[Z]) * 10.0
-			// 		)
-			// 		.as_bytes(),
-			// 	)
-			// 	.unwrap();
-			// }
+			#[cfg(feature = "segmentation-svgs")]
+			for &(_, point) in &centroids {
+				svg.write_all(
+					format!(
+						"  <circle cx=\"{}\" cy=\"{}\" r=\"10\" />\n",
+						(point[X] - self.min[X]) * 10.0,
+						(point[Y] - self.min[Z]) * 10.0
+					)
+					.as_bytes(),
+				)
+				.unwrap();
+			}
 
 			let points = centroids
 				.iter()
@@ -124,17 +143,21 @@ impl Segmenter {
 				.map(|p| Tree::from_points(p, 0.1))
 				.collect::<Vec<_>>();
 
-			// for tree in &trees {
-			// 	tree.save_svg(&mut svg, self.min, false);
-			// }
-			// svg.write_all(b"</svg>").unwrap();
+			cfg_if::cfg_if! {
+				if #[cfg(feature = "segmentation-svgs")] {
+					for tree in &trees {
+						tree.save_svg(&mut svg, self.min, false);
+					}
+					svg.write_all(b"</svg>").unwrap();
+				}
+			}
 
 			let l = slice.len();
 			for p in slice {
 				let Some((idx, _)) = trees
 					.iter_mut()
 					.enumerate()
-					.find(|(_, tree)| tree.distance(Vector::new([p[X], p[Z]])) < 0.1)
+					.find(|(_, tree)| tree.contains(Vector::new([p[X], p[Z]]), 0.1))
 				else {
 					continue;
 				};
@@ -218,7 +241,7 @@ impl Tree {
 		}
 	}
 
-	fn distance(&self, point: Vector<2, f32>) -> f32 {
+	fn distance(&self, point: Vector<2, f32>, max_distance: f32) -> f32 {
 		if point[X] < self.min[X] || point[X] >= self.max[X] || point[Y] < self.min[Y] || point[Y] >= self.max[Y] {
 			return f32::MAX;
 		}
@@ -230,9 +253,30 @@ impl Tree {
 			let out = Vector::new([dir[Y], -dir[X]]).normalized();
 			let diff = point - a;
 			let dist = out.dot(diff);
+			if dist > max_distance {
+				return f32::MAX;
+			}
 			best = best.max(dist);
 		}
 		best
+	}
+
+	fn contains(&self, point: Vector<2, f32>, max_distance: f32) -> bool {
+		if point[X] < self.min[X] || point[X] >= self.max[X] || point[Y] < self.min[Y] || point[Y] >= self.max[Y] {
+			return false;
+		}
+		for i in 0..self.points.len() {
+			let a = self.points[i];
+			let b = self.points[(i + 1) % self.points.len()];
+			let dir = b - a;
+			let out = Vector::new([dir[Y], -dir[X]]).normalized();
+			let diff = point - a;
+			let dist = out.dot(diff);
+			if dist > max_distance {
+				return false;
+			}
+		}
+		true
 	}
 
 	fn insert(&mut self, point: Vector<2, f32>, max_distance: f32) {
@@ -306,35 +350,36 @@ impl Tree {
 	// 	res
 	// }
 
-	// pub fn save_svg(&self, file: &mut std::fs::File, min: Vector<3, f32>, fill: bool) {
-	// 	file.write_all(b"  <polygon points=\"").unwrap();
-	// 	for &point in &self.points {
-	// 		file.write_all(
-	// 			format!(
-	// 				"{},{} ",
-	// 				(point[X] - min[X]) * 10.0,
-	// 				(point[Y] - min[Z]) * 10.0
-	// 			)
-	// 			.as_bytes(),
-	// 		)
-	// 		.unwrap();
-	// 	}
-	// 	if fill {
-	// 		file.write_all(
-	// 			format!(
-	// 				"\" fill=\"rgb({}, {}, {})\"/>\n",
-	// 				rand::random::<u8>(),
-	// 				rand::random::<u8>(),
-	// 				rand::random::<u8>(),
-	// 			)
-	// 			.as_bytes(),
-	// 		)
-	// 		.unwrap();
-	// 	} else {
-	// 		file.write_all("\" stroke=\"black\" fill=\"none\" />\n".as_bytes())
-	// 			.unwrap();
-	// 	}
-	// }
+	#[cfg(feature = "segmentation-svgs")]
+	pub fn save_svg(&self, file: &mut std::fs::File, min: Vector<3, f32>, fill: bool) {
+		file.write_all(b"  <polygon points=\"").unwrap();
+		for &point in &self.points {
+			file.write_all(
+				format!(
+					"{},{} ",
+					(point[X] - min[X]) * 10.0,
+					(point[Y] - min[Z]) * 10.0
+				)
+				.as_bytes(),
+			)
+			.unwrap();
+		}
+		if fill {
+			file.write_all(
+				format!(
+					"\" fill=\"rgb({}, {}, {})\"/>\n",
+					rand::random::<u8>(),
+					rand::random::<u8>(),
+					rand::random::<u8>(),
+				)
+				.as_bytes(),
+			)
+			.unwrap();
+		} else {
+			file.write_all("\" stroke=\"black\" fill=\"none\" />\n".as_bytes())
+				.unwrap();
+		}
+	}
 }
 
 impl TreeSet {
@@ -344,7 +389,7 @@ impl TreeSet {
 			let mut near = HashSet::new();
 			let p = Vector::new([point[X], point[Z]]);
 			for (i, tree) in trees.iter().enumerate() {
-				let dist = tree.distance(p);
+				let dist = tree.distance(p, max_distance);
 				if dist <= 0.0 {
 					continue 'iter_points;
 				}
@@ -376,10 +421,18 @@ impl TreeSet {
 		}
 
 		for i in (0..trees.len()).rev() {
-			if area(&trees[i].points) >= (max_distance * max_distance) / 4.0 {
+			let tree = &trees[i];
+			let (center, area) = centroid(&tree.points);
+			if area < (max_distance * max_distance) / 4.0 {
+				trees.remove(i);
 				continue;
 			}
-			trees.remove(i);
+			for other in &trees[0..i] {
+				if other.contains(center, 0.1) {
+					trees.remove(i);
+					break;
+				}
+			}
 		}
 
 		Self { trees }
@@ -394,14 +447,14 @@ impl TreeSet {
 		for tree in &self.trees {
 			let mut contains = Vec::new();
 			for (idx, p) in prev.iter_mut() {
-				if tree.distance(*p) <= max_distance {
+				if tree.contains(*p, max_distance) {
 					contains.push((idx, p));
 				}
 			}
 			match contains.len() {
-				0 => prev.push((None, centroid(&tree.points))),
+				0 => prev.push((None, centroid(&tree.points).0)),
 				1 => {
-					*contains[0].1 = centroid(&tree.points);
+					*contains[0].1 = centroid(&tree.points).0;
 				},
 				_ => {},
 			}
@@ -410,7 +463,7 @@ impl TreeSet {
 }
 
 //https://math.stackexchange.com/questions/90463/how-can-i-calculate-the-centroid-of-polygon
-fn centroid(points: &[Vector<2, f32>]) -> Vector<2, f32> {
+fn centroid(points: &[Vector<2, f32>]) -> (Vector<2, f32>, f32) {
 	let mut center = Vector::new([0.0, 0.0]);
 	let mut area = 0.0;
 
@@ -425,19 +478,5 @@ fn centroid(points: &[Vector<2, f32>]) -> Vector<2, f32> {
 		area += t_area;
 	}
 
-	a + center / area
-}
-
-fn area(points: &[Vector<2, f32>]) -> f32 {
-	let mut area = 0.0;
-
-	let a = points[0];
-	for i in 1..(points.len() - 1) {
-		let b = points[i] - a;
-		let c = points[i + 1] - a;
-		let t_area = (b[X] * c[Y] - b[Y] * c[X]) / 2.0;
-		area += t_area;
-	}
-
-	area
+	(a + center / area, area)
 }

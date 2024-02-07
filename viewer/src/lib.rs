@@ -28,7 +28,7 @@ pub fn run() -> Result<(), Error> {
 		.pick_file()
 		.ok_or(Error::NoFile)?;
 
-	let (mut game, runner) = game::World::new(path)?;
+	let (mut game, runner) = game::World::new(path).block_on()?;
 	runner.run(&mut game)?;
 
 	Ok(())

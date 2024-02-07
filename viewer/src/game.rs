@@ -2,7 +2,6 @@ use std::{ops::Not, path::PathBuf};
 
 use common::Project;
 use math::{Vector, X, Y};
-use pollster::FutureExt;
 
 use crate::{
 	camera, lod,
@@ -56,11 +55,11 @@ pub struct Game {
 }
 
 impl World {
-	pub fn new(path: PathBuf) -> Result<(Self, render::Runner), Error> {
+	pub async fn new(path: PathBuf) -> Result<(Self, render::Runner), Error> {
 		let project = Project::from_file(&path);
 		let egui = render::egui::Context::default();
 
-		let (state, window, runner) = render::State::new(&project.name, &egui).block_on()?;
+		let (state, window, runner) = render::State::new(&project.name, &egui).await?;
 		let state = State::new(state);
 		let state = Box::leak(Box::new(state));
 
@@ -337,10 +336,7 @@ impl Game {
 
 					ui.horizontal(|ui| {
 						ui.add_sized([LEFT, HEIGHT], Label::new("Points"));
-						if ui
-							.add_sized([RIGHT, HEIGHT], Button::new(format!("Save")))
-							.clicked()
-						{
+						if ui.add_sized([RIGHT, HEIGHT], Button::new("Save")).clicked() {
 							seg.save();
 						};
 					});

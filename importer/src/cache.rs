@@ -77,7 +77,7 @@ impl Cache {
 
 		fn write_to(file: &mut File, data: Vec<u8>, size: usize) {
 			unsafe {
-				let view = std::slice::from_raw_parts(data.as_ptr() as *const u8, size * data.len());
+				let view = std::slice::from_raw_parts(data.as_ptr(), size * data.len());
 				file.write_all(view).unwrap();
 			}
 		}

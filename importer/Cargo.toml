@@ -24,3 +24,8 @@ bytemuck.workspace = true
 clap.workspace = true
 voronator.workspace = true
 serde_json.workspace = true
+cfg-if.workspace = true
+
+[features]
+default = []
+segmentation-svgs = []

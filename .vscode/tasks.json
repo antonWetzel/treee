@@ -47,6 +47,7 @@
 			"args": [
 				"--release",
 				"--bin=importer",
+				// "--features=segmentation-svgs"
 			],
 			"group": "build",
 			"label": "cargo release importer"
