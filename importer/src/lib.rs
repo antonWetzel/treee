@@ -7,13 +7,17 @@ mod segment;
 mod tree;
 mod writer;
 
-use std::path::PathBuf;
+use std::{num::NonZeroU32, path::PathBuf};
 
 use las::Read;
 use math::{Vector, X, Y, Z};
 use progress::Progress;
+use rand::seq::SliceRandom;
 use rayon::prelude::*;
-use writer::Writer;
+use tracing::{span, Level};
+use tracing_flame::FlameLayer;
+use tracing_subscriber::{layer::SubscriberExt, Registry};
+use writer::{SegmentWriter, Writer};
 
 use tree::Tree;
 
@@ -103,21 +107,30 @@ pub struct Times {
 }
 
 pub fn run(command: Command) -> Result<(), Error> {
-	rayon::ThreadPoolBuilder::new()
-		.num_threads(command.max_threads)
-		.build()
-		.unwrap()
-		.install(|| import(command))
-}
+	// let _guard = {
+	// 	let (flame_layer, _guard) = FlameLayer::with_file("./tracing.folded").unwrap();
+	// 	let subscriber = Registry::default().with(flame_layer.with_threads_collapsed(true));
+	// 	tracing::subscriber::set_global_default(subscriber).expect("Could not set global default");
+	// 	_guard
+	// };
 
-fn map_point(point: las::Point, center: Vector<3, f64>) -> Vector<3, f32> {
-	(Vector::new([point.x, point.z, -point.y]) - center).map(|v| v as f32)
-}
+	// let test = span!(Level::TRACE, "test").entered();
+	// {
+	// 	let sub = span!(parent: &test, Level::TRACE, "sub").entered();
+	// 	std::thread::sleep(std::time::Duration::from_millis(1000));
+	// 	sub.exit();
+	// }
+	// {
+	// 	let sub = span!(parent: &test, Level::TRACE, "sub_2").entered();
+	// 	std::thread::sleep(std::time::Duration::from_millis(1000));
+	// 	sub.exit();
+	// }
+	// test.exit();
+	// std::process::exit(0);
 
-fn import(command: Command) -> Result<(), Error> {
-	if command.max_threads == 1 {
-		return Err(Error::NotEnoughThreads);
-	}
+	// #[tracing::instrument(parent = x)]
+	// fn test(x: &tracing::Span) {}
+
 	let input = match command.input_file {
 		Some(file) => file,
 		None => rfd::FileDialog::new()
@@ -134,8 +147,25 @@ fn import(command: Command) -> Result<(), Error> {
 			.pick_folder()
 			.ok_or(Error::NoOutputFolder)?,
 	};
+
+	if command.max_threads == 1 {
+		return Err(Error::NotEnoughThreads);
+	}
+
 	let settings = command.settings;
 
+	rayon::ThreadPoolBuilder::new()
+		.num_threads(command.max_threads)
+		.build()
+		.unwrap()
+		.install(|| import(settings, input, output))
+}
+
+fn map_point(point: las::Point, center: Vector<3, f64>) -> Vector<3, f32> {
+	(Vector::new([point.x, point.z, -point.y]) - center).map(|v| v as f32)
+}
+
+fn import(settings: Settings, input: PathBuf, output: PathBuf) -> Result<(), Error> {
 	let mut cache = Cache::new(4_000_000_000);
 	let mut statistics = Statistics::default();
 	let stage = Stage::new("Setup Files");
@@ -199,8 +229,9 @@ fn import(command: Command) -> Result<(), Error> {
 
 	statistics.times.import = progress.finish();
 
-	let segments = segmenter.segments(&mut statistics, &mut cache);
+	let mut segments = segmenter.segments(&mut statistics, &mut cache);
 	statistics.segments = segments.len();
+	segments.shuffle(&mut rand::thread_rng());
 
 	let mut progress = Progress::new("Calculate", total_points);
 
@@ -208,29 +239,36 @@ fn import(command: Command) -> Result<(), Error> {
 		(min - pos).map(|v| v as f32),
 		diff[X].max(diff[Y]).max(diff[Z]) as f32,
 	);
+	let segments_information = vec![String::from("Crown"), String::from("Trunk")];
 
 	let (sender, reciever) = crossbeam::channel::bounded(2);
-	rayon::join(
+	let (_, segment_values) = rayon::join(
 		|| {
 			segments
 				.into_par_iter()
-				.filter(|segment| segment.length() >= settings.min_segment_size)
-				.for_each(|segment| {
-					let index = rand::random();
+				.enumerate()
+				.for_each(|(index, segment)| {
+					let index = NonZeroU32::new(index as u32 + 1).unwrap();
 					let (points, information) = calculations::calculate(segment.points(), index, &settings);
 					sender.send((points, index, information)).unwrap();
 				});
 			drop(sender);
 		},
 		|| {
+			let mut segment_values =
+				vec![common::Value::Percent(0.0); statistics.segments * segments_information.len()];
 			for (points, segment, information) in reciever {
-				Writer::save_segment(&output, segment, &points, information);
+				SegmentWriter::new().save_segment(&output, segment, &points);
+				let offset = (segment.get() - 1) as usize;
+				segment_values[offset * segments_information.len() + 0] = information.trunk_height;
+				segment_values[offset * segments_information.len() + 1] = information.crown_height;
 				let l = points.len();
 				for point in points {
 					tree.insert(point, &mut cache);
 				}
 				progress.step_by(l);
 			}
+			segment_values
 		},
 	);
 
@@ -239,12 +277,19 @@ fn import(command: Command) -> Result<(), Error> {
 	let stage = Stage::new("Save Project");
 
 	let properties = [
-		("segment", "Segment"),
-		("height", "Height"),
-		("slice", "Expansion"),
-		("curve", "Curvature"),
+		("segment", "Segment", statistics.segments as u32),
+		("height", "Height", u32::MAX),
+		("slice", "Expansion", u32::MAX),
+		("curve", "Curvature", u32::MAX),
 	];
-	let (tree, project) = tree.flatten(&properties, input.display().to_string(), cache);
+
+	let (tree, project) = tree.flatten(
+		&properties,
+		input.display().to_string(),
+		cache,
+		segments_information,
+		segment_values,
+	);
 
 	let writer = Writer::new(output, &project)?;
 

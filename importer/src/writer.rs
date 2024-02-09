@@ -73,8 +73,16 @@ impl Writer {
 		let file = std::fs::File::create(&self.path).unwrap();
 		serde_json::to_writer_pretty(file, &statistics).unwrap();
 	}
+}
 
-	pub fn save_segment(path: &Path, segment: NonZeroU32, data: &[point::Point], information: SegmentInformation) {
+pub struct SegmentWriter {}
+
+impl SegmentWriter {
+	pub fn new() -> Self {
+		Self {}
+	}
+
+	pub fn save_segment(&self, path: &Path, segment: NonZeroU32, data: &[point::Point]) {
 		let mut path = path.to_path_buf();
 		path.push(format!("segments/{}", segment));
 		std::fs::create_dir_all(&path).unwrap();
@@ -136,19 +144,19 @@ impl Writer {
 				.write_all(bytemuck::cast_slice(&[point.curve]))
 				.unwrap();
 			segment_values
-				.write_all(bytemuck::cast_slice(&[segment.get()]))
+				.write_all(bytemuck::cast_slice(&[point.segment]))
 				.unwrap();
 		}
 
-		let information = common::Segment::new(
-			[
-				("Trunk".into(), information.trunk_height),
-				("Crown".into(), information.crown_height),
-			]
-			.into_iter()
-			.collect(),
-		);
-		path.set_file_name("segment.information");
-		information.save(&path);
+		// let information = common::Segment::new(
+		// 	[
+		// 		("Trunk".into(), information.trunk_height),
+		// 		("Crown".into(), information.crown_height),
+		// 	]
+		// 	.into_iter()
+		// 	.collect(),
+		// );
+		// path.set_file_name("segment.information");
+		// information.save(&path);
 	}
 }

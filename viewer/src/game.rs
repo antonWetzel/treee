@@ -228,7 +228,7 @@ impl Game {
 								if changed {
 									for prop in &self.project.properties {
 										if prop.0 == self.tree.property.0 {
-											self.tree.property.1 = prop.1.clone();
+											self.tree.property = prop.clone();
 										}
 									}
 									self.tree
@@ -327,10 +327,13 @@ impl Game {
 						});
 					});
 
-					for info in &seg.information.values {
+					for (index, info) in self.project.segment(seg.index()).into_iter().enumerate() {
 						ui.horizontal(|ui| {
-							ui.add_sized([LEFT, HEIGHT], Label::new(&info.0));
-							ui.add_sized([LEFT, HEIGHT], Label::new(format!("{}", info.1)));
+							ui.add_sized(
+								[LEFT, HEIGHT],
+								Label::new(&self.project.segment_information[index]),
+							);
+							ui.add_sized([LEFT, HEIGHT], Label::new(format!("{}", info)));
 						});
 					}
 

@@ -36,8 +36,6 @@ pub struct Segment {
 	points: Vec<render::Point>,
 	pub alpha: f32,
 	pub sub_sample_distance: f32,
-
-	pub information: common::Segment,
 }
 
 impl Segment {
@@ -60,9 +58,6 @@ impl Segment {
 		// 	Some(mesh)
 		// })();
 
-		path.set_file_name("segment.information");
-		let information = common::Segment::load(&path);
-
 		path.set_file_name(format!("{}.data", property));
 		Self {
 			property: Self::load_property(state, &path),
@@ -71,7 +66,6 @@ impl Segment {
 			mesh: MeshState::None,
 			render: MeshRender::Points,
 			index,
-			information,
 			points,
 			alpha: 0.5,
 			sub_sample_distance: 0.1,

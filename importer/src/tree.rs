@@ -173,7 +173,14 @@ impl Tree {
 		self.root.insert_position(point, cache);
 	}
 
-	pub fn flatten(self, calculators: &[(&str, &str)], name: String, mut cache: Cache) -> (FlatTree, Project) {
+	pub fn flatten(
+		self,
+		calculators: &[(&str, &str, u32)],
+		name: String,
+		mut cache: Cache,
+		segment_information: Vec<String>,
+		segment_values: Vec<common::Value>,
+	) -> (FlatTree, Project) {
 		let mut nodes = Vec::new();
 		let (tree, depth) = self.root.flatten(&mut nodes, &mut cache);
 		let flat = FlatTree { nodes };
@@ -183,8 +190,10 @@ impl Tree {
 			root: tree,
 			properties: calculators
 				.iter()
-				.map(|&(name, file)| (String::from(name), String::from(file)))
+				.map(|&(name, file, scale)| (String::from(name), String::from(file), scale))
 				.collect(),
+			segment_information,
+			segment_values,
 		};
 
 		(flat, project)

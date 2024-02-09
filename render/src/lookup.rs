@@ -8,7 +8,7 @@ pub struct Lookup {
 }
 
 impl Lookup {
-	pub fn new_png(state: &impl Has<State>, data: &[u8]) -> Self {
+	pub fn new_png(state: &impl Has<State>, data: &[u8], range: u32) -> Self {
 		let state = state.get();
 		let texture = Texture::new_1d(state, data);
 		assert!(texture.size[X].is_power_of_two());
@@ -18,7 +18,7 @@ impl Lookup {
 
 		let bind_group_layout = Self::get_layout(state);
 
-		let scale = texture.size[X].leading_zeros() + 1;
+		let scale = range / texture.size[X] + 1;
 
 		let buffer = state
 			.device

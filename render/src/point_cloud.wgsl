@@ -77,6 +77,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         discard;
     }
     // return vec4<f32>(1.0, 1.0, 1.0, 1.0);
-    let idx = in.value >> lookup_uniform.scale;
+    let idx = in.value / lookup_uniform.scale;
     return textureLoad(lookup, idx, 0);
 }

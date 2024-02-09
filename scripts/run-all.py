@@ -1,8 +1,15 @@
 import os
 import subprocess
 
-SOURCE = "D:/data"
+SOURCE = "D:/data/"
 OUTPUT = "D:/projects/treee/cwd/auto/"
+
+TYPES = [
+    "ALS",
+    "ULS",
+    # "TLS",
+]
+
 
 for (directory, folders, files) in os.walk(SOURCE):
     if "single_trees" in directory:
@@ -10,9 +17,8 @@ for (directory, folders, files) in os.walk(SOURCE):
     for file in files:
         if not file.endswith(".laz"):
             continue
-        # if not "ALS" in file:
-        #     continue
-        if not "ULS" in file:
+        if all(map(lambda t: t not in file, TYPES)):
             continue
         path = directory + "/" + file
-        subprocess.run(["treee", "importer", path, "-o=" + OUTPUT + file[:-4]])
+        # subprocess.run(["treee", "importer", path, "-o=" + OUTPUT + file[:-4]])
+

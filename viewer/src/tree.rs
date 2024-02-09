@@ -47,7 +47,7 @@ pub struct Tree {
 	pub eye_dome_active: bool,
 	pub voxels_active: bool,
 
-	pub property: (String, String),
+	pub property: (String, String, u32),
 }
 
 pub struct Node {
@@ -354,7 +354,7 @@ impl Tree {
 		state: &'static State,
 		project: &Project,
 		path: PathBuf,
-		property: (String, String),
+		property: (String, String, u32),
 		window: &Window,
 	) -> Self {
 		let lookup_name = LookupName::Warm;
@@ -365,7 +365,7 @@ impl Tree {
 			root: Node::new(&project.root, state),
 			loaded_manager: LoadedManager::new(state, path, &property.0),
 			lookup_name,
-			lookup: render::Lookup::new_png(state, lookup_name.data()),
+			lookup: render::Lookup::new_png(state, lookup_name.data(), property.2),
 			environment: render::PointCloudEnvironment::new(state, u32::MIN, u32::MAX, 1.0),
 			segment: None,
 			eye_dome: render::EyeDome::new(state, window.config(), window.depth_texture(), 0.7),
@@ -377,7 +377,7 @@ impl Tree {
 	}
 
 	pub fn update_lookup(&mut self, state: &'static State) {
-		self.lookup = render::Lookup::new_png(state, self.lookup_name.data());
+		self.lookup = render::Lookup::new_png(state, self.lookup_name.data(), self.property.2);
 	}
 
 	pub fn raycast(&self, start: Vector<3, f32>, direction: Vector<3, f32>, path: &Path) -> Option<NonZeroU32> {

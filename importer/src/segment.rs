@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use math::{Vector, X, Y, Z};
 use voronator::delaunator::Point;
 
@@ -32,6 +30,7 @@ pub struct Segmenter {
 	max: Vector<3, f32>,
 	slice_height: f32,
 	max_distance: f32,
+	min_segment_size: usize,
 }
 
 impl Segmenter {
@@ -44,6 +43,7 @@ impl Segmenter {
 			max,
 			slice_height: settings.segmenting_slice_width,
 			max_distance: settings.segmenting_max_distance,
+			min_segment_size: settings.min_segment_size,
 		}
 	}
 
@@ -181,6 +181,7 @@ impl Segmenter {
 		let mut segments = segments
 			.into_iter()
 			.map(|entry| Segment { data: cache.read(entry) })
+			.filter(|entry| entry.length() >= self.min_segment_size)
 			.collect::<Vec<_>>();
 		segments.sort_by(|a, b| b.data.active().cmp(&a.data.active()));
 		segments
@@ -389,7 +390,7 @@ impl TreeSet {
 	pub fn new(points: &[Vector<3, f32>], max_distance: f32) -> TreeSet {
 		let mut trees = Vec::<Tree>::new();
 		'iter_points: for &point in points {
-			let mut near = HashSet::new();
+			let mut near = Vec::new();
 			let p = Vector::new([point[X], point[Z]]);
 			for (i, tree) in trees.iter().enumerate() {
 				let dist = tree.distance(p, max_distance);
@@ -397,7 +398,7 @@ impl TreeSet {
 					continue 'iter_points;
 				}
 				if dist <= max_distance {
-					near.insert(i);
+					near.push(i);
 				}
 			}
 			match near.len() {
@@ -405,12 +406,10 @@ impl TreeSet {
 				0 => trees.push(Tree::new(p, max_distance)),
 
 				// insert
-				1 => trees[near.into_iter().next().unwrap()].insert(p, max_distance),
+				1 => trees[near[0]].insert(p, max_distance),
 
 				// merge
 				_ => {
-					let mut near = near.into_iter().collect::<Vec<_>>();
-					near.sort();
 					let target = near[0];
 					for other in near[1..].iter().rev().copied() {
 						let o = trees.remove(other);
