@@ -5,6 +5,7 @@ use math::{Vector, X, Y};
 
 use crate::{
 	camera, lod,
+	reader::Reader,
 	segment::{self, MeshRender, Segment},
 	state::State,
 	tree::{LookupName, Tree},
@@ -168,9 +169,9 @@ impl Game {
 			.tree
 			.camera
 			.ray_direction(self.mouse.position(), window.get_size());
-		let mut segment_path = self.path.parent().unwrap().to_path_buf();
-		segment_path.push("segments");
-		if let Some(segment) = self.tree.raycast(start, direction) {
+		let path = self.path.parent().unwrap().to_path_buf();
+		let mut reader = Reader::new(path, "segment");
+		if let Some(segment) = self.tree.raycast(start, direction, &mut reader) {
 			self.tree.segment = Some(Segment::new(self.state, &mut self.tree.segments, segment));
 			window.request_redraw();
 		}

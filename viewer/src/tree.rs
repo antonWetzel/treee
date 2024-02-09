@@ -9,7 +9,7 @@ use crate::segment::{MeshRender, Segment};
 use crate::state::State;
 use crate::{camera, lod};
 
-use common::IndexNode;
+use common::{DataFile, IndexNode};
 use common::{IndexData, Project};
 use math::{Dimension, Vector, X, Y, Z};
 use render::{LinesRenderExt, MeshRenderExt, PointCloudExt, Window};
@@ -268,13 +268,7 @@ impl Node {
 		(t_max >= t_min).then_some(t_min)
 	}
 
-	pub fn raycast(
-		&self,
-		start: Vector<3, f32>,
-		direction: Vector<3, f32>,
-		reader: &mut Reader,
-		checked: &mut HashSet<NonZeroU32>,
-	) -> Option<(NonZeroU32, f32)> {
+	pub fn raycast(&self, start: Vector<3, f32>, direction: Vector<3, f32>, reader: &mut Reader) -> Option<NonZeroU32> {
 		match &self.data {
 			Data::Branch { children, segments: _ } => {
 				let mut order = Vec::new();
@@ -287,52 +281,34 @@ impl Node {
 
 				order.sort_unstable_by(|(_, dist_a), (_, dist_b)| dist_a.total_cmp(dist_b));
 
-				let mut best_distance = f32::MAX;
-				let mut best = None;
-				for (child, dist) in order {
-					if dist >= best_distance {
-						break;
-					}
-					let Some((segment, dist)) = child.raycast(start, direction, reader, checked) else {
-						continue;
-					};
-					if dist < best_distance {
-						best_distance = dist;
-						best = Some(segment);
-					}
-				}
-				best.map(|best| (best, best_distance))
+				order
+					.into_iter()
+					.find_map(|(child, _)| child.raycast(start, direction, reader))
 			},
-			Data::Leaf { segments } => {
+			Data::Leaf { .. } => {
 				let mut best = None;
 				let mut best_dist = f32::MAX;
-				for &segment in segments {
-					if checked.contains(&segment) {
+				let data = reader.get_points(self.index);
+				let segments = reader.get_property(self.index);
+
+				for (point, segment) in data.into_iter().zip(segments) {
+					let diff = point.position - start;
+					let diff_length = diff.length();
+					if diff_length >= best_dist {
 						continue;
 					}
-					let data = reader.get_points(segment.get() as usize - 1);
-
-					for point in data {
-						let diff = point.position - start;
-						let diff_length = diff.length();
-						if diff_length >= best_dist {
-							continue;
-						}
-						let cos = direction.dot(diff.normalized());
-						let sin = (1.0 - cos * cos).sqrt();
-						let distance = sin * diff_length;
-						if distance < point.size {
-							let l = cos * diff_length;
-							if l < best_dist {
-								best = Some(segment);
-								best_dist = l;
-							}
+					let cos = direction.dot(diff.normalized());
+					let sin = (1.0 - cos * cos).sqrt();
+					let distance = sin * diff_length;
+					if distance < point.size {
+						let l = cos * diff_length;
+						if l < best_dist {
+							best = Some(NonZeroU32::new(segment).unwrap());
+							best_dist = l;
 						}
 					}
-
-					checked.insert(segment);
 				}
-				best.map(|best| (best, best_dist))
+				best
 			},
 		}
 	}
@@ -373,12 +349,14 @@ impl Tree {
 		self.lookup = render::Lookup::new_png(state, self.lookup_name.data(), self.property.2);
 	}
 
-	pub fn raycast(&mut self, start: Vector<3, f32>, direction: Vector<3, f32>) -> Option<NonZeroU32> {
+	pub fn raycast(
+		&mut self,
+		start: Vector<3, f32>,
+		direction: Vector<3, f32>,
+		reader: &mut Reader,
+	) -> Option<NonZeroU32> {
 		self.root.raycast_distance(start, direction)?;
-		let mut checked = HashSet::new();
-		self.root
-			.raycast(start, direction, &mut self.segments, &mut checked)
-			.map(|(seg, _)| seg)
+		self.root.raycast(start, direction, reader)
 	}
 
 	pub fn update(&mut self) {
