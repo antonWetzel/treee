@@ -20,5 +20,5 @@ for (directory, folders, files) in os.walk(SOURCE):
         if all(map(lambda t: t not in file, TYPES)):
             continue
         path = directory + "/" + file
-        # subprocess.run(["treee", "importer", path, "-o=" + OUTPUT + file[:-4]])
-
+        print(path)
+        subprocess.run(["treee", "importer", path, "-o=" + OUTPUT + file[:-4]])

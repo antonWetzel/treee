@@ -250,24 +250,22 @@ impl Node {
 		}
 	}
 
+	//https://tavianator.com/2011/ray_box.html
 	pub fn raycast_distance(&self, start: Vector<3, f32>, direction: Vector<3, f32>) -> Option<f32> {
-		let size = Vector::new([self.size, self.size, self.size]);
-		let walls = [
-			(self.corner, size, X),
-			(self.corner, size, Y),
-			(self.corner, size, Z),
-			(self.corner + size, -size, X),
-			(self.corner + size, -size, Y),
-			(self.corner + size, -size, Z),
-		];
-		walls
-			.into_iter()
-			.map(|(corner, wall, dimension)| raycast_check(start, direction, corner, wall, dimension))
-			.fold(None, |acc, v| match (acc, v) {
-				(Some(acc), Some(v)) => Some(acc.min(v)),
-				(Some(v), None) | (None, Some(v)) => Some(v),
-				(None, None) => None,
-			})
+		let mut t_min = f32::NEG_INFINITY;
+		let mut t_max = f32::INFINITY;
+
+		for dir in [X, Y, Z] {
+			if direction[dir] != 0.0 {
+				let tx_1 = (self.corner[dir] - start[dir]) / direction[dir];
+				let tx_2 = (self.corner[dir] + self.size - start[dir]) / direction[dir];
+
+				t_min = t_min.max(tx_1.min(tx_2));
+				t_max = t_max.min(tx_1.max(tx_2));
+			}
+		}
+
+		(t_max >= t_min).then_some(t_min)
 	}
 
 	pub fn raycast(
@@ -390,42 +388,6 @@ impl Tree {
 			&mut self.loaded_manager,
 		);
 	}
-}
-
-fn raycast_check(
-	start: Vector<3, f32>,
-	direction: Vector<3, f32>,
-	corner: Vector<3, f32>,
-	wall: Vector<3, f32>, // wall[dimension] is ignored and assumed to be zero
-	dimension: Dimension,
-) -> Option<f32> {
-	if direction[dimension].abs() < f32::EPSILON {
-		return None;
-	}
-
-	let diff = corner - start;
-
-	let dist = diff[dimension] / direction[dimension];
-	if dist < 0.0 {
-		return None;
-	}
-	let intersect = direction * dist - diff;
-
-	if (0.0..1.0)
-		.contains(&(intersect[dimension.previous(Z)] / wall[dimension.previous(Z)]))
-		.not()
-	{
-		return None;
-	}
-
-	if (0.0..1.0)
-		.contains(&(intersect[dimension.next(Z)] / wall[dimension.next(Z)]))
-		.not()
-	{
-		return None;
-	}
-
-	Some(dist)
 }
 
 impl render::PointCloudRender for Tree {
