@@ -1,13 +1,12 @@
 use std::{
-	io::{BufWriter, Read, Write},
+	io::{BufWriter, Write},
 	num::NonZeroU32,
-	path::{Path, PathBuf},
 	sync::mpsc::TryRecvError,
 };
 
 use math::{Vector, X, Y, Z};
 
-use crate::state::State;
+use crate::{reader::Reader, state::State};
 
 pub enum MeshState {
 	None,
@@ -27,7 +26,6 @@ pub enum MeshRender {
 }
 
 pub struct Segment {
-	path: PathBuf,
 	point_cloud: render::PointCloud,
 	property: render::PointCloudProperty,
 	pub mesh: MeshState,
@@ -39,30 +37,13 @@ pub struct Segment {
 }
 
 impl Segment {
-	pub fn new(state: &State, mut path: PathBuf, property: &str, index: NonZeroU32) -> Self {
-		path.push(format!("{}/points.data", index));
-		let mut file = std::fs::OpenOptions::new().read(true).open(&path).unwrap();
-		let length = file.metadata().unwrap().len();
-		let mut points = bytemuck::zeroed_vec::<render::Point>(length as usize / std::mem::size_of::<render::Point>());
-		file.read_exact(bytemuck::cast_slice_mut(&mut points))
-			.unwrap();
-
+	pub fn new(state: &State, reader: &mut Reader, index: NonZeroU32) -> Self {
+		let points = reader.get_points(index.get() as usize - 1);
 		let point_cloud = render::PointCloud::new(state, &points);
-		// path.set_file_name("mesh.data");
-		// let mesh = (|| {
-		// 	let mut file = File::open(&path).ok()?;
-		// 	let size = file.metadata().map(|m| m.len() as usize).ok()?;
-		// 	let mut data = bytemuck::zeroed_vec::<u32>(size / std::mem::size_of::<u32>());
-		// 	file.read_exact(bytemuck::cast_slice_mut(&mut data)).ok()?;
-		// 	let mesh = render::Mesh::new(state, &data);
-		// 	Some(mesh)
-		// })();
 
-		path.set_file_name(format!("{}.data", property));
 		Self {
-			property: Self::load_property(state, &path),
+			property: Self::load_property(state, reader, index.get() as usize - 1),
 			point_cloud,
-			path,
 			mesh: MeshState::None,
 			render: MeshRender::Points,
 			index,
@@ -72,17 +53,12 @@ impl Segment {
 		}
 	}
 
-	pub fn change_property(&mut self, state: &State, property: &str) {
-		self.path.set_file_name(format!("{}.data", property));
-		self.property = Self::load_property(state, &self.path);
+	pub fn change_property(&mut self, state: &State, reader: &mut Reader) {
+		self.property = Self::load_property(state, reader, self.index.get() as usize - 1);
 	}
 
-	fn load_property(state: &State, path: &Path) -> render::PointCloudProperty {
-		let mut file = std::fs::OpenOptions::new().read(true).open(path).unwrap();
-		let length = file.metadata().unwrap().len();
-		let mut data = bytemuck::zeroed_vec::<u32>(length as usize / std::mem::size_of::<u32>());
-		file.read_exact(bytemuck::cast_slice_mut(&mut data))
-			.unwrap();
+	fn load_property(state: &State, reader: &mut Reader, index: usize) -> render::PointCloudProperty {
+		let data = reader.get_property(index);
 		render::PointCloudProperty::new(state, &data)
 	}
 

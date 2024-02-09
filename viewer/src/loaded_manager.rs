@@ -2,8 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::hint::spin_loop;
 use std::path::PathBuf;
 
-use common::DataFile;
-
+use crate::reader::Reader;
 use crate::State;
 
 pub struct LoadedManager {
@@ -18,8 +17,6 @@ pub struct LoadedManager {
 	property_available: HashMap<usize, render::PointCloudProperty>,
 	property_requested: HashSet<usize>,
 	property_index: usize,
-
-	property_path: PathBuf,
 }
 
 enum WorkerTask {
@@ -35,16 +32,13 @@ enum Response {
 }
 
 enum WorkerUpdate {
-	ChangeProperty(PathBuf, usize),
+	ChangeProperty(String, usize),
 }
 
 impl LoadedManager {
-	pub fn new(state: &'static State, mut path: PathBuf, property: &str) -> Self {
+	pub fn new(state: &'static State, path: PathBuf, property: &str) -> Self {
 		let (index_tx, index_rx) = crossbeam::channel::bounded(512);
 		let (pc_tx, pc_rx) = crossbeam::channel::bounded(512);
-		path.push("points.data");
-		let mut property_path = path.clone();
-		property_path.set_file_name(format!("{}.data", property));
 
 		let mut update_senders = Vec::new();
 		for _ in 0..2 {
@@ -54,13 +48,13 @@ impl LoadedManager {
 			let pc_tx = pc_tx.clone();
 			let mut property_index = 0;
 
-			let mut points_file = DataFile::open(&path);
-			let mut property_file = DataFile::open(&property_path);
+			let mut reader = Reader::new(path.clone(), property);
+
 			std::thread::spawn(move || loop {
 				for update in update_reciever.try_iter() {
 					match update {
-						WorkerUpdate::ChangeProperty(path, index) => {
-							property_file = DataFile::open(&path);
+						WorkerUpdate::ChangeProperty(property, index) => {
+							reader.change_property(&property);
 							property_index = index;
 						},
 					}
@@ -76,14 +70,14 @@ impl LoadedManager {
 				};
 				match task {
 					WorkerTask::PointCloud(index) => {
-						if let Some(pc) = load_pointcloud(state, &mut points_file, index) {
+						if let Some(pc) = load_pointcloud(state, &mut reader, index) {
 							let _ = pc_tx.send(Response::PointCloud(index, pc));
 						} else {
 							let _ = pc_tx.send(Response::FailedPointCloud(index));
 						};
 					},
 					WorkerTask::Property(index) => {
-						if let Some(property) = load_property(state, &mut property_file, index) {
+						if let Some(property) = load_property(state, &mut reader, index) {
 							let _ = pc_tx.send(Response::Property(index, property, property_index));
 						} else {
 							let _ = pc_tx.send(Response::FailedProperty(index));
@@ -104,18 +98,15 @@ impl LoadedManager {
 			property_default: render::PointCloudProperty::new_empty(state),
 			property_available: HashMap::new(),
 			property_requested: HashSet::new(),
-
-			property_path,
 		}
 	}
 
 	pub fn change_property(&mut self, name: &str) {
 		self.property_index = self.property_index.overflowing_add(1).0;
-		self.property_path.set_file_name(format!("{}.data", name));
 		for sender in &self.update_senders {
 			sender
 				.send(WorkerUpdate::ChangeProperty(
-					self.property_path.clone(),
+					name.into(),
 					self.property_index,
 				))
 				.unwrap();
@@ -198,16 +189,16 @@ impl LoadedManager {
 	}
 }
 
-fn load_pointcloud(state: &State, data_file: &mut DataFile<render::Point>, index: usize) -> Option<render::PointCloud> {
-	let data = data_file.read(index);
+fn load_pointcloud(state: &State, reader: &mut Reader, index: usize) -> Option<render::PointCloud> {
+	let data = reader.get_points(index);
 	if data.is_empty() {
 		return None;
 	}
 	Some(render::PointCloud::new(state, &data))
 }
 
-fn load_property(state: &State, data_file: &mut DataFile<u32>, index: usize) -> Option<render::PointCloudProperty> {
-	let data = data_file.read(index);
+fn load_property(state: &State, reader: &mut Reader, index: usize) -> Option<render::PointCloudProperty> {
+	let data = reader.get_property(index);
 	if data.is_empty() {
 		return None;
 	}

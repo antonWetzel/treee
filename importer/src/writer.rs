@@ -1,11 +1,7 @@
 use common::Project;
-use std::{
-	io::{BufWriter, Write},
-	num::NonZeroU32,
-	path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
-use crate::{calculations::SegmentInformation, point, Error, Statistics};
+use crate::{point::PointsCollection, Error, Statistics};
 
 pub struct Writer {
 	path: PathBuf,
@@ -33,11 +29,8 @@ impl Writer {
 		Ok(())
 	}
 
-	pub fn new(mut path: PathBuf, project: &Project) -> Result<Self, Error> {
-		let size = project.root.index as usize + 1;
-
-		path.push("project.epc");
-		project.save(&path);
+	pub fn new(mut path: PathBuf, size: usize) -> Self {
+		path.push("temp.txt");
 
 		path.set_file_name("points.data");
 		let points = common::DataFile::new(size, &path);
@@ -54,109 +47,32 @@ impl Writer {
 		path.set_file_name("segment.data");
 		let segment = common::DataFile::new(size, &path);
 
-		Ok(Self {
+		Self {
 			points,
 			slice,
 			curve,
 			height,
 			segment,
 			path,
-		})
+		}
 	}
 
-	pub fn save(&mut self, index: u32, points: &[render::Point]) {
-		self.points.save(index as usize, points);
+	pub fn save(&mut self, index: usize, points: &PointsCollection) {
+		self.points.save(index, &points.render);
+		self.slice.save(index, &points.slice);
+		self.height.save(index, &points.height);
+		self.curve.save(index, &points.curve);
+		self.segment.save(index, &points.segment);
 	}
 
-	pub fn save_statisitcs(&mut self, statistics: Statistics) {
+	pub fn save_project(&mut self, project: &Project) {
+		self.path.set_file_name("project.epc");
+		project.save(&self.path);
+	}
+
+	pub fn save_statistics(&mut self, statistics: Statistics) {
 		self.path.set_file_name("statistics.json");
 		let file = std::fs::File::create(&self.path).unwrap();
 		serde_json::to_writer_pretty(file, &statistics).unwrap();
-	}
-}
-
-pub struct SegmentWriter {}
-
-impl SegmentWriter {
-	pub fn new() -> Self {
-		Self {}
-	}
-
-	pub fn save_segment(&self, path: &Path, segment: NonZeroU32, data: &[point::Point]) {
-		let mut path = path.to_path_buf();
-		path.push(format!("segments/{}", segment));
-		std::fs::create_dir_all(&path).unwrap();
-		path.push("points.data");
-		let mut points = BufWriter::new(
-			std::fs::OpenOptions::new()
-				.write(true)
-				.create(true)
-				.open(&path)
-				.unwrap(),
-		);
-
-		path.set_file_name("slice.data");
-		let mut slice = BufWriter::new(
-			std::fs::OpenOptions::new()
-				.write(true)
-				.create(true)
-				.open(&path)
-				.unwrap(),
-		);
-
-		path.set_file_name("height.data");
-		let mut height = BufWriter::new(
-			std::fs::OpenOptions::new()
-				.write(true)
-				.create(true)
-				.open(&path)
-				.unwrap(),
-		);
-
-		path.set_file_name("curve.data");
-		let mut curve = BufWriter::new(
-			std::fs::OpenOptions::new()
-				.write(true)
-				.create(true)
-				.open(&path)
-				.unwrap(),
-		);
-		path.set_file_name("segment.data");
-		let mut segment_values = BufWriter::new(
-			std::fs::OpenOptions::new()
-				.write(true)
-				.create(true)
-				.open(&path)
-				.unwrap(),
-		);
-
-		for point in data {
-			points
-				.write_all(bytemuck::cast_slice(&[point.render]))
-				.unwrap();
-			slice
-				.write_all(bytemuck::cast_slice(&[point.slice]))
-				.unwrap();
-			height
-				.write_all(bytemuck::cast_slice(&[point.height]))
-				.unwrap();
-			curve
-				.write_all(bytemuck::cast_slice(&[point.curve]))
-				.unwrap();
-			segment_values
-				.write_all(bytemuck::cast_slice(&[point.segment]))
-				.unwrap();
-		}
-
-		// let information = common::Segment::new(
-		// 	[
-		// 		("Trunk".into(), information.trunk_height),
-		// 		("Crown".into(), information.crown_height),
-		// 	]
-		// 	.into_iter()
-		// 	.collect(),
-		// );
-		// path.set_file_name("segment.information");
-		// information.save(&path);
 	}
 }

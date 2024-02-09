@@ -1,10 +1,10 @@
 use std::collections::HashSet;
-use std::io::Read;
 use std::num::NonZeroU32;
 use std::ops::Not;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crate::loaded_manager::LoadedManager;
+use crate::reader::Reader;
 use crate::segment::{MeshRender, Segment};
 use crate::state::State;
 use crate::{camera, lod};
@@ -48,6 +48,8 @@ pub struct Tree {
 	pub voxels_active: bool,
 
 	pub property: (String, String, u32),
+
+	pub segments: Reader,
 }
 
 pub struct Node {
@@ -272,7 +274,7 @@ impl Node {
 		&self,
 		start: Vector<3, f32>,
 		direction: Vector<3, f32>,
-		path: &Path,
+		reader: &mut Reader,
 		checked: &mut HashSet<NonZeroU32>,
 	) -> Option<(NonZeroU32, f32)> {
 		match &self.data {
@@ -293,7 +295,7 @@ impl Node {
 					if dist >= best_distance {
 						break;
 					}
-					let Some((segment, dist)) = child.raycast(start, direction, path, checked) else {
+					let Some((segment, dist)) = child.raycast(start, direction, reader, checked) else {
 						continue;
 					};
 					if dist < best_distance {
@@ -310,18 +312,7 @@ impl Node {
 					if checked.contains(&segment) {
 						continue;
 					}
-
-					let mut path = path.to_path_buf();
-					path.push(format!("{}", segment));
-					path.push("points.data");
-					let Ok(mut file) = std::fs::OpenOptions::new().read(true).open(&path) else {
-						continue;
-					};
-					let length = file.metadata().unwrap().len();
-					let mut data =
-						bytemuck::zeroed_vec::<render::Point>(length as usize / std::mem::size_of::<render::Point>());
-					file.read_exact(bytemuck::cast_slice_mut(&mut data))
-						.unwrap();
+					let data = reader.get_points(segment.get() as usize - 1);
 
 					for point in data {
 						let diff = point.position - start;
@@ -359,6 +350,9 @@ impl Tree {
 	) -> Self {
 		let lookup_name = LookupName::Warm;
 
+		let mut segments = path.clone();
+		segments.push("segments");
+
 		Self {
 			background: DEFAULT_BACKGROUND,
 			camera: camera::Camera::new(state, window.get_aspect()),
@@ -371,6 +365,7 @@ impl Tree {
 			eye_dome: render::EyeDome::new(state, window.config(), window.depth_texture(), 0.7),
 			eye_dome_active: true,
 			voxels_active: false,
+			segments: Reader::new(segments, &property.0),
 
 			property,
 		}
@@ -380,11 +375,11 @@ impl Tree {
 		self.lookup = render::Lookup::new_png(state, self.lookup_name.data(), self.property.2);
 	}
 
-	pub fn raycast(&self, start: Vector<3, f32>, direction: Vector<3, f32>, path: &Path) -> Option<NonZeroU32> {
+	pub fn raycast(&mut self, start: Vector<3, f32>, direction: Vector<3, f32>) -> Option<NonZeroU32> {
 		self.root.raycast_distance(start, direction)?;
 		let mut checked = HashSet::new();
 		self.root
-			.raycast(start, direction, path, &mut checked)
+			.raycast(start, direction, &mut self.segments, &mut checked)
 			.map(|(seg, _)| seg)
 	}
 

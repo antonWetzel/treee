@@ -246,11 +246,7 @@ impl FlatTree {
 				state.0.step();
 				{
 					let writer = &mut state.1;
-					writer.save(index as u32, &points.render);
-					writer.slice.save(index, &points.slice);
-					writer.height.save(index, &points.height);
-					writer.curve.save(index, &points.curve);
-					writer.segment.save(index, &points.segment);
+					writer.save(index, &points);
 				}
 				if is_leaf {
 					state.2.leaf_points += points.render.len();
@@ -262,7 +258,7 @@ impl FlatTree {
 			});
 		let (progress, mut writer, mut statistics) = state.into_inner().unwrap();
 		statistics.times.lods = progress.finish();
-		writer.save_statisitcs(statistics);
+		writer.save_statistics(statistics);
 	}
 }
 

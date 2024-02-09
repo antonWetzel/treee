@@ -170,13 +170,8 @@ impl Game {
 			.ray_direction(self.mouse.position(), window.get_size());
 		let mut segment_path = self.path.parent().unwrap().to_path_buf();
 		segment_path.push("segments");
-		if let Some(segment) = self.tree.raycast(start, direction, &segment_path) {
-			self.tree.segment = Some(Segment::new(
-				self.state,
-				segment_path,
-				&self.tree.property.0,
-				segment,
-			));
+		if let Some(segment) = self.tree.raycast(start, direction) {
+			self.tree.segment = Some(Segment::new(self.state, &mut self.tree.segments, segment));
 			window.request_redraw();
 		}
 	}
@@ -234,9 +229,10 @@ impl Game {
 									self.tree
 										.loaded_manager
 										.change_property(&self.tree.property.0);
+									self.tree.segments.change_property(&self.tree.property.0);
 									self.tree.update_lookup(self.state);
 									if let Some(seg) = &mut self.tree.segment {
-										seg.change_property(self.state, &self.tree.property.0);
+										seg.change_property(self.state, &mut self.tree.segments);
 									}
 								}
 							});
@@ -327,7 +323,7 @@ impl Game {
 						});
 					});
 
-					for (index, info) in self.project.segment(seg.index()).into_iter().enumerate() {
+					for (index, info) in self.project.segment(seg.index()).iter().enumerate() {
 						ui.horizontal(|ui| {
 							ui.add_sized(
 								[LEFT, HEIGHT],

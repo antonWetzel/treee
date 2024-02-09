@@ -11,13 +11,11 @@ use std::{num::NonZeroU32, path::PathBuf};
 
 use las::Read;
 use math::{Vector, X, Y, Z};
+use point::PointsCollection;
 use progress::Progress;
 use rand::seq::SliceRandom;
 use rayon::prelude::*;
-use tracing::{span, Level};
-use tracing_flame::FlameLayer;
-use tracing_subscriber::{layer::SubscriberExt, Registry};
-use writer::{SegmentWriter, Writer};
+use writer::Writer;
 
 use tree::Tree;
 
@@ -107,30 +105,6 @@ pub struct Times {
 }
 
 pub fn run(command: Command) -> Result<(), Error> {
-	// let _guard = {
-	// 	let (flame_layer, _guard) = FlameLayer::with_file("./tracing.folded").unwrap();
-	// 	let subscriber = Registry::default().with(flame_layer.with_threads_collapsed(true));
-	// 	tracing::subscriber::set_global_default(subscriber).expect("Could not set global default");
-	// 	_guard
-	// };
-
-	// let test = span!(Level::TRACE, "test").entered();
-	// {
-	// 	let sub = span!(parent: &test, Level::TRACE, "sub").entered();
-	// 	std::thread::sleep(std::time::Duration::from_millis(1000));
-	// 	sub.exit();
-	// }
-	// {
-	// 	let sub = span!(parent: &test, Level::TRACE, "sub_2").entered();
-	// 	std::thread::sleep(std::time::Duration::from_millis(1000));
-	// 	sub.exit();
-	// }
-	// test.exit();
-	// std::process::exit(0);
-
-	// #[tracing::instrument(parent = x)]
-	// fn test(x: &tracing::Span) {}
-
 	let input = match command.input_file {
 		Some(file) => file,
 		None => rfd::FileDialog::new()
@@ -255,12 +229,17 @@ fn import(settings: Settings, input: PathBuf, output: PathBuf) -> Result<(), Err
 			drop(sender);
 		},
 		|| {
+			let mut path = output.clone();
+			path.push("segments");
+			std::fs::create_dir(&path).unwrap();
+			let mut segment_writer = Writer::new(path, statistics.segments);
 			let mut segment_values =
 				vec![common::Value::Percent(0.0); statistics.segments * segments_information.len()];
 			for (points, segment, information) in reciever {
-				SegmentWriter::new().save_segment(&output, segment, &points);
+				let collection = PointsCollection::from_points(&points);
+				segment_writer.save(segment.get() as usize - 1, &collection);
 				let offset = (segment.get() - 1) as usize;
-				segment_values[offset * segments_information.len() + 0] = information.trunk_height;
+				segment_values[offset * segments_information.len()] = information.trunk_height;
 				segment_values[offset * segments_information.len() + 1] = information.crown_height;
 				let l = points.len();
 				for point in points {
@@ -291,7 +270,8 @@ fn import(settings: Settings, input: PathBuf, output: PathBuf) -> Result<(), Err
 		segment_values,
 	);
 
-	let writer = Writer::new(output, &project)?;
+	let mut writer = Writer::new(output, project.root.index as usize + 1);
+	writer.save_project(&project);
 
 	statistics.times.project = stage.finish();
 

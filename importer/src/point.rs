@@ -31,6 +31,25 @@ impl PointsCollection {
 		}
 	}
 
+	pub fn from_points(points: &[Point]) -> Self {
+		let mut res = Self {
+			render: Vec::with_capacity(points.len()),
+
+			slice: Vec::with_capacity(points.len()),
+			height: Vec::with_capacity(points.len()),
+			curve: Vec::with_capacity(points.len()),
+			segment: Vec::with_capacity(points.len()),
+		};
+		for point in points {
+			res.render.push(point.render);
+			res.slice.push(point.slice);
+			res.height.push(point.height);
+			res.curve.push(point.curve);
+			res.segment.push(point.segment.get());
+		}
+		res
+	}
+
 	pub fn add(&mut self, render: render::Point, slice: u32, height: u32, curve: u32, segment: u32) {
 		self.render.push(render);
 		self.slice.push(slice);

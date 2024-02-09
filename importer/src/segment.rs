@@ -112,12 +112,12 @@ impl Segmenter {
 			tree_set.tree_positions(&mut centroids, self.max_distance);
 
 			#[cfg(feature = "segmentation-svgs")]
-			for &(_, point) in &centroids {
+			for centroid in &centroids {
 				svg.write_all(
 					format!(
 						"  <circle cx=\"{}\" cy=\"{}\" r=\"10\" />\n",
-						(point[X] - self.min[X]) * 10.0,
-						(point[Y] - self.min[Z]) * 10.0
+						(centroid.center[X] - self.min[X]) * 10.0,
+						(centroid.center[Y] - self.min[Z]) * 10.0
 					)
 					.as_bytes(),
 				)
@@ -126,7 +126,10 @@ impl Segmenter {
 
 			let points = centroids
 				.iter()
-				.map(|(_, p)| Point { x: p[X] as f64, y: p[Y] as f64 })
+				.map(|centroid| Point {
+					x: centroid.center[X] as f64,
+					y: centroid.center[Y] as f64,
+				})
 				.collect::<Vec<_>>();
 			let Some(vor) = voronator::VoronoiDiagram::new(&min, &max, &points) else {
 				continue;
@@ -161,7 +164,7 @@ impl Segmenter {
 				else {
 					continue;
 				};
-				match &mut centroids[idx].0 {
+				match &mut centroids[idx].cache {
 					Some(seg) => cache.add_value(seg, p),
 					idx @ None => {
 						let seg = cache.new_entry();
@@ -386,6 +389,11 @@ impl Tree {
 	}
 }
 
+struct Centroid {
+	cache: Option<CacheIndex<Vector<3, f32>>>,
+	center: Vector<2, f32>,
+}
+
 impl TreeSet {
 	pub fn new(points: &[Vector<3, f32>], max_distance: f32) -> TreeSet {
 		let mut trees = Vec::<Tree>::new();
@@ -440,23 +448,22 @@ impl TreeSet {
 		Self { trees }
 	}
 
-	pub fn tree_positions(
-		&self,
-		prev: &mut Vec<(Option<CacheIndex<Vector<3, f32>>>, Vector<2, f32>)>,
-		max_distance: f32,
-	) {
+	pub fn tree_positions(&self, prev: &mut Vec<Centroid>, max_distance: f32) {
 		// let mut res = Vec::new();
 		for tree in &self.trees {
 			let mut contains = Vec::new();
-			for (idx, p) in prev.iter_mut() {
-				if tree.contains(*p, max_distance) {
-					contains.push((idx, p));
+			for centroid in prev.iter_mut() {
+				if tree.contains(centroid.center, max_distance) {
+					contains.push(centroid);
 				}
 			}
 			match contains.len() {
-				0 => prev.push((None, centroid(&tree.points).0)),
+				0 => prev.push(Centroid {
+					cache: None,
+					center: centroid(&tree.points).0,
+				}),
 				1 => {
-					*contains[0].1 = centroid(&tree.points).0;
+					contains[0].center = centroid(&tree.points).0;
 				},
 				_ => {},
 			}
