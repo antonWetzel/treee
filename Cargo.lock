@@ -524,16 +524,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "common"
-version = "0.1.0"
-dependencies = [
- "bincode",
- "bytemuck",
- "math",
- "serde",
-]
-
-[[package]]
 name = "concurrent-queue"
 version = "2.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1192,14 +1182,13 @@ dependencies = [
  "bytemuck",
  "cfg-if",
  "clap",
- "common",
  "crossbeam",
  "k-nearest",
  "las",
  "math",
+ "project",
  "rand",
  "rayon",
- "render",
  "rfd",
  "serde",
  "serde_json",
@@ -1838,6 +1827,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0f0f7f43585c34e4fdd7497d746bc32e14458cf11c69341cc0587b1d825dde42"
 
 [[package]]
+name = "project"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "bytemuck",
+ "math",
+ "serde",
+]
+
+[[package]]
 name = "quick-xml"
 version = "0.31.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1961,7 +1960,6 @@ name = "render"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
- "common",
  "egui",
  "egui-wgpu",
  "egui-winit",
@@ -1969,6 +1967,7 @@ dependencies = [
  "input",
  "log",
  "math",
+ "project",
  "wgpu",
  "winit",
 ]
@@ -2642,12 +2641,12 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "bytemuck",
- "common",
  "crossbeam",
  "input",
  "log",
  "math",
  "pollster",
+ "project",
  "render",
  "rfd",
  "serde",

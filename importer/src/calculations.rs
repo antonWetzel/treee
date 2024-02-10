@@ -5,8 +5,8 @@ use math::{Dimension, Mat, Vector, X, Y, Z};
 use crate::{point::Point, Settings};
 
 pub struct SegmentInformation {
-	pub trunk_height: common::Value,
-	pub crown_height: common::Value,
+	pub trunk_height: project::Value,
+	pub crown_height: project::Value,
 }
 
 pub fn calculate(
@@ -117,7 +117,7 @@ pub fn calculate(
 			let size = size / (neighbors.len() - 1) as f32 / 2.0;
 
 			Point {
-				render: render::Point {
+				render: project::Point {
 					position: data[i],
 					normal: eigen_vectors[Z],
 					size,
@@ -135,11 +135,11 @@ pub fn calculate(
 	(
 		res,
 		SegmentInformation {
-			trunk_height: common::Value::RelativeHeight {
+			trunk_height: project::Value::RelativeHeight {
 				absolute: trunk_heigth,
 				percent: trunk_heigth / height,
 			},
-			crown_height: common::Value::RelativeHeight {
+			crown_height: project::Value::RelativeHeight {
 				absolute: crown_heigth,
 				percent: crown_heigth / height,
 			},

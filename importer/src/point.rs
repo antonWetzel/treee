@@ -2,7 +2,7 @@ use std::num::NonZeroU32;
 
 #[derive(Debug)]
 pub struct Point {
-	pub render: render::Point,
+	pub render: project::Point,
 
 	pub segment: NonZeroU32,
 	pub slice: u32,
@@ -11,7 +11,7 @@ pub struct Point {
 }
 
 pub struct PointsCollection {
-	pub render: Vec<render::Point>,
+	pub render: Vec<project::Point>,
 
 	pub slice: Vec<u32>,
 	pub height: Vec<u32>,
@@ -50,7 +50,7 @@ impl PointsCollection {
 		res
 	}
 
-	pub fn add(&mut self, render: render::Point, slice: u32, height: u32, curve: u32, segment: u32) {
+	pub fn add(&mut self, render: project::Point, slice: u32, height: u32, curve: u32, segment: u32) {
 		self.render.push(render);
 		self.slice.push(slice);
 		self.height.push(height);

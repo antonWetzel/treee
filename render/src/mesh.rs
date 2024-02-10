@@ -1,7 +1,8 @@
 use wgpu::util::DeviceExt;
 
 use crate::{
-	depth_texture::DepthTexture, Camera3DGPU, Has, Lookup, Point, PointCloud, PointCloudProperty, RenderPass, State,
+	depth_texture::DepthTexture, point_description, point_property_description, Camera3DGPU, Has, Lookup, PointCloud,
+	PointCloudProperty, RenderPass, State,
 };
 
 pub struct MeshState {
@@ -52,8 +53,8 @@ impl MeshState {
 					module: &shader,
 					entry_point: "vs_main",
 					buffers: &[
-						Point::description(wgpu::VertexStepMode::Vertex),
-						Point::property_description(wgpu::VertexStepMode::Vertex),
+						point_description(wgpu::VertexStepMode::Vertex),
+						point_property_description(wgpu::VertexStepMode::Vertex),
 					],
 				},
 				fragment: Some(wgpu::FragmentState {

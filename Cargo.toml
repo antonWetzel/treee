@@ -2,7 +2,7 @@
 
 [workspace]
 members = [
-	"common",
+	"project",
 	"importer",
 	"input",
 	"k-nearest",
@@ -26,7 +26,7 @@ rust-version = "1.73"
 render = { path = "./render" }
 math = { path = "./math" }
 input = { path = "./input" }
-common = { path = "./common" }
+project = { path = "./project" }
 k-nearest = { path = "./k-nearest" }
 triangulation = { path = "./triangulation" }
 importer = { path = "./importer" }

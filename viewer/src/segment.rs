@@ -31,7 +31,7 @@ pub struct Segment {
 	pub mesh: MeshState,
 	pub render: MeshRender,
 	index: NonZeroU32,
-	points: Vec<render::Point>,
+	points: Vec<project::Point>,
 	pub alpha: f32,
 	pub sub_sample_distance: f32,
 }

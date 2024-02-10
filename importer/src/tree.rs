@@ -2,10 +2,10 @@ use std::collections::HashSet;
 use std::num::NonZeroU32;
 use std::sync::Mutex;
 
-use common::{IndexData, IndexNode, Project, MAX_LEAF_SIZE};
 use crossbeam::atomic::AtomicCell;
 use math::Vector;
 use math::{X, Z};
+use project::{IndexData, IndexNode, Project, MAX_LEAF_SIZE};
 use rayon::prelude::*;
 
 use crate::cache::{Cache, CacheEntry, CacheIndex};
@@ -179,7 +179,7 @@ impl Tree {
 		name: String,
 		mut cache: Cache,
 		segment_information: Vec<String>,
-		segment_values: Vec<common::Value>,
+		segment_values: Vec<project::Value>,
 	) -> (FlatTree, Project) {
 		let mut nodes = Vec::new();
 		let (tree, depth) = self.root.flatten(&mut nodes, &mut cache);
@@ -282,7 +282,7 @@ impl FLatNode {
 			FlatData::Leaf { data, .. } => {
 				let data = data.read();
 				let points = unsafe {
-					let mut points = Vec::<render::Point>::new();
+					let mut points = Vec::<project::Point>::new();
 					points.reserve_exact(data.len());
 					points.set_len(data.len());
 					for (i, d) in data.iter().enumerate() {

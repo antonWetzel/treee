@@ -61,6 +61,14 @@ impl Project {
 	}
 }
 
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct Point {
+	pub position: Vector<3, f32>,
+	pub normal: Vector<3, f32>,
+	pub size: f32,
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone, Copy)]
 pub enum Value {
 	Index(NonZeroU32),

@@ -1,8 +1,11 @@
-use common::MAX_LEAF_SIZE;
 use math::Vector;
+use project::{Point, MAX_LEAF_SIZE};
 use wgpu::util::DeviceExt;
 
-use crate::{depth_texture::DepthTexture, Camera3DGPU, Has, Lookup, Point, PointEdge, RenderPass, State};
+use crate::{
+	depth_texture::DepthTexture, point_base_description, point_description, point_property_description, Camera3DGPU,
+	Has, Lookup, PointEdge, RenderPass, State,
+};
 
 pub struct PointCloudState {
 	base: wgpu::Buffer,
@@ -98,9 +101,9 @@ impl PointCloudState {
 					module: &shader,
 					entry_point: "vs_main",
 					buffers: &[
-						Point::base_description(),
-						Point::description(wgpu::VertexStepMode::Instance),
-						Point::property_description(wgpu::VertexStepMode::Instance),
+						point_base_description(),
+						point_description(wgpu::VertexStepMode::Instance),
+						point_property_description(wgpu::VertexStepMode::Instance),
 					],
 				},
 				fragment: Some(wgpu::FragmentState {
@@ -197,7 +200,7 @@ pub struct PointCloud {
 }
 
 impl PointCloud {
-	pub fn new(state: &impl Has<State>, vertices: &[crate::Point]) -> Self {
+	pub fn new(state: &impl Has<State>, vertices: &[Point]) -> Self {
 		let buffer = state
 			.get()
 			.device

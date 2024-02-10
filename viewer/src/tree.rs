@@ -1,6 +1,5 @@
 use std::collections::HashSet;
 use std::num::NonZeroU32;
-use std::ops::Not;
 use std::path::PathBuf;
 
 use crate::loaded_manager::LoadedManager;
@@ -9,9 +8,9 @@ use crate::segment::{MeshRender, Segment};
 use crate::state::State;
 use crate::{camera, lod};
 
-use common::{DataFile, IndexNode};
-use common::{IndexData, Project};
-use math::{Dimension, Vector, X, Y, Z};
+use math::{Vector, X, Y, Z};
+use project::IndexNode;
+use project::{IndexData, Project};
 use render::{LinesRenderExt, MeshRenderExt, PointCloudExt, Window};
 
 pub const DEFAULT_BACKGROUND: Vector<3, f32> = Vector::new([0.1, 0.2, 0.3]);

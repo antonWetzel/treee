@@ -234,7 +234,7 @@ fn import(settings: Settings, input: PathBuf, output: PathBuf) -> Result<(), Err
 			std::fs::create_dir(&path).unwrap();
 			let mut segment_writer = Writer::new(path, statistics.segments);
 			let mut segment_values =
-				vec![common::Value::Percent(0.0); statistics.segments * segments_information.len()];
+				vec![project::Value::Percent(0.0); statistics.segments * segments_information.len()];
 			for (points, segment, information) in reciever {
 				let collection = PointsCollection::from_points(&points);
 				segment_writer.save(segment.get() as usize - 1, &collection);

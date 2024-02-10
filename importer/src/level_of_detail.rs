@@ -71,7 +71,7 @@ pub fn grid(
 			continue;
 		}
 		res.add(
-			render::Point {
+			project::Point {
 				position: cell.position / cell.count as f32,
 				normal: cell.normal,
 				size: settings.lod_size_scale * cell.total_area.sqrt(),

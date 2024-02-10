@@ -8,12 +8,12 @@ edition.workspace = true
 [dependencies]
 math.workspace = true
 input.workspace = true
+project.workspace = true
 bytemuck.workspace = true
 image.workspace = true
 log.workspace = true
 wgpu.workspace = true
 winit.workspace = true
-common.workspace = true
 egui-wgpu.workspace = true
 egui.workspace = true
 egui-winit.workspace = true

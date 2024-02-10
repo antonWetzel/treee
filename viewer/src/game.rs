@@ -1,7 +1,7 @@
 use std::{ops::Not, path::PathBuf};
 
-use common::Project;
 use math::{Vector, X, Y};
+use project::Project;
 
 use crate::{
 	camera, lod,

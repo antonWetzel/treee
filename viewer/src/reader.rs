@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 
-use common::DataFile;
+use project::DataFile;
 
 pub struct Reader {
-	points: DataFile<render::Point>,
+	points: DataFile<project::Point>,
 	property: DataFile<u32>,
 	path: PathBuf,
 }
@@ -22,7 +22,7 @@ impl Reader {
 		self.property = DataFile::open(&self.path);
 	}
 
-	pub fn get_points(&mut self, index: usize) -> Vec<render::Point> {
+	pub fn get_points(&mut self, index: usize) -> Vec<project::Point> {
 		self.points.read(index)
 	}
 
