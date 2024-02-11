@@ -40,10 +40,10 @@ impl Cache {
 		CacheIndex(self.entry_index, std::marker::PhantomData)
 	}
 
-	pub fn add_value<T>(&mut self, index: &CacheIndex<T>, point: T) {
+	pub fn add_value<T>(&mut self, index: &CacheIndex<T>, value: T) {
 		match self.active.get_mut(&index.0) {
 			None => {
-				let vec = vec![point];
+				let vec = vec![value];
 				self.current += vec.capacity() * std::mem::size_of::<T>();
 				self.active.insert(
 					index.0,
@@ -56,7 +56,33 @@ impl Cache {
 			Some(entry) => {
 				let data = unsafe { std::mem::transmute::<_, &mut Vec<T>>(&mut entry.0) };
 				let c = data.capacity();
-				data.push(point);
+				data.push(value);
+				self.current += entry.1 * (data.capacity() - c);
+			},
+		}
+
+		if self.current >= self.max_values {
+			self.evict();
+		}
+	}
+
+	pub fn add_chunk<T>(&mut self, index: &CacheIndex<T>, mut chunk: Vec<T>) {
+		match self.active.get_mut(&index.0) {
+			None => {
+				let vec = chunk;
+				self.current += vec.capacity() * std::mem::size_of::<T>();
+				self.active.insert(
+					index.0,
+					(
+						unsafe { std::mem::transmute(vec) },
+						std::mem::size_of::<T>(),
+					),
+				);
+			},
+			Some(entry) => {
+				let data = unsafe { std::mem::transmute::<_, &mut Vec<T>>(&mut entry.0) };
+				let c = data.capacity();
+				data.append(&mut chunk);
 				self.current += entry.1 * (data.capacity() - c);
 			},
 		}

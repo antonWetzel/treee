@@ -1,4 +1,5 @@
 use math::{Vector, X, Y, Z};
+use rayon::prelude::*;
 use voronator::delaunator::Point;
 
 #[cfg(feature = "segmentation-svgs")]
@@ -48,21 +49,17 @@ impl Segmenter {
 	}
 
 	pub fn add_point(&mut self, point: Vector<3, f32>, cache: &mut Cache) {
-		let slice = ((point[Y] - self.min[Y]) / self.slice_height) as usize;
+		let slice = ((self.max[Y] - point[Y]) / self.slice_height) as usize;
 		cache.add_value(&self.slices[slice], point);
 	}
 
-	pub fn segments(self, statisitcs: &mut Statistics, cache: &mut Cache) -> Vec<Segment> {
+	pub fn segments(self, statistics: &mut Statistics, cache: &mut Cache) -> Vec<Segment> {
 		let total = self
 			.slices
 			.iter()
 			.map(|slice| cache.size(slice))
 			.sum::<usize>();
 		let mut progress = Progress::new("Segmenting", total);
-
-		let mut segments = Vec::new();
-
-		let mut centroids = Vec::new();
 
 		let min = Point {
 			x: self.min[X] as f64,
@@ -76,110 +73,141 @@ impl Segmenter {
 		cfg_if::cfg_if! {
 			if #[cfg(feature = "segmentation-svgs")] {
 				let size = self.max - self.min;
-				let mut index = 0;
 				_ = std::fs::remove_dir_all("./svg");
 				std::fs::create_dir_all("./svg").unwrap();
 			}
 		}
 
-		for slice in self.slices.into_iter().rev() {
-			cfg_if::cfg_if! {
-				if #[cfg(feature = "segmentation-svgs")] {
-					let mut svg = std::fs::File::create(format!("./svg/test_{}.svg", index)).unwrap();
-					index += 1;
-					svg.write_all(
-						format!(
-							"<svg viewbox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\" width=\"{}\" height=\"{}\" >\n",
-							size[X] * 10.0,
-							size[Z] * 10.0,
-							size[X] * 10.0,
-							size[Z] * 10.0
-						)
-						.as_bytes(),
-					)
-					.unwrap();
-				}
+		let (sender, reciever) = crossbeam::channel::bounded(rayon::current_num_threads());
+
+		let (slices, c_reciever) = {
+			let (sender, mut reciever) = crossbeam::channel::bounded(1);
+			let mut slices = Vec::with_capacity(self.slices.len());
+			for slice in self.slices {
+				let (next_sender, next_reciever) = crossbeam::channel::bounded(1);
+				slices.push((reciever, cache.read(slice), next_sender));
+				reciever = next_reciever;
 			}
+			sender.send(Vec::new()).unwrap();
+			(slices, reciever)
+		};
 
-			let slice = cache.read(slice).read();
-			let tree_set = TreeSet::new(&slice, self.max_distance);
-
-			#[cfg(feature = "segmentation-svgs")]
-			for tree in &tree_set.trees {
-				tree.save_svg(&mut svg, self.min, true);
-			}
-
-			tree_set.tree_positions(&mut centroids, self.max_distance);
-
-			#[cfg(feature = "segmentation-svgs")]
-			for centroid in &centroids {
-				svg.write_all(
-					format!(
-						"  <circle cx=\"{}\" cy=\"{}\" r=\"10\" />\n",
-						(centroid.center[X] - self.min[X]) * 10.0,
-						(centroid.center[Y] - self.min[Z]) * 10.0
-					)
-					.as_bytes(),
-				)
-				.unwrap();
-			}
-
-			let points = centroids
-				.iter()
-				.map(|centroid| Point {
-					x: centroid.center[X] as f64,
-					y: centroid.center[Y] as f64,
-				})
-				.collect::<Vec<_>>();
-			let Some(vor) = voronator::VoronoiDiagram::new(&min, &max, &points) else {
-				continue;
-			};
-			let mut trees = vor
-				.cells()
-				.iter()
-				.map(|cell| cell.points())
-				.map(|p| {
-					p.iter()
-						.map(|p| Vector::new([p.x as f32, p.y as f32]))
-						.collect::<Vec<_>>()
-				})
-				.map(|p| Tree::from_points(p, 0.1))
-				.collect::<Vec<_>>();
-
-			cfg_if::cfg_if! {
-				if #[cfg(feature = "segmentation-svgs")] {
-					for tree in &trees {
-						tree.save_svg(&mut svg, self.min, false);
-					}
-					svg.write_all(b"</svg>").unwrap();
-				}
-			}
-
-			let l = slice.len();
-			for p in slice {
-				let Some((idx, _)) = trees
-					.iter_mut()
+		let (_, segments) = rayon::join(
+			move || {
+				slices
+					.into_iter()
 					.enumerate()
-					.find(|(_, tree)| tree.contains(Vector::new([p[X], p[Z]]), 0.1))
-				else {
-					continue;
-				};
-				match &mut centroids[idx].cache {
-					Some(seg) => cache.add_value(seg, p),
-					idx @ None => {
-						let seg = cache.new_entry();
-						segments.push(seg);
-						cache.add_value(&seg, p);
-						*idx = Some(seg)
-					},
+					.par_bridge()
+					// .into_par_iter()
+					.for_each(|(_index, (c_reciever, slice, c_sender))| {
+						cfg_if::cfg_if! {
+							if #[cfg(feature = "segmentation-svgs")] {
+								let mut svg = std::fs::File::create(format!("./svg/test_{}.svg", _index)).unwrap();
+								svg.write_all(
+									format!(
+										"<svg viewbox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\" width=\"{}\" height=\"{}\" >\n",
+										size[X] * 10.0,
+										size[Z] * 10.0,
+										size[X] * 10.0,
+										size[Z] * 10.0
+									)
+									.as_bytes(),
+								)
+								.unwrap();
+							}
+						}
+						let slice = slice.read();
+						let tree_set = TreeSet::new(&slice, self.max_distance);
+
+						#[cfg(feature = "segmentation-svgs")]
+						for tree in &tree_set.trees {
+							tree.save_svg(&mut svg, self.min, true);
+						}
+
+						// println!("pre: {} {:?}", index, std::time::Instant::now());
+						let mut centroids = c_reciever.recv().unwrap();
+						tree_set.tree_positions(&mut centroids, self.max_distance);
+						let points = centroids
+							.iter()
+							.map(|centroid| Point {
+								x: centroid.center[X] as f64,
+								y: centroid.center[Y] as f64,
+							})
+							.collect::<Vec<_>>();
+
+						#[cfg(feature = "segmentation-svgs")]
+						for centroid in &centroids {
+							svg.write_all(
+								format!(
+									"  <circle cx=\"{}\" cy=\"{}\" r=\"10\" />\n",
+									(centroid.center[X] - self.min[X]) * 10.0,
+									(centroid.center[Y] - self.min[Z]) * 10.0
+								)
+								.as_bytes(),
+							)
+							.unwrap();
+						}
+						c_sender.send(centroids).unwrap();
+
+						let vor = voronator::VoronoiDiagram::new(&min, &max, &points).unwrap();
+
+						let mut trees = vor
+							.cells()
+							.iter()
+							.map(|cell| cell.points())
+							.map(|p| {
+								p.iter()
+									.map(|p| Vector::new([p.x as f32, p.y as f32]))
+									.collect::<Vec<_>>()
+							})
+							.map(|p| Tree::from_points(p, 0.1))
+							.enumerate()
+							.map(|(index, tree)| (index, tree, Vec::new()))
+							.collect::<Vec<_>>();
+
+						cfg_if::cfg_if! {
+							if #[cfg(feature = "segmentation-svgs")] {
+								for (_, tree, _) in &trees {
+									tree.save_svg(&mut svg, self.min, false);
+								}
+								svg.write_all(b"</svg>").unwrap();
+							}
+						}
+
+						for p in slice {
+							let Some((idx, _)) = trees
+								.iter_mut()
+								.enumerate()
+								.find(|(_, (_, tree, _))| tree.contains(Vector::new([p[X], p[Z]]), 0.1))
+							else {
+								continue;
+							};
+							trees[idx].2.push(p);
+							// hope next point is in the same segment
+							trees.swap(0, idx);
+						}
+						sender.send(trees).unwrap();
+					});
+				drop(sender);
+			},
+			|| {
+				let mut segments = Vec::new();
+				for trees in reciever {
+					for (id, _, points) in trees {
+						let l = points.len();
+						if id >= segments.len() {
+							segments.resize_with(id + 1, || cache.new_entry());
+						}
+						cache.add_chunk(&segments[id], points);
+						progress.step_by(l);
+					}
 				}
-				// hope next point is in the same segment
-				trees.swap(0, idx);
-				centroids.swap(0, idx);
-			}
-			progress.step_by(l);
-		}
-		statisitcs.times.segment = progress.finish();
+				drop(c_reciever);
+				segments
+			},
+		);
+
+		statistics.times.segment = progress.finish();
 
 		let mut segments = segments
 			.into_iter()
@@ -390,7 +418,6 @@ impl Tree {
 }
 
 struct Centroid {
-	cache: Option<CacheIndex<Vector<3, f32>>>,
 	center: Vector<2, f32>,
 }
 
@@ -458,10 +485,9 @@ impl TreeSet {
 				}
 			}
 			match contains.len() {
-				0 => prev.push(Centroid {
-					cache: None,
-					center: centroid(&tree.points).0,
-				}),
+				0 => {
+					prev.push(Centroid { center: centroid(&tree.points).0 });
+				},
 				1 => {
 					contains[0].center = centroid(&tree.points).0;
 				},
