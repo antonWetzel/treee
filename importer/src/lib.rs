@@ -35,8 +35,8 @@ pub enum Error {
 	#[error("Corrupt file")]
 	CorruptFile,
 
-	#[error("Only LASzip version 3 and 4 are supported")]
-	WrongLazVersion,
+	#[error(transparent)]
+	LasZipError(#[from] ::laz::LasZipError),
 
 	#[error("Output folder is file")]
 	OutputFolderIsFile,
@@ -166,8 +166,9 @@ fn import(settings: Settings, input: PathBuf, output: PathBuf) -> Result<(), Err
 
 	rayon::join(
 		|| {
-			laz.read(|chunk| sender.send(chunk).unwrap());
+			laz.read(|chunk| sender.send(chunk).unwrap())?;
 			drop(sender);
+			Result::<(), Error>::Ok(())
 		},
 		|| {
 			for chunk in reciever {
@@ -178,7 +179,8 @@ fn import(settings: Settings, input: PathBuf, output: PathBuf) -> Result<(), Err
 				progress.step_by(l);
 			}
 		},
-	);
+	)
+	.0?;
 
 	statistics.times.import = progress.finish();
 

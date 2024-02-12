@@ -1,7 +1,7 @@
 use laz::{
 	las::file::{read_vlrs_and_get_laszip_vlr, QuickHeader},
 	laszip::ChunkTable,
-	record::{LayeredPointRecordDecompressor, RecordDecompressor},
+	record::{LayeredPointRecordDecompressor, RecordDecompressor, SequentialPointRecordDecompressor},
 	LazVlr,
 };
 use math::{Vector, X, Y, Z};
@@ -34,8 +34,7 @@ impl Laz {
 
 		let header = Header::new(&mut file)?;
 
-		file.seek(SeekFrom::Start(header.header_size as u64))
-			.unwrap();
+		file.seek(SeekFrom::Start(header.header_size as u64))?;
 		let vlr = read_vlrs_and_get_laszip_vlr(
 			&mut file,
 			&QuickHeader {
@@ -49,12 +48,7 @@ impl Laz {
 				header_size: header.header_size,
 			},
 		)
-		.unwrap();
-
-		match vlr.items().first().unwrap().version() {
-			3 | 4 => {},
-			_ => return Err(Error::WrongLazVersion),
-		}
+		.ok_or(Error::CorruptFile)?;
 
 		let total = header.number_of_point_records as usize;
 
@@ -69,9 +63,9 @@ impl Laz {
 		let max = Vector::new([header.max_x, header.max_z, -header.min_y]);
 		let center = (min + max) / 2.0;
 
-		let chunks = ChunkTable::read_from(&mut file, &vlr).unwrap();
+		let chunks = ChunkTable::read_from(&mut file, &vlr)?;
 
-		let mut start = file.stream_position().unwrap();
+		let mut start = file.stream_position()?;
 		let mut remaining = total;
 		let chunks = chunks
 			.into_iter()
@@ -100,31 +94,45 @@ impl Laz {
 		})
 	}
 
-	pub fn read(self, cb: impl Fn(Chunk) + std::marker::Sync) {
-		self.chunks.into_par_iter().for_each_init(
-			|| std::fs::File::open(&self.path).unwrap(),
-			|file, (s, l)| {
-				file.seek(SeekFrom::Start(s)).unwrap();
+	pub fn read(self, cb: impl Fn(Chunk) + std::marker::Sync) -> Result<(), Error> {
+		self.chunks
+			.into_par_iter()
+			.map_init(
+				|| std::fs::File::open(&self.path).unwrap(),
+				|file, (s, l)| {
+					file.seek(SeekFrom::Start(s))?;
 
-				let mut decompress = LayeredPointRecordDecompressor::new(file);
-				decompress.set_fields_from(self.vlr.items()).unwrap();
+					let mut slice = vec![0; l * self.point_length];
+					match self.vlr.items().first().unwrap().version() {
+						1 | 2 => {
+							let mut decompress = SequentialPointRecordDecompressor::new(file);
+							decompress.set_fields_from(self.vlr.items())?;
+							decompress.decompress_many(&mut slice).unwrap();
+						},
+						3 | 4 => {
+							let mut decompress = LayeredPointRecordDecompressor::new(file);
+							decompress.set_fields_from(self.vlr.items())?;
+							decompress.decompress_many(&mut slice).unwrap();
+						},
+						v => unimplemented!("Laz version {}", v),
+					}
 
-				let mut slice = vec![0; l * self.point_length];
-				decompress.decompress_many(&mut slice).unwrap();
+					let chunk = Chunk {
+						slice,
+						current: 0,
+						point_length: self.point_length,
 
-				let chunk = Chunk {
-					slice,
-					current: 0,
-					point_length: self.point_length,
+						offset: self.offset,
+						scale: self.scale,
+						center: self.center,
+					};
 
-					offset: self.offset,
-					scale: self.scale,
-					center: self.center,
-				};
-
-				cb(chunk);
-			},
-		);
+					cb(chunk);
+					Ok(())
+				},
+			)
+			.find_any(|r| r.is_err())
+			.unwrap_or(Ok(()))
 	}
 }
 
