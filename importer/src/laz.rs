@@ -7,7 +7,7 @@ use laz::{
 use math::{Vector, X, Y, Z};
 use rayon::prelude::*;
 use std::{
-	io::{Read, Seek, SeekFrom},
+	io::{BufReader, Read, Seek, SeekFrom},
 	path::{Path, PathBuf},
 };
 
@@ -98,7 +98,7 @@ impl Laz {
 		self.chunks
 			.into_par_iter()
 			.map_init(
-				|| std::fs::File::open(&self.path).unwrap(),
+				|| BufReader::new(std::fs::File::open(&self.path).unwrap()),
 				|file, (s, l)| {
 					file.seek(SeekFrom::Start(s))?;
 
