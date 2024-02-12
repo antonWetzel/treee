@@ -1,29 +1,38 @@
 use laz::{
 	las::file::{read_vlrs_and_get_laszip_vlr, QuickHeader},
-	ParLasZipDecompressor,
+	laszip::ChunkTable,
+	record::{LayeredPointRecordDecompressor, RecordDecompressor},
+	DecompressionSelection, LazItem, LazVlr, ParLasZipDecompressor,
 };
 use math::{Vector, X, Y, Z};
+use rayon::prelude::*;
 use std::{
 	fs::File,
 	io::{Read, Seek, SeekFrom},
-	path::Path,
+	path::{Path, PathBuf},
 };
 
+use crate::Error;
+
 pub struct Laz {
-	decompressor: ParLasZipDecompressor<File>,
-	chunk_size: usize,
 	pub remaining: usize,
+	vlr: LazVlr,
+	chunks: ChunkTable,
+	chunk_index: usize,
 	point_length: usize,
 	center: Vector<3, f64>,
 	offset: Vector<3, f64>,
 	scale: Vector<3, f64>,
 
+	path: PathBuf,
+
+	file: File,
 	pub min: Vector<3, f32>,
 	pub max: Vector<3, f32>,
 }
 
 impl Laz {
-	pub fn new(path: &Path) -> Result<Self, std::io::Error> {
+	pub fn new(path: &Path) -> Result<Self, Error> {
 		let mut file = std::fs::File::open(path)?;
 		let mut header = las::raw::Header::read_from(&mut file).unwrap(); //todo: remove las dependency
 		if header.number_of_point_records == 0 {
@@ -49,8 +58,7 @@ impl Laz {
 		)
 		.unwrap();
 
-		let total = header.number_of_point_records as usize;
-		let chunk_size = vlr.chunk_size() as usize;
+		let total = header.number_of_point_records as u64;
 		let point_length = header.point_data_record_length as usize;
 		let scale = Vector::new([
 			header.x_scale_factor,
@@ -62,51 +70,69 @@ impl Laz {
 		let max = Vector::new([header.max_x, header.max_z, -header.min_y]);
 		let center = (min + max) / 2.0;
 
-		file.seek(SeekFrom::Start(header.offset_to_point_data as u64))
-			.unwrap();
-		let decompressor = laz::ParLasZipDecompressor::new(file, vlr).unwrap();
+		let chunks = ChunkTable::read_from(&mut file, &vlr).unwrap();
+
+		match vlr.items().first().unwrap().version() {
+			3 | 4 => {},
+			_ => return Err(Error::WrongLazVersion),
+		}
 
 		Ok(Self {
-			decompressor,
-			chunk_size,
-			remaining: total,
+			file,
+			chunks,
+			chunk_index: 0,
+			vlr,
+			remaining: total as usize,
 			point_length,
 			scale,
 			offset,
 			center,
+			path: path.to_owned(),
 
 			min: (min - center).map(|x| x as f32),
 			max: (max - center).map(|x| x as f32),
 		})
 	}
-}
 
-impl Iterator for Laz {
-	type Item = Chunk;
+	pub fn read(&mut self, cb: impl Fn(Chunk) + std::marker::Sync) {
+		let mut start = self.file.stream_position().unwrap();
+		let chunks = self
+			.chunks
+			.into_iter()
+			.map(|x| {
+				let s = start;
+				start += x.byte_count;
 
-	fn next(&mut self) -> Option<Chunk> {
-		let size = self.chunk_size * rayon::current_num_threads() * 16;
-		let size = if self.remaining < size {
-			if self.remaining == 0 {
-				return None;
-			}
-			self.remaining
-		} else {
-			size
-		};
-		self.remaining -= size;
-		let mut slice = bytemuck::zeroed_vec(size * self.point_length);
-		self.decompressor.decompress_many(&mut slice).unwrap();
+				let l = (x.point_count as usize).min(self.remaining);
+				self.remaining -= l;
+				(s, l)
+			})
+			.collect::<Vec<_>>();
 
-		Some(Chunk {
-			slice,
-			current: 0,
-			point_length: self.point_length,
+		chunks.into_par_iter().for_each_init(
+			|| std::fs::File::open(&self.path).unwrap(),
+			|file, (s, l)| {
+				file.seek(SeekFrom::Start(s)).unwrap();
 
-			offset: self.offset,
-			scale: self.scale,
-			center: self.center,
-		})
+				let mut decompress = LayeredPointRecordDecompressor::new(file);
+				decompress.set_fields_from(self.vlr.items()).unwrap();
+
+				let mut slice = vec![0; l * self.point_length];
+				decompress.decompress_many(&mut slice).unwrap();
+
+				let chunk = Chunk {
+					slice,
+					current: 0,
+					point_length: self.point_length,
+
+					offset: self.offset,
+					scale: self.scale,
+					center: self.center,
+				};
+
+				cb(chunk);
+			},
+		);
 	}
 }
 
@@ -117,6 +143,12 @@ pub struct Chunk {
 	offset: Vector<3, f64>,
 	scale: Vector<3, f64>,
 	center: Vector<3, f64>,
+}
+
+impl Chunk {
+	pub fn length(&self) -> usize {
+		self.slice.len() / self.point_length
+	}
 }
 
 impl Iterator for Chunk {

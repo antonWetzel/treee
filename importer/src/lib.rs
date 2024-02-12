@@ -25,11 +25,16 @@ use crate::{cache::Cache, progress::Stage, segment::Segmenter};
 pub enum Error {
 	#[error("No input file")]
 	NoInputFile,
+
 	#[error("No output folder")]
 	NoOutputFolder,
 
 	#[error(transparent)]
 	InvalidFile(#[from] std::io::Error),
+
+	#[error("Only LASzip version 3 and 4 are supported")]
+	WrongLazVersion,
+
 	#[error("Output folder is file")]
 	OutputFolderIsFile,
 
@@ -141,7 +146,7 @@ fn import(settings: Settings, input: PathBuf, output: PathBuf) -> Result<(), Err
 
 	Writer::setup(&output)?;
 
-	let laz = laz::Laz::new(&input)?;
+	let mut laz = laz::Laz::new(&input)?;
 	let min = laz.min;
 	let max = laz.max;
 	let diff = max - min;
@@ -154,38 +159,21 @@ fn import(settings: Settings, input: PathBuf, output: PathBuf) -> Result<(), Err
 
 	let mut segmenter = Segmenter::new(min, max, &mut cache, &settings);
 
-	let (sender, reciever) = crossbeam::channel::bounded::<Vec<Vector<3, f32>>>(4);
-	let (back_sender, back_reciever) = crossbeam::channel::bounded::<Vec<Vector<3, f32>>>(4);
+	let (sender, reciever) = crossbeam::channel::bounded(4);
 
 	rayon::join(
 		|| {
-			let mut points = back_reciever.recv().unwrap();
-			for chunk in laz {
-				for point in chunk {
-					points.push(point);
-					if points.len() == points.capacity() {
-						sender.send(points).unwrap();
-						points = back_reciever.recv().unwrap();
-					}
-				}
-			}
+			laz.read(|chunk| sender.send(chunk).unwrap());
 			drop(sender);
-			for _ in back_reciever {}
 		},
 		|| {
-			for _ in 0..4 {
-				back_sender.send(Vec::with_capacity(2048)).unwrap();
-			}
-			for mut points in reciever {
-				let l = points.len();
-				for &point in &points {
+			for chunk in reciever {
+				let l = chunk.length();
+				for point in chunk {
 					segmenter.add_point(point, &mut cache);
 				}
-				points.clear();
-				back_sender.send(points).unwrap();
 				progress.step_by(l);
 			}
-			drop(back_sender);
 		},
 	);
 
