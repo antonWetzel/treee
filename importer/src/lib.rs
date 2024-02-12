@@ -10,7 +10,7 @@ mod writer;
 
 use std::{num::NonZeroU32, path::PathBuf};
 
-use math::{Vector, X, Y, Z};
+use math::{X, Y, Z};
 use point::PointsCollection;
 use progress::Progress;
 use rand::seq::SliceRandom;
@@ -31,6 +31,9 @@ pub enum Error {
 
 	#[error(transparent)]
 	InvalidFile(#[from] std::io::Error),
+
+	#[error("Corrupt file")]
+	CorruptFile,
 
 	#[error("Only LASzip version 3 and 4 are supported")]
 	WrongLazVersion,
@@ -146,11 +149,11 @@ fn import(settings: Settings, input: PathBuf, output: PathBuf) -> Result<(), Err
 
 	Writer::setup(&output)?;
 
-	let mut laz = laz::Laz::new(&input)?;
+	let laz = laz::Laz::new(&input)?;
 	let min = laz.min;
 	let max = laz.max;
 	let diff = max - min;
-	let total_points = laz.remaining;
+	let total_points = laz.total;
 	statistics.source_points = total_points;
 
 	statistics.times.setup = stage.finish();
@@ -185,7 +188,7 @@ fn import(settings: Settings, input: PathBuf, output: PathBuf) -> Result<(), Err
 
 	let mut progress = Progress::new("Calculate", total_points);
 
-	let mut tree = Tree::new(min, diff[X].max(diff[Y]).max(diff[Z]) as f32);
+	let mut tree = Tree::new(min, diff[X].max(diff[Y]).max(diff[Z]));
 	let segments_information = vec![String::from("Crown"), String::from("Trunk")];
 
 	let (sender, reciever) = crossbeam::channel::bounded(2);

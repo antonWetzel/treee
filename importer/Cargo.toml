@@ -23,8 +23,8 @@ clap.workspace = true
 voronator.workspace = true
 serde_json.workspace = true
 cfg-if.workspace = true
-las.workspace = true
 laz.workspace = true
+static_assertions.workspace = true
 
 [features]
 default = []
