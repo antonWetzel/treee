@@ -1,5 +1,6 @@
 mod cache;
 mod calculations;
+mod laz;
 mod level_of_detail;
 mod point;
 mod progress;
@@ -9,7 +10,6 @@ mod writer;
 
 use std::{num::NonZeroU32, path::PathBuf};
 
-use las::Read;
 use math::{Vector, X, Y, Z};
 use point::PointsCollection;
 use progress::Progress;
@@ -29,8 +29,7 @@ pub enum Error {
 	NoOutputFolder,
 
 	#[error(transparent)]
-	InvalidFile(#[from] Box<las::Error>),
-
+	InvalidFile(#[from] std::io::Error),
 	#[error("Output folder is file")]
 	OutputFolderIsFile,
 
@@ -135,10 +134,6 @@ pub fn run(command: Command) -> Result<(), Error> {
 		.install(|| import(settings, input, output))
 }
 
-fn map_point(point: las::Point, center: Vector<3, f64>) -> Vector<3, f32> {
-	(Vector::new([point.x, point.z, -point.y]) - center).map(|v| v as f32)
-}
-
 fn import(settings: Settings, input: PathBuf, output: PathBuf) -> Result<(), Error> {
 	let mut cache = Cache::new(4_000_000_000);
 	let mut statistics = Statistics::default();
@@ -146,46 +141,39 @@ fn import(settings: Settings, input: PathBuf, output: PathBuf) -> Result<(), Err
 
 	Writer::setup(&output)?;
 
-	let mut reader = las::Reader::from_path(&input).map_err(Box::new)?;
-	let header = reader.header();
-	let header_min = header.bounds().min;
-	let header_max = header.bounds().max;
-	let min = Vector::new([header_min.x, header_min.z, -header_max.y]);
-	let max = Vector::new([header_max.x, header_max.z, -header_min.y]);
+	let laz = laz::Laz::new(&input)?;
+	let min = laz.min;
+	let max = laz.max;
 	let diff = max - min;
-	let pos = min + diff / 2.0;
-	let total_points = header.number_of_points() as usize;
+	let total_points = laz.remaining;
 	statistics.source_points = total_points;
 
 	statistics.times.setup = stage.finish();
 
 	let mut progress = Progress::new("Import", total_points);
 
-	let mut segmenter = Segmenter::new(
-		(min - pos).map(|v| v as f32),
-		(max - pos).map(|v| v as f32),
-		&mut cache,
-		&settings,
-	);
+	let mut segmenter = Segmenter::new(min, max, &mut cache, &settings);
 
 	let (sender, reciever) = crossbeam::channel::bounded::<Vec<Vector<3, f32>>>(4);
 	let (back_sender, back_reciever) = crossbeam::channel::bounded::<Vec<Vector<3, f32>>>(4);
+
 	rayon::join(
 		|| {
-			//skips invalid points without error or warning
 			let mut points = back_reciever.recv().unwrap();
-			for point in reader.points().flatten() {
-				points.push(map_point(point, pos));
-				if points.len() == points.capacity() {
-					sender.send(points).unwrap();
-					points = back_reciever.recv().unwrap();
+			for chunk in laz {
+				for point in chunk {
+					points.push(point);
+					if points.len() == points.capacity() {
+						sender.send(points).unwrap();
+						points = back_reciever.recv().unwrap();
+					}
 				}
 			}
 			drop(sender);
 			for _ in back_reciever {}
 		},
 		|| {
-			for _ in 0..3 {
+			for _ in 0..4 {
 				back_sender.send(Vec::with_capacity(2048)).unwrap();
 			}
 			for mut points in reciever {
@@ -209,10 +197,7 @@ fn import(settings: Settings, input: PathBuf, output: PathBuf) -> Result<(), Err
 
 	let mut progress = Progress::new("Calculate", total_points);
 
-	let mut tree = Tree::new(
-		(min - pos).map(|v| v as f32),
-		diff[X].max(diff[Y]).max(diff[Z]) as f32,
-	);
+	let mut tree = Tree::new(min, diff[X].max(diff[Y]).max(diff[Z]) as f32);
 	let segments_information = vec![String::from("Crown"), String::from("Trunk")];
 
 	let (sender, reciever) = crossbeam::channel::bounded(2);

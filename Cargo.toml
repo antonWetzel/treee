@@ -46,7 +46,6 @@ serde_json = "1.0.113"
 rand = "0.8"
 num_cpus = "1.15"
 crossbeam = "0.8"
-las = { version = "0.8", features = ["laz"] }
 thiserror = "1.0"
 tempfile = "3.8.1"
 rayon = "1.8.0"
@@ -57,3 +56,5 @@ egui-winit = "0.26"
 clap = { version = "4.4", features = ["derive"] }
 voronator = "0.2.1"
 cfg-if = "1.0.0"
+las = { version = "0.8" }
+laz = { version = "0.8.3", features = ["parallel"] }

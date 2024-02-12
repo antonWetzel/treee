@@ -13,7 +13,6 @@ project.workspace = true
 rand.workspace = true
 serde.workspace = true
 crossbeam.workspace = true
-las.workspace = true
 rfd.workspace = true
 thiserror.workspace = true
 tempfile.workspace = true
@@ -24,9 +23,8 @@ clap.workspace = true
 voronator.workspace = true
 serde_json.workspace = true
 cfg-if.workspace = true
-tracing = "0.1.40"
-tracing-flame = "0.2.0"
-tracing-subscriber = "0.3.18"
+las.workspace = true
+laz.workspace = true
 
 [features]
 default = []
