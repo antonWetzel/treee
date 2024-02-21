@@ -4,13 +4,13 @@ pub trait FromF64 {
 }
 
 impl FromF64 for f32 {
-	fn from_f64(value: f64) -> f32 {
-		value as f32
+	fn from_f64(value: f64) -> Self {
+		value as Self
 	}
 }
 
 impl FromF64 for f64 {
-	fn from_f64(value: f64) -> f64 {
+	fn from_f64(value: Self) -> Self {
 		value
 	}
 }

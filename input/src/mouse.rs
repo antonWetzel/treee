@@ -17,12 +17,12 @@ pub type MouseButtonState = winit::event::ElementState;
 impl From<winit::event::MouseButton> for MouseButton {
 	fn from(value: winit::event::MouseButton) -> Self {
 		match value {
-			winit::event::MouseButton::Left => MouseButton::Left,
-			winit::event::MouseButton::Right => MouseButton::Right,
-			winit::event::MouseButton::Middle => MouseButton::Middle,
-			winit::event::MouseButton::Back => MouseButton::Backward,
-			winit::event::MouseButton::Forward => MouseButton::Forward,
-			winit::event::MouseButton::Other(_) => MouseButton::Unknown,
+			winit::event::MouseButton::Left => Self::Left,
+			winit::event::MouseButton::Right => Self::Right,
+			winit::event::MouseButton::Middle => Self::Middle,
+			winit::event::MouseButton::Back => Self::Backward,
+			winit::event::MouseButton::Forward => Self::Forward,
+			winit::event::MouseButton::Other(_) => Self::Unknown,
 		}
 	}
 }

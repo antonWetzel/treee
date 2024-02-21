@@ -79,9 +79,9 @@ pub enum Value {
 impl std::fmt::Display for Value {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
-			Value::Index(v) => write!(f, "{}", v),
-			Value::Percent(v) => write!(f, "{:.3}%", v * 100.0),
-			Value::RelativeHeight { absolute, percent } => write!(f, "{:.2}m ({:.3}%)", absolute, percent),
+			Self::Index(v) => write!(f, "{}", v),
+			Self::Percent(v) => write!(f, "{:.3}%", v * 100.0),
+			Self::RelativeHeight { absolute, percent } => write!(f, "{:.2}m ({:.3}%)", absolute, percent),
 		}
 	}
 }

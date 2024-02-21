@@ -34,7 +34,7 @@ pub struct Node {
 
 impl Node {
 	fn new_branch(corner: Vector<3, f32>, size: f32) -> Self {
-		Node {
+		Self {
 			corner,
 			size,
 			data: Data::Branch { children: Box::default() },
@@ -42,7 +42,7 @@ impl Node {
 	}
 
 	fn new_leaf(corner: Vector<3, f32>, size: f32, cache: &mut Cache) -> Self {
-		Node {
+		Self {
 			corner,
 			size,
 			data: Data::Leaf {

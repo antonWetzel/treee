@@ -200,7 +200,7 @@ pub enum Controller {
 impl Controller {
 	pub fn movement(&mut self, direction: Vector<2, f32>, transform: &mut Transform<3, f32>) {
 		match *self {
-			Controller::FirstPerson { sensitivity } => {
+			Self::FirstPerson { sensitivity } => {
 				let direction = [
 					direction[X] * sensitivity * BASE_MOVE_SPEED,
 					0.0,
@@ -209,7 +209,7 @@ impl Controller {
 				.into();
 				*transform *= Transform::translation(direction);
 			},
-			Controller::Orbital { offset } => {
+			Self::Orbital { offset } => {
 				transform.position += (transform.basis[X] * direction[X]
 					+ transform.basis[X].cross([0.0, 1.0, 0.0].into()) * direction[Y])
 					* offset * BASE_MOVE_SPEED;
@@ -219,7 +219,7 @@ impl Controller {
 
 	pub fn rotate(&mut self, delta: Vector<2, f32>, transform: &mut Transform<3, f32>) {
 		match *self {
-			Controller::FirstPerson { .. } => {
+			Self::FirstPerson { .. } => {
 				transform.rotate_local_before(
 					[0.0, 1.0, 0.0].into(),
 					Angle::radians(delta[X]) * -BASE_ROTATE_SPEED,
@@ -229,7 +229,7 @@ impl Controller {
 					Angle::radians(delta[Y]) * -BASE_ROTATE_SPEED,
 				);
 			},
-			Controller::Orbital { offset } => {
+			Self::Orbital { offset } => {
 				transform.position += transform.basis[Z] * -offset;
 				transform.rotate_local_before(
 					[0.0, 1.0, 0.0].into(),
@@ -246,13 +246,13 @@ impl Controller {
 
 	pub fn scroll(&mut self, value: f32, transform: &mut Transform<3, f32>) {
 		match self {
-			Controller::FirstPerson { sensitivity } => {
+			Self::FirstPerson { sensitivity } => {
 				*sensitivity *= 1.0 + value / 10.0;
 				if *sensitivity < 0.01 {
 					*sensitivity = 0.01;
 				}
 			},
-			Controller::Orbital { offset } => {
+			Self::Orbital { offset } => {
 				let mut new_offset = *offset * (1.0 + value / 10.0);
 				if new_offset < 0.01 {
 					new_offset = 0.01;

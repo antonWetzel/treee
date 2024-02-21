@@ -24,14 +24,14 @@ where
 	}
 }
 
-impl<const N: usize, T> MulAssign<Mat<N, T>> for Mat<N, T>
+impl<const N: usize, T> MulAssign<Self> for Mat<N, T>
 where
 	T: Zero,
 	T: Copy,
 	T: Add<T, Output = T>,
 	T: Mul<T, Output = T>,
 {
-	fn mul_assign(&mut self, other: Mat<N, T>) {
+	fn mul_assign(&mut self, other: Self) {
 		*self = *self * other;
 	}
 }
@@ -245,7 +245,7 @@ impl<T> Mat<3, T> {
 		eigen_vector / eigen_vector.length()
 	}
 
-	pub fn calculate_eigenvectors(&self, eigen_values: Vector<3, T>) -> Mat<3, T>
+	pub fn calculate_eigenvectors(&self, eigen_values: Vector<3, T>) -> Self
 	where
 		T: Zero,
 		T: Copy,
@@ -257,7 +257,7 @@ impl<T> Mat<3, T> {
 		T: PartialEq,
 		T: Sqrt,
 	{
-		let mut eigen_vectors = Mat::default();
+		let mut eigen_vectors = Self::default();
 		for i in X.to(Z) {
 			let next = i.next(Z);
 			let prev = i.previous(Z);

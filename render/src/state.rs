@@ -10,8 +10,8 @@ pub struct State {
 	pub(crate) surface_format: wgpu::TextureFormat,
 }
 
-impl Has<State> for State {
-	fn get(&self) -> &State {
+impl Has<Self> for State {
+	fn get(&self) -> &Self {
 		self
 	}
 }

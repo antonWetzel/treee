@@ -17,6 +17,10 @@ default-members = ["treee", "importer", "viewer"]
 
 resolver = "2"
 
+[workspace.lints.clippy]
+use_self = "warn"
+pedantic = "warn"
+
 [workspace.package]
 version = "0.1.0"
 edition = "2021"

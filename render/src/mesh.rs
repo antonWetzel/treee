@@ -9,8 +9,8 @@ pub struct MeshState {
 	pipeline: wgpu::RenderPipeline,
 }
 
-impl Has<MeshState> for MeshState {
-	fn get(&self) -> &MeshState {
+impl Has<Self> for MeshState {
+	fn get(&self) -> &Self {
 		self
 	}
 }

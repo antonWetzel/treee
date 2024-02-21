@@ -25,9 +25,9 @@ pub enum LookupName {
 impl LookupName {
 	pub fn data(self) -> &'static [u8] {
 		match self {
-			LookupName::Warm => include_bytes!("../assets/grad_warm.png"),
-			LookupName::Cold => include_bytes!("../assets/grad_cold.png"),
-			LookupName::Turbo => include_bytes!("../assets/grad_turbo.png"),
+			Self::Warm => include_bytes!("../assets/grad_warm.png"),
+			Self::Cold => include_bytes!("../assets/grad_cold.png"),
+			Self::Turbo => include_bytes!("../assets/grad_turbo.png"),
 		}
 	}
 }
@@ -81,7 +81,7 @@ impl Node {
 					.enumerate()
 					.filter_map(|(i, child)| child.as_ref().map(|c| (i, c)))
 				{
-					let node = Node::new(child, state);
+					let node = Self::new(child, state);
 					node.get_segments(&mut segments);
 					children[i] = Some(node);
 				}
@@ -106,7 +106,7 @@ impl Node {
 			0, 1, 1, 2, 2, 3, 3, 0, 4, 5, 5, 6, 6, 7, 7, 4, 0, 4, 1, 5, 2, 6, 3, 7,
 		];
 
-		Node {
+		Self {
 			lines: render::Lines::new(state, &points, &indices),
 			corner: node.position,
 			size: node.size,
@@ -191,7 +191,7 @@ impl Node {
 	}
 
 	pub fn can_render_children(
-		children: &[Option<Node>; 8],
+		children: &[Option<Self>; 8],
 		loaded_manager: &LoadedManager,
 		camera: &camera::Camera,
 	) -> bool {

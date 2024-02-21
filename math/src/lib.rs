@@ -60,15 +60,15 @@ impl Iterator for Dimensions {
 }
 
 impl Dimension {
-	pub const fn to(self, to: Dimension) -> Dimensions {
+	pub const fn to(self, to: Self) -> Dimensions {
 		Dimensions(self.0..(to.0 + 1))
 	}
 
-	pub const fn next(self, max: Dimension) -> Dimension {
+	pub const fn next(self, max: Self) -> Self {
 		Self((self.0 + 1) % (max.0 + 1))
 	}
 
-	pub const fn previous(self, max: Dimension) -> Dimension {
+	pub const fn previous(self, max: Self) -> Self {
 		Self((self.0 + max.0) % (max.0 + 1))
 	}
 }

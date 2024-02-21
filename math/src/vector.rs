@@ -225,7 +225,7 @@ impl<const N: usize, T> Vector<N, T> {
 		Vector(self.0.map(f))
 	}
 
-	pub fn max(mut self, other: Vector<N, T>) -> Vector<N, T>
+	pub fn max(mut self, other: Self) -> Self
 	where
 		T: PartialOrd + Copy,
 	{
@@ -237,7 +237,7 @@ impl<const N: usize, T> Vector<N, T> {
 		self
 	}
 
-	pub fn min(mut self, other: Vector<N, T>) -> Vector<N, T>
+	pub fn min(mut self, other: Self) -> Self
 	where
 		T: PartialOrd + Copy,
 	{
@@ -249,7 +249,7 @@ impl<const N: usize, T> Vector<N, T> {
 		self
 	}
 
-	pub fn distance(self, other: Vector<N, T>) -> T
+	pub fn distance(self, other: Self) -> T
 	where
 		T: Copy + Zero + Sqrt,
 		T: Add<T, Output = T>,

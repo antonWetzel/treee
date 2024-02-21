@@ -12,7 +12,7 @@ impl Vertex2D {
 		use std::mem;
 
 		wgpu::VertexBufferLayout {
-			array_stride: mem::size_of::<Vertex2D>() as wgpu::BufferAddress,
+			array_stride: mem::size_of::<Self>() as wgpu::BufferAddress,
 			step_mode: wgpu::VertexStepMode::Vertex,
 			attributes: &Self::ATTRIBUTES,
 		}

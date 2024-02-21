@@ -422,7 +422,7 @@ struct Centroid {
 }
 
 impl TreeSet {
-	pub fn new(points: &[Vector<3, f32>], max_distance: f32) -> TreeSet {
+	pub fn new(points: &[Vector<3, f32>], max_distance: f32) -> Self {
 		let mut trees = Vec::<Tree>::new();
 		'iter_points: for &point in points {
 			let mut near = Vec::new();

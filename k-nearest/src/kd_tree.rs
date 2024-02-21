@@ -38,7 +38,7 @@ where
 			tree.push((Ada::get_all(p), i));
 		}
 		Self::create_tree(0, &mut tree);
-		KDTree { tree, phantom: std::marker::PhantomData }
+		Self { tree, phantom: std::marker::PhantomData }
 	}
 
 	// choose middle with bias to the right, so recursion is deeper on the left

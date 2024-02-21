@@ -99,9 +99,9 @@ where
 	T: Copy,
 	T: Mul<T, Output = T>,
 {
-	type Output = Matrix<A, B, T>;
+	type Output = Self;
 
-	fn mul(mut self, other: T) -> Matrix<A, B, T> {
+	fn mul(mut self, other: T) -> Self {
 		self *= other;
 		self
 	}
