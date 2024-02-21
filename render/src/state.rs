@@ -50,7 +50,7 @@ impl State {
 				&wgpu::DeviceDescriptor {
 					required_features: wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::POLYGON_MODE_LINE,
 					required_limits: wgpu::Limits {
-						max_buffer_size: u64::MAX,
+						// max_buffer_size: u64::MAX,
 						..Default::default()
 					},
 					label: None,

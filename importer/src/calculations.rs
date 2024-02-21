@@ -61,7 +61,8 @@ pub fn calculate(
 			mapped[i] = map_to_u32(percent);
 		}
 
-		let sep = mapped
+		let min_slice = mapped.len() / 5;
+		let sep = mapped[min_slice..]
 			.iter()
 			.enumerate()
 			.find(|&(_, &v)| v > u32::MAX / 3)
