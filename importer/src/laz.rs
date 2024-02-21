@@ -35,20 +35,7 @@ impl Laz {
 		let header = Header::new(&mut file)?;
 
 		file.seek(SeekFrom::Start(header.header_size as u64))?;
-		let vlr = read_vlrs_and_get_laszip_vlr(
-			&mut file,
-			&QuickHeader {
-				major: header.version_major,
-				minor: header.version_minor,
-				offset_to_points: header.offset_to_point_data,
-				num_vlrs: header.number_of_variable_length_records,
-				point_format_id: header.point_data_record_format,
-				point_size: header.point_data_record_length,
-				num_points: header.number_of_point_records,
-				header_size: header.header_size,
-			},
-		)
-		.ok_or(Error::CorruptFile)?;
+		let vlr = read_vlrs_and_get_laszip_vlr(&mut file, &header.quick_header()).ok_or(Error::CorruptFile)?;
 
 		let total = header.number_of_point_records as usize;
 
@@ -232,5 +219,18 @@ impl Header {
 		}
 
 		Ok(header)
+	}
+
+	pub fn quick_header(&self) -> QuickHeader {
+		QuickHeader {
+			major: self.version_major,
+			minor: self.version_minor,
+			offset_to_points: self.offset_to_point_data,
+			num_vlrs: self.number_of_variable_length_records,
+			point_format_id: self.point_data_record_format,
+			point_size: self.point_data_record_length,
+			num_points: self.number_of_point_records,
+			header_size: self.header_size,
+		}
 	}
 }
