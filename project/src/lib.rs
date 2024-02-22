@@ -81,7 +81,7 @@ impl std::fmt::Display for Value {
 		match self {
 			Self::Index(v) => write!(f, "{}", v),
 			Self::Percent(v) => write!(f, "{:.3}%", v * 100.0),
-			Self::RelativeHeight { absolute, percent } => write!(f, "{:.2}m ({:.3}%)", absolute, percent),
+			Self::RelativeHeight { absolute, percent } => write!(f, "{:.2}m ({:.3}%)", absolute, percent * 100.0),
 		}
 	}
 }
