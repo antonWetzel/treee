@@ -43,6 +43,6 @@ var<uniform> lookup_uniform: LookupUniform;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let idx = in.value >> lookup_uniform.scale;
+    let idx = in.value / lookup_uniform.scale;
     return textureLoad(lookup, idx, 0);
 }

@@ -62,9 +62,10 @@ pub fn calculate(
 		}
 
 		let min_slice = mapped.len() / 5;
-		let sep = mapped[min_slice..]
+		let sep = mapped
 			.iter()
 			.enumerate()
+			.skip(min_slice)
 			.find(|&(_, &v)| v > u32::MAX / 3)
 			.map(|(index, _)| index)
 			.unwrap_or(0);

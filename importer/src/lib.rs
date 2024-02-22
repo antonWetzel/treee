@@ -191,7 +191,7 @@ fn import(settings: Settings, input: PathBuf, output: PathBuf) -> Result<(), Err
 	let mut progress = Progress::new("Calculate", total_points);
 
 	let mut tree = Tree::new(min, diff[X].max(diff[Y]).max(diff[Z]));
-	let segments_information = vec![String::from("Crown"), String::from("Trunk")];
+	let segments_information = vec![String::from("Trunk"), String::from("Crown")];
 
 	let (sender, reciever) = crossbeam::channel::bounded(2);
 	let (_, segment_values) = rayon::join(
