@@ -38,7 +38,7 @@ viewer = { path = "./viewer" }
 
 pollster = "0.3"
 rfd = "0.13"
-simple_logger = "4.3"
+env_logger = "0.11"
 image = { version = "0.24", default-features = false, features = ["png"] }
 log = "0.4"
 wgpu = "0.19"

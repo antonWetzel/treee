@@ -19,10 +19,8 @@ pub enum Error {
 }
 
 pub fn run() -> Result<(), Error> {
-	simple_logger::SimpleLogger::new()
-		.with_level(log::LevelFilter::Info)
-		.init()
-		.unwrap();
+	env_logger::init();
+
 	let path = rfd::FileDialog::new()
 		.set_title("Select Project File")
 		.add_filter("Project File", &["epc"])

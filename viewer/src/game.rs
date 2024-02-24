@@ -669,6 +669,7 @@ impl render::Entry for World {
 			full_output,
 			&self.egui,
 		) {
+			log::info!("Render Time: {:.8}s", time);
 			self.render_time = time;
 		}
 	}
