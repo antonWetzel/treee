@@ -480,7 +480,7 @@ impl TreeSet {
 		for tree in &self.trees {
 			let mut contains = Vec::new();
 			for centroid in prev.iter_mut() {
-				if tree.contains(centroid.center, max_distance) {
+				if tree.contains(centroid.center, 2.0 * max_distance) {
 					contains.push(centroid);
 				}
 			}
