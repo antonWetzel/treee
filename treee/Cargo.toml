@@ -13,3 +13,4 @@ clap.workspace = true
 importer.workspace = true
 viewer.workspace = true
 thiserror.workspace = true
+colored.workspace = true

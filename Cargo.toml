@@ -19,7 +19,6 @@ resolver = "2"
 
 [workspace.lints.clippy]
 use_self = "warn"
-pedantic = "warn"
 
 [workspace.package]
 version = "0.1.0"
@@ -62,3 +61,4 @@ voronator = "0.2.1"
 cfg-if = "1.0.0"
 laz = "0.8.3"
 static_assertions = "1.1.0"
+colored = "2.1.0"

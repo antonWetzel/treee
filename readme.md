@@ -6,25 +6,26 @@ Point cloud importer and viewer with focus on forest scans.
 
 ### Run Project
 
-- Download project `git clone https://github.com/antonWetzel/treee.git`
-- Install Rust <https://www.rust-lang.org/tools/install>
-- Install and Run 
-	- > cargo install --path=treee --locked
-	- > treee
-- or run directly by replacing `treee <...>` with
-	- > cargo run [--release] -- <...>
+- Download latest Release from <https://github.com/antonWetzel/treee/releases>
+- or compile from source
+	- Download project `git clone https://github.com/antonWetzel/treee.git`
+	- Install Rust <https://www.rust-lang.org/tools/install>
+	- Install and Run 
+		- > cargo install --path=treee --locked
+		- > treee
+	- or run directly by replacing `treee <...>` with
+		- > cargo run [--release] -- <...>
 
-### Help
+### Interactive Shell
 
-- > treee
-- > treee help importer
-- > treee help viewer
+- use `treee` without arguments for interactive shell
+	- see printed help for options
 
 ## Importer
 
 - `treee importer`
 	- see `treee help importer` for options
-	- select input file (`.las` or `.laz`)
+	- select input file (`.laz`)
 	- select empty output folder
 	- phases
 		1. setup files
