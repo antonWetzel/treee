@@ -125,8 +125,8 @@ impl Segmenter {
 						}
 
 						// println!("pre: {} {:?}", index, std::time::Instant::now());
-						let mut centroids = c_reciever.recv().unwrap();
-						tree_set.tree_positions(&mut centroids, self.max_distance);
+						let centroids = c_reciever.recv().unwrap();
+						let centroids = tree_set.tree_positions(centroids, self.max_distance);
 						let points = centroids
 							.iter()
 							.map(|centroid| Point {
@@ -417,6 +417,7 @@ impl Tree {
 	}
 }
 
+#[derive(Clone, Copy)]
 struct Centroid {
 	center: Vector<2, f32>,
 }
@@ -475,25 +476,35 @@ impl TreeSet {
 		Self { trees }
 	}
 
-	pub fn tree_positions(&self, prev: &mut Vec<Centroid>, max_distance: f32) {
-		// let mut res = Vec::new();
-		for tree in &self.trees {
-			let mut contains = Vec::new();
-			for centroid in prev.iter_mut() {
-				if tree.contains(centroid.center, 2.0 * max_distance) {
-					contains.push(centroid);
+	pub fn tree_positions(self, prev: Vec<Centroid>, max_distance: f32) -> Vec<Centroid> {
+		let mut res = Vec::with_capacity(prev.len());
+		let mut centroids = self
+			.trees
+			.into_iter()
+			.map(|tree| centroid(&tree.points).0)
+			.collect::<Vec<_>>();
+
+		for &center in prev.iter() {
+			let mut nearest = None;
+			let mut nearest_dist = max_distance * 2.0;
+			for (idx, &c) in centroids.iter().enumerate() {
+				let d = center.center.distance(c);
+				if d < nearest_dist {
+					nearest = Some(idx);
+					nearest_dist = d;
 				}
 			}
-			match contains.len() {
-				0 => {
-					prev.push(Centroid { center: centroid(&tree.points).0 });
-				},
-				1 => {
-					contains[0].center = centroid(&tree.points).0;
-				},
-				_ => {},
+			if let Some(idx) = nearest {
+				let c = centroids.swap_remove(idx);
+				res.push(Centroid { center: c });
+			} else {
+				res.push(center)
 			}
 		}
+		for c in centroids {
+			res.push(Centroid { center: c });
+		}
+		res
 	}
 }
 
