@@ -1,4 +1,8 @@
-use std::{ops::Not, path::PathBuf};
+use std::{
+	ops::{Deref, Not},
+	path::PathBuf,
+	sync::Arc,
+};
 
 use math::{Vector, X, Y};
 use project::Project;
@@ -9,7 +13,7 @@ use crate::{
 	segment::{self, MeshRender, Segment},
 	state::State,
 	tree::{LookupName, Tree},
-	Error,
+	Error, Runner,
 };
 
 pub struct World {
@@ -38,7 +42,7 @@ pub struct Game {
 	path: PathBuf,
 	project_time: std::time::SystemTime,
 
-	state: &'static State,
+	pub state: Arc<State>,
 	mouse: input::Mouse,
 	mouse_start: Option<Vector<2, f32>>,
 
@@ -56,13 +60,13 @@ pub struct Game {
 }
 
 impl World {
-	pub async fn new(path: PathBuf) -> Result<(Self, render::Runner), Error> {
+	pub async fn new(path: PathBuf, runner: &render::Runner) -> Result<Self, Error> {
 		let project = Project::from_file(&path);
 		let egui = render::egui::Context::default();
 
-		let (state, window, runner) = render::State::new(&project.name, &egui).await?;
+		let (state, window) = render::State::new(&project.name, &runner, &egui).await?;
 		let state = State::new(state);
-		let state = Box::leak(Box::new(state));
+		let state = Arc::new(state);
 
 		window.set_window_icon(include_bytes!("../assets/png/tree-fill-big.png"));
 
@@ -70,42 +74,39 @@ impl World {
 		window.set_taskbar_icon(include_bytes!("../assets/png/tree-fill-big.png"));
 
 		let tree = Tree::new(
-			state,
+			state.clone(),
 			&project,
 			path.parent().unwrap().to_owned(),
 			project.properties[0].clone(),
 			&window,
 		);
 
-		Ok((
-			Self {
-				window,
-				egui,
-				game: Game {
-					paused: false,
+		Ok(Self {
+			window,
+			egui,
+			game: Game {
+				paused: false,
 
-					tree,
-					project,
-					project_time: std::fs::metadata(&path).unwrap().modified().unwrap(),
-					path,
+				tree,
+				project,
+				project_time: std::fs::metadata(&path).unwrap().modified().unwrap(),
+				path,
 
-					state,
-					mouse: input::Mouse::new(),
-					mouse_start: None,
-					keyboard: input::Keyboard::new(),
-					time: Time::new(),
+				state,
+				mouse: input::Mouse::new(),
+				mouse_start: None,
+				keyboard: input::Keyboard::new(),
+				time: Time::new(),
 
-					property_options: false,
-					level_of_detail_options: false,
-					camera_options: false,
-					visual_options: false,
-					quit: false,
+				property_options: false,
+				level_of_detail_options: false,
+				camera_options: false,
+				visual_options: false,
+				quit: false,
 
-					render_time: 0.01,
-				},
+				render_time: 0.01,
 			},
-			runner,
-		))
+		})
 	}
 
 	fn request_redraw(&mut self) {
@@ -147,7 +148,7 @@ impl Game {
 		self.project_time = project_time;
 		self.project = Project::from_file(&self.path);
 		self.tree = Tree::new(
-			self.state,
+			self.state.clone(),
 			&self.project,
 			self.path.parent().unwrap().to_owned(),
 			self.project.properties[0].clone(),
@@ -172,7 +173,7 @@ impl Game {
 		let path = self.path.parent().unwrap().to_path_buf();
 		let mut reader = Reader::new(path, "segment");
 		if let Some(segment) = self.tree.raycast(start, direction, &mut reader) {
-			self.tree.segment = Some(Segment::new(self.state, &mut self.tree.segments, segment));
+			self.tree.segment = Some(Segment::new(&self.state, &mut self.tree.segments, segment));
 			window.request_redraw();
 		}
 	}
@@ -231,9 +232,9 @@ impl Game {
 										.loaded_manager
 										.change_property(&self.tree.property.0);
 									self.tree.segments.change_property(&self.tree.property.0);
-									self.tree.update_lookup(self.state);
+									self.tree.update_lookup(&self.state);
 									if let Some(seg) = &mut self.tree.segment {
-										seg.change_property(self.state, &mut self.tree.segments);
+										seg.change_property(&self.state, &mut self.tree.segments);
 									}
 								}
 							});
@@ -296,7 +297,7 @@ impl Game {
 								.add_sized([ui.available_width(), HEIGHT], Button::new("Start"))
 								.clicked()
 							{
-								seg.triangulate(self.state);
+								seg.triangulate(&self.state);
 								if seg.render == MeshRender::Points {
 									seg.render = MeshRender::Mesh;
 								}
@@ -363,7 +364,7 @@ impl Game {
 							.changed()
 						{
 							self.tree.environment = render::PointCloudEnvironment::new(
-								self.state,
+								&self.state,
 								self.tree.environment.min,
 								self.tree.environment.max,
 								self.tree.environment.scale,
@@ -382,7 +383,7 @@ impl Game {
 							self.tree.environment.min = (min * u32::MAX as f32) as u32;
 							self.tree.environment.max = self.tree.environment.max.max(self.tree.environment.min);
 							self.tree.environment = render::PointCloudEnvironment::new(
-								self.state,
+								&self.state,
 								self.tree.environment.min,
 								self.tree.environment.max,
 								self.tree.environment.scale,
@@ -401,7 +402,7 @@ impl Game {
 							self.tree.environment.max = (max * u32::MAX as f32) as u32;
 							self.tree.environment.min = self.tree.environment.min.min(self.tree.environment.max);
 							self.tree.environment = render::PointCloudEnvironment::new(
-								self.state,
+								&self.state,
 								self.tree.environment.min,
 								self.tree.environment.max,
 								self.tree.environment.scale,
@@ -427,7 +428,7 @@ impl Game {
 									.selectable_value(&mut self.tree.lookup_name, LookupName::Turbo, "Turbo")
 									.changed();
 								if changed {
-									self.tree.update_lookup(self.state);
+									self.tree.update_lookup(&self.state);
 								}
 							});
 					});
@@ -458,7 +459,7 @@ impl Game {
 							else {
 								return;
 							};
-							window.screen_shot(self.state, &mut self.tree, path);
+							window.screen_shot(self.state.deref(), &mut self.tree, path);
 							window.request_redraw()
 						}
 					});
@@ -491,7 +492,7 @@ impl Game {
 							)
 							.changed()
 						{
-							self.tree.eye_dome.update_settings(self.state);
+							self.tree.eye_dome.update_settings(&self.state);
 						}
 					});
 
@@ -502,7 +503,7 @@ impl Game {
 							.color_edit_button_rgb(self.tree.eye_dome.color.data_mut())
 							.changed()
 						{
-							self.tree.eye_dome.update_settings(self.state);
+							self.tree.eye_dome.update_settings(&self.state);
 						}
 					});
 				};
@@ -608,7 +609,7 @@ impl Game {
 								}
 								let diff = *offset - old;
 								if diff.abs() > 0.001 {
-									self.tree.camera.move_in_view_direction(diff, self.state);
+									self.tree.camera.move_in_view_direction(diff, &self.state);
 								}
 							},
 							camera::Controller::FirstPerson { sensitivity } => {
@@ -632,7 +633,7 @@ impl Game {
 							.add_sized([ui.available_width(), HEIGHT], Button::new("Load"))
 							.clicked()
 						{
-							self.tree.camera.load(self.state);
+							self.tree.camera.load(&self.state);
 							window.request_redraw();
 						}
 					});
@@ -664,7 +665,7 @@ impl render::Entry for World {
 			.run(raw_input, |ctx| self.game.ui(ctx, &mut self.window));
 
 		if let Some(time) = self.window.render(
-			self.game.state,
+			self.game.state.deref(),
 			&mut self.game.tree,
 			full_output,
 			&self.egui,
@@ -679,14 +680,14 @@ impl render::Entry for World {
 		if self.paused {
 			return;
 		}
-		self.window.resized(self.state);
+		self.window.resized(self.game.state.deref());
 		self.game
 			.tree
 			.camera
 			.cam
 			.set_aspect(self.window.get_aspect());
 		self.tree.camera.gpu = render::Camera3DGPU::new(
-			self.state,
+			&self.state,
 			&self.tree.camera.cam,
 			&self.tree.camera.transform,
 		);
@@ -694,7 +695,7 @@ impl render::Entry for World {
 		self.game
 			.tree
 			.eye_dome
-			.update_depth(self.game.state, self.window.depth_texture());
+			.update_depth(&self.game.state, self.window.depth_texture());
 	}
 
 	fn close_window(&mut self, _window_id: render::WindowId) {
@@ -719,7 +720,7 @@ impl render::Entry for World {
 		let l = direction.length();
 		if l > 0.0 {
 			direction *= 10.0 * delta.as_secs_f32() / l;
-			self.game.tree.camera.movement(direction, self.state);
+			self.game.tree.camera.movement(direction, &self.game.state);
 			self.request_redraw();
 		}
 
@@ -733,7 +734,7 @@ impl render::Entry for World {
 
 		if let Some(segment) = &mut self.game.tree.segment {
 			if matches!(segment.render, MeshRender::Mesh | MeshRender::MeshLines) {
-				segment.update(self.game.state);
+				segment.update(&self.game.state);
 			}
 		}
 
@@ -749,7 +750,7 @@ impl render::Entry for World {
 	}
 
 	fn mouse_wheel(&mut self, delta: f32) {
-		self.game.tree.camera.scroll(delta, self.state);
+		self.game.tree.camera.scroll(delta, &self.game.state);
 		self.request_redraw();
 	}
 
@@ -779,7 +780,7 @@ impl render::Entry for World {
 	fn mouse_moved(&mut self, _window_id: render::WindowId, position: Vector<2, f32>) {
 		let delta = self.mouse.delta(position);
 		if self.mouse.pressed(input::MouseButton::Left) {
-			self.game.tree.camera.rotate(delta, self.state);
+			self.game.tree.camera.rotate(delta, &self.game.state);
 			self.request_redraw();
 		}
 	}

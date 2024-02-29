@@ -1,5 +1,8 @@
 use viewer::*;
 
 fn main() -> Result<(), Error> {
-	run()
+	env_logger::init();
+
+	let mut runner = Runner::new()?;
+	run(&mut runner)
 }

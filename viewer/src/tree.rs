@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::num::NonZeroU32;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use crate::loaded_manager::LoadedManager;
 use crate::reader::Reader;
@@ -315,7 +316,7 @@ impl Node {
 
 impl Tree {
 	pub fn new(
-		state: &'static State,
+		state: Arc<State>,
 		project: &Project,
 		path: PathBuf,
 		property: (String, String, u32),
@@ -328,23 +329,23 @@ impl Tree {
 
 		Self {
 			background: DEFAULT_BACKGROUND,
-			camera: camera::Camera::new(state, window.get_aspect()),
-			root: Node::new(&project.root, state),
-			loaded_manager: LoadedManager::new(state, path, &property.0),
+			camera: camera::Camera::new(&state, window.get_aspect()),
+			root: Node::new(&project.root, &state),
 			lookup_name,
-			lookup: render::Lookup::new_png(state, lookup_name.data(), property.2),
-			environment: render::PointCloudEnvironment::new(state, u32::MIN, u32::MAX, 1.0),
+			lookup: render::Lookup::new_png(&state, lookup_name.data(), property.2),
+			environment: render::PointCloudEnvironment::new(&state, u32::MIN, u32::MAX, 1.0),
 			segment: None,
-			eye_dome: render::EyeDome::new(state, window.config(), window.depth_texture(), 0.7),
+			eye_dome: render::EyeDome::new(&state, window.config(), window.depth_texture(), 0.7),
 			eye_dome_active: true,
 			voxels_active: false,
 			segments: Reader::new(segments, &property.0),
 
+			loaded_manager: LoadedManager::new(state, path, &property.0),
 			property,
 		}
 	}
 
-	pub fn update_lookup(&mut self, state: &'static State) {
+	pub fn update_lookup(&mut self, state: &State) {
 		self.lookup = render::Lookup::new_png(state, self.lookup_name.data(), self.property.2);
 	}
 

@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
 
 use math::Vector;
 
@@ -19,12 +20,10 @@ impl Has<Self> for State {
 pub type RenderError = winit::error::EventLoopError;
 
 impl State {
-	pub async fn new(title: &str, egui: &egui::Context) -> Result<(Self, Window, Runner), RenderError> {
-		let event_loop = winit::event_loop::EventLoop::new()?;
-
+	pub async fn new(title: &str, runner: &Runner, egui: &egui::Context) -> Result<(Self, Window), RenderError> {
 		let window = winit::window::WindowBuilder::new()
 			.with_visible(false)
-			.build(&event_loop)
+			.build(&runner.event_loop)
 			.unwrap();
 
 		let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -63,7 +62,7 @@ impl State {
 		let window = winit::window::WindowBuilder::new()
 			.with_title(title)
 			.with_min_inner_size(winit::dpi::LogicalSize { width: 10, height: 10 })
-			.build(&event_loop)
+			.build(&runner.event_loop)
 			.unwrap();
 		let window = Arc::new(window);
 
@@ -103,11 +102,7 @@ impl State {
 			window,
 		};
 
-		Ok((
-			Self { device, queue, surface_format },
-			window,
-			Runner { event_loop },
-		))
+		Ok((Self { device, queue, surface_format }, window))
 	}
 }
 
@@ -116,10 +111,16 @@ pub struct Runner {
 }
 
 impl Runner {
-	pub fn run<T: Entry>(self, game: &mut T) -> Result<(), RenderError> {
+	pub fn new() -> Result<Self, RenderError> {
+		Ok(Self {
+			event_loop: winit::event_loop::EventLoop::new()?,
+		})
+	}
+
+	pub fn run<T: Entry>(&mut self, game: &mut T) -> Result<(), RenderError> {
 		self.event_loop
 			.set_control_flow(winit::event_loop::ControlFlow::Poll);
-		self.event_loop.run(|event, event_loop| {
+		self.event_loop.run_on_demand(|event, event_loop| {
 			match event {
 				winit::event::Event::WindowEvent { event, window_id } => {
 					if game.raw_event(&event) {

@@ -13,6 +13,8 @@ mod texture;
 mod vertex_2d;
 mod window;
 
+use std::{ops::Deref, sync::Arc};
+
 pub use camera_3d::*;
 pub use depth_texture::*;
 pub use egui;
@@ -41,4 +43,13 @@ pub trait RenderEntry<State> {
 
 pub trait Has<T> {
 	fn get(&self) -> &T;
+}
+
+impl<X, T> Has<X> for Arc<T>
+where
+	T: Has<X>,
+{
+	fn get(&self) -> &X {
+		self.deref().get()
+	}
 }

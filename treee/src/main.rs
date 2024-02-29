@@ -15,6 +15,7 @@ fn interactive() {
 	let mut c = InteractiveCommand::command();
 	c.print_help().unwrap();
 
+	let mut runner = Option::<viewer::Runner>::None;
 	loop {
 		print!("{}", "\n=> ".bold().green());
 		std::io::stdout().flush().unwrap();
@@ -28,7 +29,18 @@ fn interactive() {
 				}
 			},
 			Ok(InteractiveCommand::Viewer) => {
-				if let Err(err) = viewer::run() {
+				let res = match &mut runner {
+					Some(r) => viewer::run(r),
+					None => match viewer::Runner::new() {
+						Ok(mut r) => {
+							let res = viewer::run(&mut r);
+							runner = Some(r);
+							res
+						},
+						Err(err) => Err(err).map_err(|err| err.into()),
+					},
+				};
+				if let Err(err) = res {
 					println!("Error: {}", err);
 				}
 			},
@@ -41,7 +53,10 @@ fn interactive() {
 fn cli() {
 	let res = match Command::parse() {
 		Command::Importer(command) => importer::run(command).map_err(Error::from),
-		Command::Viewer => viewer::run().map_err(Error::from),
+		Command::Viewer => viewer::Runner::new()
+			.map_err(viewer::Error::RenderError)
+			.and_then(|mut runner| viewer::run(&mut runner))
+			.map_err(Error::Viewer),
 	};
 	if let Err(err) = res {
 		println!("Error: {}", err);

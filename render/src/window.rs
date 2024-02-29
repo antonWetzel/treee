@@ -74,12 +74,7 @@ impl Window {
 		self.depth_texture = DepthTexture::new(&state.device, &self.config, "depth");
 	}
 
-	pub fn screen_shot<S: Has<State>>(
-		&mut self,
-		state: &'static S,
-		renderable: &mut impl RenderEntry<S>,
-		path: PathBuf,
-	) {
+	pub fn screen_shot<S: Has<State>>(&mut self, state: &S, renderable: &mut impl RenderEntry<S>, path: PathBuf) {
 		fn ceil_to_multiple(value: u32, base: u32) -> u32 {
 			(value + (base - 1)) / base * base
 		}
@@ -179,7 +174,7 @@ impl Window {
 
 	fn render_to<S: Has<State>>(
 		&mut self,
-		state: &'static S,
+		state: &S,
 		renderable: &mut impl RenderEntry<S>,
 		view: &wgpu::TextureView,
 		background: Vector<3, f32>,
@@ -310,7 +305,7 @@ impl Window {
 
 	pub fn render<S: Has<State>>(
 		&mut self,
-		state: &'static S,
+		state: &S,
 		renderable: &mut impl RenderEntry<S>,
 		ui: egui::FullOutput,
 		egui: &egui::Context,
@@ -332,5 +327,11 @@ impl Window {
 		);
 		output.present();
 		Some(res)
+	}
+}
+
+impl Drop for Window {
+	fn drop(&mut self) {
+		self.window.set_visible(false);
 	}
 }

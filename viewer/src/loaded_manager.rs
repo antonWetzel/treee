@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::hint::spin_loop;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use crate::reader::Reader;
 use crate::State;
@@ -36,7 +37,7 @@ enum WorkerUpdate {
 }
 
 impl LoadedManager {
-	pub fn new(state: &'static State, path: PathBuf, property: &str) -> Self {
+	pub fn new(state: Arc<State>, path: PathBuf, property: &str) -> Self {
 		let (index_tx, index_rx) = crossbeam::channel::bounded(512);
 		let (pc_tx, pc_rx) = crossbeam::channel::bounded(512);
 
@@ -49,6 +50,7 @@ impl LoadedManager {
 			let mut property_index = 0;
 
 			let mut reader = Reader::new(path.clone(), property);
+			let state = state.clone();
 
 			std::thread::spawn(move || loop {
 				for update in update_reciever.try_iter() {
@@ -70,14 +72,14 @@ impl LoadedManager {
 				};
 				match task {
 					WorkerTask::PointCloud(index) => {
-						if let Some(pc) = load_pointcloud(state, &mut reader, index) {
+						if let Some(pc) = load_pointcloud(&state, &mut reader, index) {
 							let _ = pc_tx.send(Response::PointCloud(index, pc));
 						} else {
 							let _ = pc_tx.send(Response::FailedPointCloud(index));
 						};
 					},
 					WorkerTask::Property(index) => {
-						if let Some(property) = load_property(state, &mut reader, index) {
+						if let Some(property) = load_property(&state, &mut reader, index) {
 							let _ = pc_tx.send(Response::Property(index, property, property_index));
 						} else {
 							let _ = pc_tx.send(Response::FailedProperty(index));
@@ -95,7 +97,7 @@ impl LoadedManager {
 			update_senders,
 
 			property_index: 0,
-			property_default: render::PointCloudProperty::new_empty(state),
+			property_default: render::PointCloudProperty::new_empty(&state),
 			property_available: HashMap::new(),
 			property_requested: HashSet::new(),
 		}
