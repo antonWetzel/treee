@@ -36,11 +36,11 @@ impl<T> std::ops::Deref for Tree<T> {
 	}
 }
 
-pub trait TreeScene: Sized {
+pub trait Scene: Sized {
 	fn render<'a>(&'a self, state: &'a State, tree: &'a Tree<Self>, render_pass: &mut render::RenderPass<'a>);
 }
 
-impl<T: TreeScene> render::RenderEntry<State> for Tree<T> {
+impl<T: Scene> render::RenderEntry<State> for Tree<T> {
 	fn background(&self) -> Vector<3, f32> {
 		self.context.background
 	}

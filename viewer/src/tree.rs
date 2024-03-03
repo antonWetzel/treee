@@ -11,7 +11,7 @@ use math::{Vector, X, Y, Z};
 use project::IndexNode;
 use project::{IndexData, Project};
 use render::{LinesRenderExt, MeshRenderExt, PointCloudExt, Window};
-use window::tree::{Tree, TreeContext, TreeScene};
+use window::tree::{Scene, Tree, TreeContext};
 use window::{camera, lod, State};
 
 pub struct ProjectScene {
@@ -372,7 +372,7 @@ impl render::PointCloudRender<TreeContext> for ProjectScene {
 	}
 }
 
-impl TreeScene for ProjectScene {
+impl Scene for ProjectScene {
 	fn render<'a>(&'a self, state: &'a State, tree: &'a Tree<Self>, render_pass: &mut render::RenderPass<'a>) {
 		if let Some(segment) = &self.segment {
 			match segment.render {
