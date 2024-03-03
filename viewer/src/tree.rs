@@ -11,7 +11,7 @@ use math::{Vector, X, Y, Z};
 use project::IndexNode;
 use project::{IndexData, Project};
 use render::{LinesRenderExt, MeshRenderExt, PointCloudExt, Window};
-use window::tree::Tree;
+use window::tree::{Tree, TreeContext, TreeScene};
 use window::{camera, lod, tree::LookupName, State};
 
 pub struct ProjectScene {
@@ -348,73 +348,65 @@ impl ProjectTree {
 	}
 }
 
-impl render::PointCloudRender for ProjectTree {
-	fn render<'a>(&'a self, point_cloud_pass: &mut render::PointCloudPass<'a>) {
-		self.scene.root.render(
+impl render::PointCloudRender<TreeContext> for ProjectScene {
+	fn render<'a>(&'a self, context: &'a TreeContext, point_cloud_pass: &mut render::PointCloudPass<'a>) {
+		self.root.render(
 			point_cloud_pass,
-			lod::Checker::new(&self.context.camera.lod),
-			&self.context.camera,
-			&self.scene.loaded_manager,
+			lod::Checker::new(&context.camera.lod),
+			&context.camera,
+			&self.loaded_manager,
 		);
 	}
 }
 
-impl render::LinesRender for ProjectTree {
-	fn render<'a>(&'a self, lines_pass: &mut render::LinesPass<'a>) {
-		self.scene.root.render_lines(
-			lines_pass,
-			lod::Checker::new(&self.context.camera.lod),
-			&self.context.camera,
-			&self.scene.loaded_manager,
-		);
-	}
-}
-
-impl render::RenderEntry<State> for ProjectTree {
-	fn background(&self) -> Vector<3, f32> {
-		self.context.background
-	}
-
-	fn render<'a>(&'a mut self, state: &'a State, render_pass: &mut render::RenderPass<'a>) {
-		if let Some(segment) = &self.scene.segment {
+impl TreeScene for ProjectScene {
+	fn render<'a>(&'a self, state: &'a State, tree: &'a Tree<Self>, render_pass: &mut render::RenderPass<'a>) {
+		if let Some(segment) = &self.segment {
 			match segment.render {
 				MeshRender::Points => render_pass.render_point_clouds(
 					segment,
 					state,
-					&self.context.camera.gpu,
-					&self.context.lookup,
-					&self.context.environment,
+					&(),
+					&tree.context.camera.gpu,
+					&tree.context.lookup,
+					&tree.context.environment,
 				),
 				MeshRender::Mesh => render_pass.render_meshes(
 					segment,
 					state,
-					&self.context.camera.gpu,
-					&self.context.lookup,
+					&tree.context.camera.gpu,
+					&tree.context.lookup,
 				),
 				MeshRender::MeshLines => render_pass.render_meshes(
 					segment,
 					&state.mesh_line,
-					&self.context.camera.gpu,
-					&self.context.lookup,
+					&tree.context.camera.gpu,
+					&tree.context.lookup,
 				),
 			}
 		} else {
 			render_pass.render_point_clouds(
 				self,
 				state,
-				&self.context.camera.gpu,
-				&self.context.lookup,
-				&self.context.environment,
+				&tree.context,
+				&tree.context.camera.gpu,
+				&tree.context.lookup,
+				&tree.context.environment,
 			);
-			if self.context.voxels_active {
-				render_pass.render_lines(self, state, &self.context.camera.gpu);
+			if tree.context.voxels_active {
+				render_pass.render_lines(self, state, &tree.context, &tree.context.camera.gpu);
 			}
 		}
 	}
+}
 
-	fn post_process<'a>(&'a mut self, _state: &'a State, render_pass: &mut render::RenderPass<'a>) {
-		if self.context.eye_dome_active {
-			render_pass.render(&self.context.eye_dome, ());
-		}
+impl render::LinesRender<TreeContext> for ProjectScene {
+	fn render<'a>(&'a self, context: &'a TreeContext, lines_pass: &mut render::LinesPass<'a>) {
+		self.root.render_lines(
+			lines_pass,
+			lod::Checker::new(&context.camera.lod),
+			&context.camera,
+			&self.loaded_manager,
+		);
 	}
 }

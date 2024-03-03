@@ -493,7 +493,7 @@ impl ProjectGame {
 							else {
 								return;
 							};
-							window.screen_shot(self.0.state.deref(), &mut self.0.tree, path);
+							window.screen_shot(self.0.state.deref(), &mut self.0.tree.0, path);
 							window.request_redraw()
 						}
 					});
@@ -710,7 +710,7 @@ impl render::Entry for World {
 
 		self.window.render(
 			self.game.0.state.deref(),
-			&mut self.game.0.tree,
+			&mut self.game.0.tree.0,
 			full_output,
 			&self.egui,
 		);

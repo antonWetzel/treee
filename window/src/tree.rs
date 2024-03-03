@@ -36,6 +36,26 @@ impl<T> std::ops::Deref for Tree<T> {
 	}
 }
 
+pub trait TreeScene: Sized {
+	fn render<'a>(&'a self, state: &'a State, tree: &'a Tree<Self>, render_pass: &mut render::RenderPass<'a>);
+}
+
+impl<T: TreeScene> render::RenderEntry<State> for Tree<T> {
+	fn background(&self) -> Vector<3, f32> {
+		self.context.background
+	}
+
+	fn render<'a>(&'a mut self, state: &'a State, render_pass: &mut render::RenderPass<'a>) {
+		self.scene.render(state, self, render_pass)
+	}
+
+	fn post_process<'a>(&'a mut self, _state: &'a State, render_pass: &mut render::RenderPass<'a>) {
+		if self.context.eye_dome_active {
+			render_pass.render(&self.context.eye_dome, ());
+		}
+	}
+}
+
 pub struct TreeContext {
 	pub camera: crate::camera::Camera,
 
@@ -58,7 +78,6 @@ impl<T> Tree<T> {
 			context: TreeContext {
 				background: DEFAULT_BACKGROUND,
 				camera: Camera::new(&state, window.get_aspect()),
-
 				lookup_name,
 				lookup: render::Lookup::new_png(&state, lookup_name.data(), property.2),
 				environment: render::PointCloudEnvironment::new(&state, u32::MIN, u32::MAX, 1.0),

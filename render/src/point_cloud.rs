@@ -155,30 +155,32 @@ impl PointCloudState {
 #[repr(transparent)]
 pub struct PointCloudPass<'a>(wgpu::RenderPass<'a>);
 
-pub trait PointCloudRender {
-	fn render<'a>(&'a self, point_cloud_pass: &mut PointCloudPass<'a>);
+pub trait PointCloudRender<T> {
+	fn render<'a>(&'a self, context: &'a T, point_cloud_pass: &mut PointCloudPass<'a>);
 }
 
-pub trait PointCloudExt<'a, V, S> {
+pub trait PointCloudExt<'a, V, S, C> {
 	fn render_point_clouds(
 		&mut self,
 		value: &'a V,
 		state: &'a S,
+		context: &'a C,
 		camera: &'a Camera3DGPU,
 		lookup: &'a Lookup,
 		environment: &'a PointCloudEnvironment,
 	);
 }
 
-impl<'a, V, S> PointCloudExt<'a, V, S> for RenderPass<'a>
+impl<'a, V, S, C> PointCloudExt<'a, V, S, C> for RenderPass<'a>
 where
 	S: Has<PointCloudState>,
-	V: PointCloudRender,
+	V: PointCloudRender<C>,
 {
 	fn render_point_clouds(
 		&mut self,
 		value: &'a V,
 		state: &'a S,
+		context: &'a C,
 		camera: &'a Camera3DGPU,
 		lookup: &'a Lookup,
 		environment: &'a PointCloudEnvironment,
@@ -189,7 +191,7 @@ where
 		self.set_bind_group(2, lookup.get_bind_group(), &[]);
 		self.set_vertex_buffer(0, state.get().base.slice(..));
 		let lines_pass = unsafe { std::mem::transmute::<_, &mut PointCloudPass<'a>>(self) };
-		value.render(lines_pass);
+		value.render(context, lines_pass);
 	}
 }
 

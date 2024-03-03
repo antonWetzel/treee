@@ -5,7 +5,7 @@ use std::{
 };
 
 use math::{Vector, X, Y, Z};
-use window::State;
+use window::{tree::TreeContext, State};
 
 use crate::reader::Reader;
 
@@ -163,8 +163,8 @@ impl Segment {
 	}
 }
 
-impl render::PointCloudRender for Segment {
-	fn render<'a>(&'a self, point_cloud_pass: &mut render::PointCloudPass<'a>) {
+impl<T> render::PointCloudRender<T> for Segment {
+	fn render<'a>(&'a self, _context: &'a T, point_cloud_pass: &mut render::PointCloudPass<'a>) {
 		self.point_cloud.render(point_cloud_pass, &self.property);
 	}
 }
