@@ -1,3 +1,5 @@
+use math::Vector;
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum LookupName {
 	Warm,
@@ -13,4 +15,19 @@ impl LookupName {
 			Self::Turbo => include_bytes!("../assets/grad_turbo.png"),
 		}
 	}
+}
+pub struct Tree<T> {
+	pub camera: crate::camera::Camera,
+
+	pub lookup: render::Lookup,
+	pub environment: render::PointCloudEnvironment,
+	pub background: Vector<3, f32>,
+
+	pub lookup_name: LookupName,
+	pub eye_dome: render::EyeDome,
+	pub eye_dome_active: bool,
+	pub voxels_active: bool,
+	pub scene: T,
+
+	pub property: (String, String, u32),
 }

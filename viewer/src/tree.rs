@@ -11,25 +11,10 @@ use math::{Vector, X, Y, Z};
 use project::IndexNode;
 use project::{IndexData, Project};
 use render::{LinesRenderExt, MeshRenderExt, PointCloudExt, Window};
+use window::tree::Tree;
 use window::{camera, lod, tree::LookupName, State};
 
 pub const DEFAULT_BACKGROUND: Vector<3, f32> = Vector::new([0.1, 0.2, 0.3]);
-
-pub struct Tree<T> {
-	pub camera: camera::Camera,
-
-	pub lookup: render::Lookup,
-	pub environment: render::PointCloudEnvironment,
-	pub background: Vector<3, f32>,
-
-	pub lookup_name: LookupName,
-	pub eye_dome: render::EyeDome,
-	pub eye_dome_active: bool,
-	pub voxels_active: bool,
-	pub scene: T,
-
-	pub property: (String, String, u32),
-}
 
 pub struct ProjectScene {
 	pub loaded_manager: LoadedManager,
@@ -45,6 +30,20 @@ pub struct Node {
 	index: usize,
 
 	lines: render::Lines,
+}
+
+pub struct ProjectTree(pub Tree<ProjectScene>);
+impl std::ops::Deref for ProjectTree {
+	type Target = Tree<ProjectScene>;
+
+	fn deref(&self) -> &Self::Target {
+		&self.0
+	}
+}
+impl std::ops::DerefMut for ProjectTree {
+	fn deref_mut(&mut self) -> &mut Self::Target {
+		&mut self.0
+	}
 }
 
 pub enum Data {
@@ -300,7 +299,7 @@ impl Node {
 	}
 }
 
-impl Tree<ProjectScene> {
+impl ProjectTree {
 	pub fn new(
 		state: Arc<State>,
 		project: &Project,
@@ -310,7 +309,7 @@ impl Tree<ProjectScene> {
 	) -> Self {
 		let lookup_name = LookupName::Warm;
 
-		Self {
+		Self(Tree {
 			background: DEFAULT_BACKGROUND,
 			camera: camera::Camera::new(&state, window.get_aspect()),
 
@@ -335,7 +334,7 @@ impl Tree<ProjectScene> {
 			voxels_active: false,
 
 			property,
-		}
+		})
 	}
 
 	pub fn update_lookup(&mut self, state: &State) {
@@ -353,15 +352,15 @@ impl Tree<ProjectScene> {
 	}
 
 	pub fn update(&mut self) {
-		self.scene.root.update(
-			lod::Checker::new(&self.camera.lod),
-			&self.camera,
-			&mut self.scene.loaded_manager,
+		self.0.scene.root.update(
+			lod::Checker::new(&self.0.camera.lod),
+			&self.0.camera,
+			&mut self.0.scene.loaded_manager,
 		);
 	}
 }
 
-impl render::PointCloudRender for Tree<ProjectScene> {
+impl render::PointCloudRender for ProjectTree {
 	fn render<'a>(&'a self, point_cloud_pass: &mut render::PointCloudPass<'a>) {
 		self.scene.root.render(
 			point_cloud_pass,
@@ -372,7 +371,7 @@ impl render::PointCloudRender for Tree<ProjectScene> {
 	}
 }
 
-impl render::LinesRender for Tree<ProjectScene> {
+impl render::LinesRender for ProjectTree {
 	fn render<'a>(&'a self, lines_pass: &mut render::LinesPass<'a>) {
 		self.scene.root.render_lines(
 			lines_pass,
@@ -383,7 +382,7 @@ impl render::LinesRender for Tree<ProjectScene> {
 	}
 }
 
-impl render::RenderEntry<State> for Tree<ProjectScene> {
+impl render::RenderEntry<State> for ProjectTree {
 	fn background(&self) -> Vector<3, f32> {
 		self.background
 	}

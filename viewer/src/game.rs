@@ -11,7 +11,7 @@ use window::{camera, lod, tree::LookupName, State};
 use crate::{
 	reader::Reader,
 	segment::{self, MeshRender, Segment},
-	tree::Tree,
+	tree::ProjectTree,
 	Error,
 };
 
@@ -35,8 +35,8 @@ impl std::ops::DerefMut for World {
 	}
 }
 
-trait CustomState {
-	type Scene;
+pub trait CustomState {
+	type Tree;
 }
 
 pub struct ProjectCustomState {
@@ -46,11 +46,11 @@ pub struct ProjectCustomState {
 }
 
 impl CustomState for ProjectCustomState {
-	type Scene = crate::tree::ProjectScene;
+	type Tree = crate::tree::ProjectTree;
 }
 
 pub struct Game<TCustomState: CustomState> {
-	tree: Tree<TCustomState::Scene>,
+	tree: TCustomState::Tree,
 	custom_state: TCustomState,
 
 	pub state: Arc<State>,
@@ -90,7 +90,7 @@ impl World {
 		#[cfg(windows)]
 		window.set_taskbar_icon(include_bytes!("../assets/png/tree-fill-big.png"));
 
-		let tree = Tree::new(
+		let tree = ProjectTree::new(
 			state.clone(),
 			&project,
 			None,
@@ -163,7 +163,7 @@ impl Game<ProjectCustomState> {
 			return;
 		};
 		self.custom_state.project = Project::from_file(path);
-		self.tree = Tree::new(
+		self.tree = ProjectTree::new(
 			self.state.clone(),
 			&self.project,
 			Some(path.parent().unwrap().to_owned()),
@@ -252,16 +252,18 @@ impl Game<ProjectCustomState> {
 										}
 									}
 									self.tree
+										.0
 										.scene
 										.loaded_manager
-										.change_property(&self.tree.property.0);
+										.change_property(&self.tree.0.property.0);
 									self.tree
+										.0
 										.scene
 										.segments
-										.change_property(&self.tree.property.0);
+										.change_property(&self.tree.0.property.0);
 									self.tree.update_lookup(&self.state);
-									if let Some(seg) = &mut self.tree.scene.segment {
-										seg.change_property(&self.state, &mut self.tree.scene.segments);
+									if let Some(seg) = &mut self.tree.0.scene.segment {
+										seg.change_property(&self.state, &mut self.tree.0.scene.segments);
 									}
 								}
 							});
