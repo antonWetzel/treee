@@ -79,7 +79,7 @@ impl World {
 		#[cfg(windows)]
 		window.set_taskbar_icon(include_bytes!("../assets/png/tree-fill-big.png"));
 
-		let tree = ProjectGame::new_tree(
+		let tree = Game::<ProjectCustomState>::new_tree(
 			state.clone(),
 			&project,
 			None,
@@ -103,7 +103,26 @@ impl World {
 	}
 }
 
-impl ProjectGame {
+trait GameExt {
+	fn new_tree(
+		state: Arc<State>,
+		project: &Project,
+		path: Option<PathBuf>,
+		property: (String, String, u32),
+		window: &Window,
+	) -> Tree<ProjectScene>;
+	fn change_project(&mut self, window: &render::Window);
+
+	fn check_reload(&mut self, window: &render::Window);
+
+	fn current_project_time(&self) -> std::time::SystemTime;
+
+	fn reload(&mut self, project_time: std::time::SystemTime, window: &render::Window);
+
+	fn raycast(&mut self, window: &render::Window);
+}
+
+impl GameExt for Game<ProjectCustomState> {
 	fn new_tree(
 		state: Arc<State>,
 		project: &Project,
@@ -158,11 +177,11 @@ impl ProjectGame {
 	}
 
 	fn reload(&mut self, project_time: std::time::SystemTime, window: &render::Window) {
-		self.0.custom_state.project_time = project_time;
-		let Some(path) = &self.0.custom_state.path else {
+		self.custom_state.project_time = project_time;
+		let Some(path) = &self.custom_state.path else {
 			return;
 		};
-		self.0.custom_state.project = Project::from_file(path);
+		self.custom_state.project = Project::from_file(path);
 		self.tree = Self::new_tree(
 			self.state.clone(),
 			&self.project,
@@ -195,8 +214,8 @@ impl ProjectGame {
 		let mut reader = Reader::new(path, "segment");
 		if let Some(segment) = self.tree.scene.raycast(start, direction, &mut reader) {
 			self.tree.scene.segment = Some(Segment::new(
-				&self.0.state,
-				&mut self.0.tree.scene.segments,
+				&self.state,
+				&mut self.tree.scene.segments,
 				segment,
 			));
 			window.request_redraw();
@@ -204,515 +223,501 @@ impl ProjectGame {
 	}
 }
 
-impl ProjectGame {
-	fn ui(&mut self, ctx: &render::egui::Context, window: &mut render::Window) {
-		const HEIGHT: f32 = 10.0;
-		const LEFT: f32 = 100.0;
-		const RIGHT: f32 = 150.0;
+fn ui(ctx: &render::egui::Context, window: &mut render::Window, game: &mut Game<ProjectCustomState>) {
+	const HEIGHT: f32 = 10.0;
+	const LEFT: f32 = 100.0;
+	const RIGHT: f32 = 150.0;
 
-		use render::egui::*;
+	use render::egui::*;
 
-		let full = Layout::top_down_justified(Align::Center);
-		SidePanel::left("left")
-			.resizable(false)
-			.default_width(275.0)
-			.show(ctx, |ui| {
-				if ui
-					.add_sized([ui.available_width(), HEIGHT], Button::new("Load Project"))
-					.clicked()
-				{
-					self.change_project(window);
-				};
-				ui.separator();
+	let full = Layout::top_down_justified(Align::Center);
+	SidePanel::left("left")
+		.resizable(false)
+		.default_width(275.0)
+		.show(ctx, |ui| {
+			if ui
+				.add_sized([ui.available_width(), HEIGHT], Button::new("Load Project"))
+				.clicked()
+			{
+				game.change_project(window);
+			};
+			ui.separator();
 
-				if ui
-					.add_sized(
-						[ui.available_width(), HEIGHT],
-						SelectableLabel::new(self.property_options, "Property"),
-					)
-					.clicked()
-				{
-					self.property_options = self.property_options.not();
-				};
-				if self.0.property_options {
-					ui.horizontal(|ui| {
-						ui.add_sized([LEFT, HEIGHT], Label::new("Selected"));
-						ComboBox::from_id_source("property_selected")
-							.width(RIGHT)
-							.selected_text(&self.0.tree.context.property.1)
-							.show_ui(ui, |ui| {
-								let mut changed = false;
-								for prop in &self.0.custom_state.project.properties {
-									changed |= ui
-										.selectable_value(&mut self.0.tree.context.property.0, prop.0.clone(), &prop.1)
-										.changed();
-								}
-								if changed {
-									for prop in &self.0.custom_state.project.properties {
-										if prop.0 == self.tree.context.property.0 {
-											self.0.tree.context.property = prop.clone();
-										}
-									}
-									self.0
-										.tree
-										.scene
-										.loaded_manager
-										.change_property(&self.0.tree.context.property.0);
-									self.0
-										.tree
-										.scene
-										.segments
-										.change_property(&self.0.tree.context.property.0);
-									self.0.tree.context.update_lookup(&self.0.state);
-									if let Some(seg) = &mut self.0.tree.scene.segment {
-										seg.change_property(&self.0.state, &mut self.0.tree.scene.segments);
+			if ui
+				.add_sized(
+					[ui.available_width(), HEIGHT],
+					SelectableLabel::new(game.property_options, "Property"),
+				)
+				.clicked()
+			{
+				game.property_options = game.property_options.not();
+			};
+			if game.property_options {
+				ui.horizontal(|ui| {
+					ui.add_sized([LEFT, HEIGHT], Label::new("Selected"));
+					ComboBox::from_id_source("property_selected")
+						.width(RIGHT)
+						.selected_text(&game.tree.context.property.1)
+						.show_ui(ui, |ui| {
+							let mut changed = false;
+							for prop in &game.custom_state.project.properties {
+								changed |= ui
+									.selectable_value(&mut game.tree.context.property.0, prop.0.clone(), &prop.1)
+									.changed();
+							}
+							if changed {
+								for prop in &game.custom_state.project.properties {
+									if prop.0 == game.tree.context.property.0 {
+										game.tree.context.property = prop.clone();
 									}
 								}
-							});
-					});
+								game.tree
+									.scene
+									.loaded_manager
+									.change_property(&game.tree.context.property.0);
+								game.tree
+									.scene
+									.segments
+									.change_property(&game.tree.context.property.0);
+								game.tree.context.update_lookup(&game.state);
+								if let Some(seg) = &mut game.tree.scene.segment {
+									seg.change_property(&game.state, &mut game.tree.scene.segments);
+								}
+							}
+						});
+				});
+			}
+			ui.separator();
+
+			let mut seg = game.tree.scene.segment.is_some();
+			ui.with_layout(full, |ui| {
+				ui.set_enabled(seg);
+				if ui.toggle_value(&mut seg, "Segment").changed() && seg.not() {
+					game.tree.scene.segment = None;
 				}
-				ui.separator();
+			});
+			if let Some(seg) = &mut game.tree.scene.segment {
+				ui.horizontal(|ui| {
+					ui.add_sized([LEFT, HEIGHT], Label::new("ID"));
+					ui.add_sized([RIGHT, HEIGHT], Label::new(format!("{}", seg.index())));
+				});
 
-				let mut seg = self.0.tree.scene.segment.is_some();
-				ui.with_layout(full, |ui| {
-					ui.set_enabled(seg);
-					if ui.toggle_value(&mut seg, "Segment").changed() && seg.not() {
-						self.0.tree.scene.segment = None;
+				ui.horizontal(|ui| {
+					ui.add_sized([LEFT, HEIGHT], Label::new("Display"));
+					if ui
+						.add_sized(
+							[ui.available_width() / 3.0, HEIGHT],
+							SelectableLabel::new(seg.render == MeshRender::Points, "Points"),
+						)
+						.clicked()
+					{
+						seg.render = MeshRender::Points;
+					}
+					ui.set_enabled(matches!(
+						seg.mesh,
+						segment::MeshState::Done(..) | segment::MeshState::Progress(..)
+					));
+					if ui
+						.add_sized(
+							[ui.available_width() / 2.0, HEIGHT],
+							SelectableLabel::new(seg.render == MeshRender::Mesh, "Mesh"),
+						)
+						.clicked()
+					{
+						seg.render = MeshRender::Mesh;
+					}
+					if ui
+						.add_sized(
+							[ui.available_width() / 1.0, HEIGHT],
+							SelectableLabel::new(seg.render == MeshRender::MeshLines, "Lines"),
+						)
+						.clicked()
+					{
+						seg.render = MeshRender::MeshLines;
 					}
 				});
-				if let Some(seg) = &mut self.0.tree.scene.segment {
-					ui.horizontal(|ui| {
-						ui.add_sized([LEFT, HEIGHT], Label::new("ID"));
-						ui.add_sized([RIGHT, HEIGHT], Label::new(format!("{}", seg.index())));
-					});
 
+				ui.group(|ui| {
 					ui.horizontal(|ui| {
-						ui.add_sized([LEFT, HEIGHT], Label::new("Display"));
+						ui.add_sized([LEFT, HEIGHT], Label::new("Triangualation"));
 						if ui
-							.add_sized(
-								[ui.available_width() / 3.0, HEIGHT],
-								SelectableLabel::new(seg.render == MeshRender::Points, "Points"),
-							)
+							.add_sized([ui.available_width(), HEIGHT], Button::new("Start"))
 							.clicked()
 						{
-							seg.render = MeshRender::Points;
-						}
-						ui.set_enabled(matches!(
-							seg.mesh,
-							segment::MeshState::Done(..) | segment::MeshState::Progress(..)
-						));
-						if ui
-							.add_sized(
-								[ui.available_width() / 2.0, HEIGHT],
-								SelectableLabel::new(seg.render == MeshRender::Mesh, "Mesh"),
-							)
-							.clicked()
-						{
-							seg.render = MeshRender::Mesh;
-						}
-						if ui
-							.add_sized(
-								[ui.available_width() / 1.0, HEIGHT],
-								SelectableLabel::new(seg.render == MeshRender::MeshLines, "Lines"),
-							)
-							.clicked()
-						{
-							seg.render = MeshRender::MeshLines;
-						}
-					});
-
-					ui.group(|ui| {
-						ui.horizontal(|ui| {
-							ui.add_sized([LEFT, HEIGHT], Label::new("Triangualation"));
-							if ui
-								.add_sized([ui.available_width(), HEIGHT], Button::new("Start"))
-								.clicked()
-							{
-								seg.triangulate(&self.0.state);
-								if seg.render == MeshRender::Points {
-									seg.render = MeshRender::Mesh;
-								}
-							};
-						});
-
-						ui.horizontal(|ui| {
-							ui.add_sized([LEFT, HEIGHT], Label::new("Alpha"));
-							ui.add_sized(
-								[ui.available_width(), HEIGHT],
-								DragValue::new(&mut seg.alpha)
-									.clamp_range(0.01..=10.0)
-									.speed(0.002),
-							);
-						});
-
-						ui.horizontal(|ui| {
-							ui.add_sized([LEFT, HEIGHT], Label::new("Subsample"));
-							ui.add_sized(
-								[ui.available_width(), HEIGHT],
-								DragValue::new(&mut seg.sub_sample_distance)
-									.clamp_range(0.01..=1.0)
-									.speed(0.002),
-							);
-						});
-					});
-
-					for (index, info) in self
-						.0
-						.custom_state
-						.project
-						.segment(seg.index())
-						.iter()
-						.enumerate()
-					{
-						ui.horizontal(|ui| {
-							ui.add_sized(
-								[LEFT, HEIGHT],
-								Label::new(&self.0.custom_state.project.segment_information[index]),
-							);
-							ui.add_sized([LEFT, HEIGHT], Label::new(format!("{}", info)));
-						});
-					}
-
-					ui.horizontal(|ui| {
-						ui.add_sized([LEFT, HEIGHT], Label::new("Points"));
-						if ui.add_sized([RIGHT, HEIGHT], Button::new("Save")).clicked() {
-							seg.save();
+							seg.triangulate(&game.state);
+							if seg.render == MeshRender::Points {
+								seg.render = MeshRender::Mesh;
+							}
 						};
 					});
-				}
-				ui.separator();
 
-				if ui
-					.add_sized(
-						[ui.available_width(), HEIGHT],
-						SelectableLabel::new(self.visual_options, "Visual"),
-					)
-					.clicked()
-				{
-					self.visual_options = self.visual_options.not();
-				}
-				if self.visual_options {
 					ui.horizontal(|ui| {
-						ui.add_sized([LEFT, HEIGHT], Label::new("Point Size"));
-						if ui
-							.add_sized(
-								[RIGHT, HEIGHT],
-								Slider::new(&mut self.tree.context.environment.scale, 0.0..=2.0),
-							)
-							.changed()
-						{
-							self.tree.context.environment = render::PointCloudEnvironment::new(
-								&self.state,
-								self.tree.context.environment.min,
-								self.tree.context.environment.max,
-								self.tree.context.environment.scale,
-							);
-							window.request_redraw();
-						}
+						ui.add_sized([LEFT, HEIGHT], Label::new("Alpha"));
+						ui.add_sized(
+							[ui.available_width(), HEIGHT],
+							DragValue::new(&mut seg.alpha)
+								.clamp_range(0.01..=10.0)
+								.speed(0.002),
+						);
 					});
 
 					ui.horizontal(|ui| {
-						ui.add_sized([LEFT, HEIGHT], Label::new("Min"));
-						let mut min = self.tree.context.environment.min as f32 / u32::MAX as f32;
-						if ui
-							.add_sized([RIGHT, HEIGHT], Slider::new(&mut min, 0.0..=1.0))
-							.changed()
-						{
-							self.tree.context.environment.min = (min * u32::MAX as f32) as u32;
-							self.tree.context.environment.max = self
-								.tree
-								.context
-								.environment
-								.max
-								.max(self.tree.context.environment.min);
-							self.tree.context.environment = render::PointCloudEnvironment::new(
-								&self.state,
-								self.tree.context.environment.min,
-								self.tree.context.environment.max,
-								self.tree.context.environment.scale,
-							);
-							window.request_redraw();
-						}
+						ui.add_sized([LEFT, HEIGHT], Label::new("Subsample"));
+						ui.add_sized(
+							[ui.available_width(), HEIGHT],
+							DragValue::new(&mut seg.sub_sample_distance)
+								.clamp_range(0.01..=1.0)
+								.speed(0.002),
+						);
 					});
-
-					ui.horizontal(|ui| {
-						ui.add_sized([LEFT, HEIGHT], Label::new("Max"));
-						let mut max = self.tree.context.environment.max as f32 / u32::MAX as f32;
-						if ui
-							.add_sized([RIGHT, HEIGHT], Slider::new(&mut max, 0.0..=1.0))
-							.changed()
-						{
-							self.tree.context.environment.max = (max * u32::MAX as f32) as u32;
-							self.tree.context.environment.min = self
-								.tree
-								.context
-								.environment
-								.min
-								.min(self.tree.context.environment.max);
-							self.tree.context.environment = render::PointCloudEnvironment::new(
-								&self.state,
-								self.tree.context.environment.min,
-								self.tree.context.environment.max,
-								self.tree.context.environment.scale,
-							);
-							window.request_redraw();
-						}
-					});
-
-					ui.horizontal(|ui| {
-						ui.add_sized([LEFT, HEIGHT], Label::new("Color Palette"));
-						ComboBox::from_id_source("color_palette")
-							.selected_text(format!("{:?}", self.0.tree.context.lookup_name))
-							.width(RIGHT)
-							.show_ui(ui, |ui| {
-								let mut changed = false;
-								changed |= ui
-									.selectable_value(
-										&mut self.0.tree.context.lookup_name,
-										LookupName::Warm,
-										"Warm",
-									)
-									.changed();
-								changed |= ui
-									.selectable_value(
-										&mut self.0.tree.context.lookup_name,
-										LookupName::Cold,
-										"Cold",
-									)
-									.changed();
-								changed |= ui
-									.selectable_value(
-										&mut self.0.tree.context.lookup_name,
-										LookupName::Turbo,
-										"Turbo",
-									)
-									.changed();
-								if changed {
-									self.0.tree.context.update_lookup(&self.0.state);
-								}
-							});
-					});
-
-					ui.horizontal(|ui| {
-						ui.add_sized([LEFT, HEIGHT], Label::new("Background"));
-						ui.style_mut().spacing.interact_size.x = ui.available_width();
-						if ui
-							.color_edit_button_rgb(self.tree.context.background.data_mut())
-							.changed()
-						{
-							window.request_redraw();
-						}
-					});
-
-					ui.horizontal(|ui| {
-						ui.add_sized([LEFT, HEIGHT], Label::new("Screenshot"));
-						if ui
-							.add_sized(
-								[RIGHT, HEIGHT],
-								Button::new("Save").min_size(ui.available_size()),
-							)
-							.clicked()
-						{
-							let Some(path) = rfd::FileDialog::new()
-								.add_filter("PNG", &["png"])
-								.save_file()
-							else {
-								return;
-							};
-							window.screen_shot(self.0.state.deref(), &mut self.0.tree, path);
-							window.request_redraw()
-						}
-					});
-
-					ui.horizontal(|ui| {
-						ui.add_sized([LEFT, HEIGHT], Label::new("Debug"));
-						if ui
-							.add_sized(
-								[ui.available_width(), HEIGHT],
-								SelectableLabel::new(self.0.tree.context.voxels_active, "Voxels"),
-							)
-							.clicked()
-						{
-							self.tree.context.voxels_active = self.tree.context.voxels_active.not();
-						}
-					});
-				}
-				ui.separator();
-
-				ui.with_layout(full, |ui| {
-					ui.toggle_value(&mut self.tree.context.eye_dome_active, "Eye Dome")
 				});
-				if self.tree.eye_dome_active {
-					ui.horizontal(|ui| {
-						ui.add_sized([LEFT, HEIGHT], Label::new("Strength"));
-						if ui
-							.add_sized(
-								[RIGHT, HEIGHT],
-								Slider::new(&mut self.tree.context.eye_dome.strength, 0.0..=1.0),
-							)
-							.changed()
-						{
-							self.0.tree.context.eye_dome.update_settings(&self.0.state);
-						}
-					});
 
-					ui.horizontal(|ui| {
-						ui.add_sized([LEFT, HEIGHT], Label::new("Color"));
-						ui.style_mut().spacing.interact_size.x = ui.available_size().x;
-						if ui
-							.color_edit_button_rgb(self.tree.context.eye_dome.color.data_mut())
-							.changed()
-						{
-							self.0.tree.context.eye_dome.update_settings(&self.0.state);
-						}
-					});
-				};
-				ui.separator();
-
-				if ui
-					.add_sized(
-						[ui.available_width(), HEIGHT],
-						SelectableLabel::new(self.level_of_detail_options, "Level of Detail"),
-					)
-					.clicked()
+				for (index, info) in game
+					.custom_state
+					.project
+					.segment(seg.index())
+					.iter()
+					.enumerate()
 				{
-					self.level_of_detail_options = self.level_of_detail_options.not();
-				}
-				if self.level_of_detail_options {
-					ui.horizontal(|ui| {
-						ui.add_sized([LEFT, HEIGHT], Label::new("Mode"));
-						ComboBox::from_id_source("level_of_detail_mode")
-							.width(RIGHT)
-							.selected_text(match self.tree.camera.lod {
-								lod::Mode::Auto { .. } => "Automatic",
-								lod::Mode::Normal { .. } => "Distance",
-								lod::Mode::Level { .. } => "Level",
-							})
-							.show_ui(ui, |ui| {
-								ui.selectable_value(
-									&mut self.tree.context.camera.lod,
-									lod::Mode::new_auto(),
-									"Automatic",
-								);
-								ui.selectable_value(
-									&mut self.tree.context.camera.lod,
-									lod::Mode::new_normal(),
-									"Distance",
-								);
-								ui.selectable_value(
-									&mut self.0.tree.context.camera.lod,
-									lod::Mode::new_level(self.0.custom_state.project.depth as usize),
-									"Level",
-								);
-							});
-					});
-
-					match &mut self.tree.context.camera.lod {
-						lod::Mode::Auto { threshold, target } => {
-							ui.horizontal(|ui| {
-								ui.add_sized([LEFT, HEIGHT], Label::new("Target FPS"));
-								ui.add_sized([RIGHT, HEIGHT], Slider::new(target, 10.0..=120.0));
-							});
-							ui.set_enabled(false);
-							ui.horizontal(|ui| {
-								ui.add_sized([LEFT, HEIGHT], Label::new("Precision"));
-								ui.add_sized([RIGHT, HEIGHT], Slider::new(threshold, 0.0..=10.0));
-							});
-						},
-						lod::Mode::Normal { threshold } => {
-							ui.horizontal(|ui| {
-								ui.add_sized([LEFT, HEIGHT], Label::new("Precision"));
-								ui.add_sized([RIGHT, HEIGHT], Slider::new(threshold, 0.0..=10.0));
-							});
-						},
-						lod::Mode::Level { target, max } => {
-							ui.horizontal(|ui| {
-								ui.add_sized([LEFT, HEIGHT], Label::new("Level"));
-								ui.add_sized([RIGHT, HEIGHT], Slider::new(target, 0..=*max));
-							});
-						},
-					};
-				}
-				ui.separator();
-
-				if ui
-					.add_sized(
-						[ui.available_width(), HEIGHT],
-						SelectableLabel::new(self.camera_options, "Camera"),
-					)
-					.clicked()
-				{
-					self.camera_options = self.camera_options.not();
-				};
-				if self.camera_options {
-					ui.horizontal(|ui| {
-						ui.add_sized([LEFT, HEIGHT], Label::new("Controller"));
-						ComboBox::from_id_source("camera_controller")
-							.width(RIGHT)
-							.selected_text(match self.tree.camera.controller {
-								camera::Controller::Orbital { .. } => "Orbital",
-								camera::Controller::FirstPerson { .. } => "First Person",
-							})
-							.show_ui(ui, |ui| {
-								let c = self.tree.camera.orbital();
-								ui.selectable_value(&mut self.tree.context.camera.controller, c, "Orbital");
-								let c = self.tree.camera.first_person();
-								ui.selectable_value(&mut self.tree.context.camera.controller, c, "First Person");
-							});
-					});
-
 					ui.horizontal(|ui| {
 						ui.add_sized(
 							[LEFT, HEIGHT],
-							Label::new(match self.tree.camera.controller {
-								camera::Controller::Orbital { .. } => "Distance",
-								camera::Controller::FirstPerson { .. } => "Speed",
-							}),
+							Label::new(&game.custom_state.project.segment_information[index]),
 						);
-						match &mut self.tree.context.camera.controller {
-							camera::Controller::Orbital { offset } => {
-								let old = *offset;
-								ui.add_sized([RIGHT, HEIGHT], DragValue::new(offset));
-								if *offset < 0.1 {
-									*offset = 0.1;
-								}
-								let diff = *offset - old;
-								if diff.abs() > 0.001 {
-									self.0
-										.tree
-										.context
-										.camera
-										.move_in_view_direction(diff, &self.0.state);
-								}
-							},
-							camera::Controller::FirstPerson { sensitivity } => {
-								ui.add_sized([RIGHT, HEIGHT], DragValue::new(sensitivity));
-								if *sensitivity < 0.01 {
-									*sensitivity = 0.01;
-								}
-							},
-						};
-					});
-
-					ui.horizontal_top(|ui| {
-						ui.add_sized([LEFT, HEIGHT], Label::new("Position"));
-						if ui
-							.add_sized([ui.available_width() / 2.0, HEIGHT], Button::new("Save"))
-							.clicked()
-						{
-							self.tree.camera.save();
-						}
-						if ui
-							.add_sized([ui.available_width(), HEIGHT], Button::new("Load"))
-							.clicked()
-						{
-							self.0.tree.context.camera.load(&self.0.state);
-							window.request_redraw();
-						}
+						ui.add_sized([LEFT, HEIGHT], Label::new(format!("{}", info)));
 					});
 				}
+
+				ui.horizontal(|ui| {
+					ui.add_sized([LEFT, HEIGHT], Label::new("Points"));
+					if ui.add_sized([RIGHT, HEIGHT], Button::new("Save")).clicked() {
+						seg.save();
+					};
+				});
+			}
+			ui.separator();
+
+			if ui
+				.add_sized(
+					[ui.available_width(), HEIGHT],
+					SelectableLabel::new(game.visual_options, "Visual"),
+				)
+				.clicked()
+			{
+				game.visual_options = game.visual_options.not();
+			}
+			if game.visual_options {
+				ui.horizontal(|ui| {
+					ui.add_sized([LEFT, HEIGHT], Label::new("Point Size"));
+					if ui
+						.add_sized(
+							[RIGHT, HEIGHT],
+							Slider::new(&mut game.tree.context.environment.scale, 0.0..=2.0),
+						)
+						.changed()
+					{
+						game.tree.context.environment = render::PointCloudEnvironment::new(
+							&game.state,
+							game.tree.context.environment.min,
+							game.tree.context.environment.max,
+							game.tree.context.environment.scale,
+						);
+						window.request_redraw();
+					}
+				});
+
+				ui.horizontal(|ui| {
+					ui.add_sized([LEFT, HEIGHT], Label::new("Min"));
+					let mut min = game.tree.context.environment.min as f32 / u32::MAX as f32;
+					if ui
+						.add_sized([RIGHT, HEIGHT], Slider::new(&mut min, 0.0..=1.0))
+						.changed()
+					{
+						game.tree.context.environment.min = (min * u32::MAX as f32) as u32;
+						game.tree.context.environment.max = game
+							.tree
+							.context
+							.environment
+							.max
+							.max(game.tree.context.environment.min);
+						game.tree.context.environment = render::PointCloudEnvironment::new(
+							&game.state,
+							game.tree.context.environment.min,
+							game.tree.context.environment.max,
+							game.tree.context.environment.scale,
+						);
+						window.request_redraw();
+					}
+				});
+
+				ui.horizontal(|ui| {
+					ui.add_sized([LEFT, HEIGHT], Label::new("Max"));
+					let mut max = game.tree.context.environment.max as f32 / u32::MAX as f32;
+					if ui
+						.add_sized([RIGHT, HEIGHT], Slider::new(&mut max, 0.0..=1.0))
+						.changed()
+					{
+						game.tree.context.environment.max = (max * u32::MAX as f32) as u32;
+						game.tree.context.environment.min = game
+							.tree
+							.context
+							.environment
+							.min
+							.min(game.tree.context.environment.max);
+						game.tree.context.environment = render::PointCloudEnvironment::new(
+							&game.state,
+							game.tree.context.environment.min,
+							game.tree.context.environment.max,
+							game.tree.context.environment.scale,
+						);
+						window.request_redraw();
+					}
+				});
+
+				ui.horizontal(|ui| {
+					ui.add_sized([LEFT, HEIGHT], Label::new("Color Palette"));
+					ComboBox::from_id_source("color_palette")
+						.selected_text(format!("{:?}", game.tree.context.lookup_name))
+						.width(RIGHT)
+						.show_ui(ui, |ui| {
+							let mut changed = false;
+							changed |= ui
+								.selectable_value(&mut game.tree.context.lookup_name, LookupName::Warm, "Warm")
+								.changed();
+							changed |= ui
+								.selectable_value(&mut game.tree.context.lookup_name, LookupName::Cold, "Cold")
+								.changed();
+							changed |= ui
+								.selectable_value(
+									&mut game.tree.context.lookup_name,
+									LookupName::Turbo,
+									"Turbo",
+								)
+								.changed();
+							if changed {
+								game.tree.context.update_lookup(&game.state);
+							}
+						});
+				});
+
+				ui.horizontal(|ui| {
+					ui.add_sized([LEFT, HEIGHT], Label::new("Background"));
+					ui.style_mut().spacing.interact_size.x = ui.available_width();
+					if ui
+						.color_edit_button_rgb(game.tree.context.background.data_mut())
+						.changed()
+					{
+						window.request_redraw();
+					}
+				});
+
+				ui.horizontal(|ui| {
+					ui.add_sized([LEFT, HEIGHT], Label::new("Screenshot"));
+					if ui
+						.add_sized(
+							[RIGHT, HEIGHT],
+							Button::new("Save").min_size(ui.available_size()),
+						)
+						.clicked()
+					{
+						let Some(path) = rfd::FileDialog::new()
+							.add_filter("PNG", &["png"])
+							.save_file()
+						else {
+							return;
+						};
+						window.screen_shot(game.state.deref(), &mut game.tree, path);
+						window.request_redraw()
+					}
+				});
+
+				ui.horizontal(|ui| {
+					ui.add_sized([LEFT, HEIGHT], Label::new("Debug"));
+					if ui
+						.add_sized(
+							[ui.available_width(), HEIGHT],
+							SelectableLabel::new(game.tree.context.voxels_active, "Voxels"),
+						)
+						.clicked()
+					{
+						game.tree.context.voxels_active = game.tree.context.voxels_active.not();
+					}
+				});
+			}
+			ui.separator();
+
+			ui.with_layout(full, |ui| {
+				ui.toggle_value(&mut game.tree.context.eye_dome_active, "Eye Dome")
 			});
-	}
+			if game.tree.eye_dome_active {
+				ui.horizontal(|ui| {
+					ui.add_sized([LEFT, HEIGHT], Label::new("Strength"));
+					if ui
+						.add_sized(
+							[RIGHT, HEIGHT],
+							Slider::new(&mut game.tree.context.eye_dome.strength, 0.0..=1.0),
+						)
+						.changed()
+					{
+						game.tree.context.eye_dome.update_settings(&game.state);
+					}
+				});
+
+				ui.horizontal(|ui| {
+					ui.add_sized([LEFT, HEIGHT], Label::new("Color"));
+					ui.style_mut().spacing.interact_size.x = ui.available_size().x;
+					if ui
+						.color_edit_button_rgb(game.tree.context.eye_dome.color.data_mut())
+						.changed()
+					{
+						game.tree.context.eye_dome.update_settings(&game.state);
+					}
+				});
+			};
+			ui.separator();
+
+			if ui
+				.add_sized(
+					[ui.available_width(), HEIGHT],
+					SelectableLabel::new(game.level_of_detail_options, "Level of Detail"),
+				)
+				.clicked()
+			{
+				game.level_of_detail_options = game.level_of_detail_options.not();
+			}
+			if game.level_of_detail_options {
+				ui.horizontal(|ui| {
+					ui.add_sized([LEFT, HEIGHT], Label::new("Mode"));
+					ComboBox::from_id_source("level_of_detail_mode")
+						.width(RIGHT)
+						.selected_text(match game.tree.camera.lod {
+							lod::Mode::Auto { .. } => "Automatic",
+							lod::Mode::Normal { .. } => "Distance",
+							lod::Mode::Level { .. } => "Level",
+						})
+						.show_ui(ui, |ui| {
+							ui.selectable_value(
+								&mut game.tree.context.camera.lod,
+								lod::Mode::new_auto(),
+								"Automatic",
+							);
+							ui.selectable_value(
+								&mut game.tree.context.camera.lod,
+								lod::Mode::new_normal(),
+								"Distance",
+							);
+							ui.selectable_value(
+								&mut game.tree.context.camera.lod,
+								lod::Mode::new_level(game.custom_state.project.depth as usize),
+								"Level",
+							);
+						});
+				});
+
+				match &mut game.tree.context.camera.lod {
+					lod::Mode::Auto { threshold, target } => {
+						ui.horizontal(|ui| {
+							ui.add_sized([LEFT, HEIGHT], Label::new("Target FPS"));
+							ui.add_sized([RIGHT, HEIGHT], Slider::new(target, 10.0..=120.0));
+						});
+						ui.set_enabled(false);
+						ui.horizontal(|ui| {
+							ui.add_sized([LEFT, HEIGHT], Label::new("Precision"));
+							ui.add_sized([RIGHT, HEIGHT], Slider::new(threshold, 0.0..=10.0));
+						});
+					},
+					lod::Mode::Normal { threshold } => {
+						ui.horizontal(|ui| {
+							ui.add_sized([LEFT, HEIGHT], Label::new("Precision"));
+							ui.add_sized([RIGHT, HEIGHT], Slider::new(threshold, 0.0..=10.0));
+						});
+					},
+					lod::Mode::Level { target, max } => {
+						ui.horizontal(|ui| {
+							ui.add_sized([LEFT, HEIGHT], Label::new("Level"));
+							ui.add_sized([RIGHT, HEIGHT], Slider::new(target, 0..=*max));
+						});
+					},
+				};
+			}
+			ui.separator();
+
+			if ui
+				.add_sized(
+					[ui.available_width(), HEIGHT],
+					SelectableLabel::new(game.camera_options, "Camera"),
+				)
+				.clicked()
+			{
+				game.camera_options = game.camera_options.not();
+			};
+			if game.camera_options {
+				ui.horizontal(|ui| {
+					ui.add_sized([LEFT, HEIGHT], Label::new("Controller"));
+					ComboBox::from_id_source("camera_controller")
+						.width(RIGHT)
+						.selected_text(match game.tree.camera.controller {
+							camera::Controller::Orbital { .. } => "Orbital",
+							camera::Controller::FirstPerson { .. } => "First Person",
+						})
+						.show_ui(ui, |ui| {
+							let c = game.tree.camera.orbital();
+							ui.selectable_value(&mut game.tree.context.camera.controller, c, "Orbital");
+							let c = game.tree.camera.first_person();
+							ui.selectable_value(&mut game.tree.context.camera.controller, c, "First Person");
+						});
+				});
+
+				ui.horizontal(|ui| {
+					ui.add_sized(
+						[LEFT, HEIGHT],
+						Label::new(match game.tree.camera.controller {
+							camera::Controller::Orbital { .. } => "Distance",
+							camera::Controller::FirstPerson { .. } => "Speed",
+						}),
+					);
+					match &mut game.tree.context.camera.controller {
+						camera::Controller::Orbital { offset } => {
+							let old = *offset;
+							ui.add_sized([RIGHT, HEIGHT], DragValue::new(offset));
+							if *offset < 0.1 {
+								*offset = 0.1;
+							}
+							let diff = *offset - old;
+							if diff.abs() > 0.001 {
+								game.tree
+									.context
+									.camera
+									.move_in_view_direction(diff, &game.state);
+							}
+						},
+						camera::Controller::FirstPerson { sensitivity } => {
+							ui.add_sized([RIGHT, HEIGHT], DragValue::new(sensitivity));
+							if *sensitivity < 0.01 {
+								*sensitivity = 0.01;
+							}
+						},
+					};
+				});
+
+				ui.horizontal_top(|ui| {
+					ui.add_sized([LEFT, HEIGHT], Label::new("Position"));
+					if ui
+						.add_sized([ui.available_width() / 2.0, HEIGHT], Button::new("Save"))
+						.clicked()
+					{
+						game.tree.camera.save();
+					}
+					if ui
+						.add_sized([ui.available_width(), HEIGHT], Button::new("Load"))
+						.clicked()
+					{
+						game.tree.context.camera.load(&game.state);
+						window.request_redraw();
+					}
+				});
+			}
+		});
 }
 
 impl render::Entry for World {
@@ -736,7 +741,7 @@ impl render::Entry for World {
 		let raw_input = self.window.egui_winit.take_egui_input(&self.window.window);
 		let full_output = self
 			.egui
-			.run(raw_input, |ctx| self.game.ui(ctx, &mut self.window));
+			.run(raw_input, |ctx| ui(ctx, &mut self.window, &mut self.game.0));
 
 		self.window.render(
 			self.game.0.state.deref(),
