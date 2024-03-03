@@ -318,14 +318,11 @@ impl Tree {
 	pub fn new(
 		state: Arc<State>,
 		project: &Project,
-		path: PathBuf,
+		path: Option<PathBuf>,
 		property: (String, String, u32),
 		window: &Window,
 	) -> Self {
 		let lookup_name = LookupName::Warm;
-
-		let mut segments = path.clone();
-		segments.push("segments");
 
 		Self {
 			background: DEFAULT_BACKGROUND,
@@ -338,7 +335,14 @@ impl Tree {
 			eye_dome: render::EyeDome::new(&state, window.config(), window.depth_texture(), 0.7),
 			eye_dome_active: true,
 			voxels_active: false,
-			segments: Reader::new(segments, &property.0),
+			segments: path
+				.clone()
+				.map(|path| {
+					let mut segments = path.clone();
+					segments.push("segments");
+					Reader::new(segments, &property.0)
+				})
+				.unwrap_or(Reader::fake()),
 
 			loaded_manager: LoadedManager::new(state, path, &property.0),
 			property,

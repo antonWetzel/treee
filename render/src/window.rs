@@ -185,19 +185,11 @@ impl Window {
 			&[(egui::TextureId, egui::epaint::ImageDelta)],
 			&[egui::TextureId],
 		),
-	) -> f32 {
+	) {
 		let render_state = state.get();
-		let set = render_state
-			.device
-			.create_query_set(&wgpu::QuerySetDescriptor {
-				label: None,
-				ty: wgpu::QueryType::Timestamp,
-				count: 2,
-			});
 		let mut encoder = render_state
 			.device
 			.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("Render Encoder") });
-		encoder.write_timestamp(&set, 0);
 		let mut render_pass = RenderPass::new(encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
 			label: Some("Render Pass"),
 			color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -269,38 +261,7 @@ impl Window {
 
 		drop(render_pass);
 
-		let buffer = render_state.device.create_buffer(&wgpu::BufferDescriptor {
-			label: None,
-			mapped_at_creation: false,
-			size: 8 * 2,
-			usage: wgpu::BufferUsages::QUERY_RESOLVE
-				| wgpu::BufferUsages::STORAGE
-				| wgpu::BufferUsages::COPY_SRC
-				| wgpu::BufferUsages::COPY_DST,
-		});
-
-		encoder.write_timestamp(&set, 1);
-		encoder.resolve_query_set(&set, 0..2, &buffer, 0);
-
-		let map_buffer = render_state.device.create_buffer(&wgpu::BufferDescriptor {
-			label: None,
-			mapped_at_creation: false,
-			size: 8 * 2,
-			usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-		});
-		encoder.copy_buffer_to_buffer(&buffer, 0, &map_buffer, 0, 8 * 2);
-
 		render_state.queue.submit(Some(encoder.finish()));
-		{
-			map_buffer.slice(..).map_async(wgpu::MapMode::Read, |_| {});
-
-			render_state.device.poll(wgpu::Maintain::Wait);
-
-			let data = map_buffer.slice(..).get_mapped_range();
-			let data = bytemuck::cast_slice::<u8, u64>(&data);
-			let diff = data[1] - data[0];
-			diff as f32 * 1e-9 * render_state.queue.get_timestamp_period()
-		}
 	}
 
 	pub fn render<S: Has<State>>(
@@ -309,15 +270,17 @@ impl Window {
 		renderable: &mut impl RenderEntry<S>,
 		ui: egui::FullOutput,
 		egui: &egui::Context,
-	) -> Option<f32> {
-		let output = self.surface.get_current_texture().ok()?;
+	) {
+		let Some(output) = self.surface.get_current_texture().ok() else {
+			return;
+		};
 		let view = output.texture.create_view(&Default::default());
 
 		self.egui_winit
 			.handle_platform_output(&self.window, ui.platform_output);
 		let paint_jobs = egui.tessellate(ui.shapes, ui.pixels_per_point);
 
-		let res = self.render_to(
+		self.render_to(
 			state,
 			renderable,
 			&view,
@@ -326,7 +289,6 @@ impl Window {
 			(&paint_jobs, &ui.textures_delta.set, &ui.textures_delta.free),
 		);
 		output.present();
-		Some(res)
 	}
 }
 

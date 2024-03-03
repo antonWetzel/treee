@@ -12,3 +12,4 @@ math.workspace = true
 bincode.workspace = true
 serde.workspace = true
 bytemuck.workspace = true
+tempfile.workspace = true

@@ -21,13 +21,7 @@ pub enum Error {
 pub type Runner = render::Runner;
 
 pub fn run(runner: &mut Runner) -> Result<(), Error> {
-	let path = rfd::FileDialog::new()
-		.set_title("Select Project File")
-		.add_filter("Project File", &["epc"])
-		.pick_file()
-		.ok_or(Error::NoFile)?;
-
-	let mut game = game::World::new(path, runner).block_on()?;
+	let mut game = game::World::new(runner).block_on()?;
 	runner.run(&mut game)?;
 
 	Ok(())

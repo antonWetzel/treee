@@ -17,6 +17,14 @@ impl Reader {
 		Self { points, property, path }
 	}
 
+	pub fn fake() -> Self {
+		Self {
+			points: DataFile::fake(),
+			property: DataFile::fake(),
+			path: PathBuf::new(),
+		}
+	}
+
 	pub fn change_property(&mut self, property: &str) {
 		self.path.set_file_name(format!("{}.data", property));
 		self.property = DataFile::open(&self.path);

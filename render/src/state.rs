@@ -47,7 +47,7 @@ impl State {
 		let (device, queue) = adapter
 			.request_device(
 				&wgpu::DeviceDescriptor {
-					required_features: wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::POLYGON_MODE_LINE,
+					required_features: wgpu::Features::POLYGON_MODE_LINE,
 					required_limits: wgpu::Limits {
 						// max_buffer_size: u64::MAX,
 						..Default::default()
@@ -153,11 +153,14 @@ impl Runner {
 						winit::event::WindowEvent::ModifiersChanged(modifiers) => {
 							game.modifiers_changed(modifiers.state())
 						},
-						winit::event::WindowEvent::RedrawRequested => game.render(window_id),
+						winit::event::WindowEvent::RedrawRequested => {
+							game.time();
+							game.render(window_id);
+							game.request_redraw();
+						},
 						_ => {},
 					}
 				},
-				winit::event::Event::AboutToWait => game.time(),
 				_ => {},
 			}
 

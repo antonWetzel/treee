@@ -11,6 +11,8 @@ pub trait Entry {
 
 	fn resize_window(&mut self, window_id: WindowId, size: Vector<2, u32>);
 
+	fn request_redraw(&mut self);
+
 	fn key_changed(&mut self, window_id: WindowId, key: input::KeyCode, key_state: input::State);
 
 	fn mouse_button_changed(&mut self, window_id: WindowId, button: input::MouseButton, button_state: input::State);

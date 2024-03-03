@@ -6,7 +6,7 @@ use crate::camera;
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq)]
 pub enum Mode {
 	Normal { threshold: f32 },
-	Auto { threshold: f32 },
+	Auto { threshold: f32, target: f32 },
 	Level { target: usize, max: usize },
 }
 
@@ -17,11 +17,11 @@ pub enum Checker {
 }
 
 impl Mode {
-	pub fn new_auto(_max_level: usize) -> Self {
-		Self::Auto { threshold: 1.0 }
+	pub fn new_auto() -> Self {
+		Self::Auto { threshold: 1.0, target: 60.0 }
 	}
 
-	pub fn new_normal(_max_level: usize) -> Self {
+	pub fn new_normal() -> Self {
 		Self::Normal { threshold: 1.0 }
 	}
 

@@ -46,6 +46,22 @@ impl Project {
 		bincode::deserialize_from(file).unwrap()
 	}
 
+	pub fn empty() -> Self {
+		Self {
+			name: "No Project loaded".into(),
+			depth: 0,
+			root: IndexNode {
+				data: IndexData::Leaf { segments: HashSet::new() },
+				position: Vector::default(),
+				size: 0.0,
+				index: 0,
+			},
+			properties: vec![(String::from("None"), String::from("None"), 1)],
+			segment_information: Vec::new(),
+			segment_values: Vec::new(),
+		}
+	}
+
 	pub fn save(&self, path: impl AsRef<Path>) {
 		let file = std::fs::OpenOptions::new()
 			.write(true)
@@ -117,6 +133,12 @@ where
 				.unwrap(),
 			phantom: std::marker::PhantomData,
 		}
+	}
+
+	pub fn fake() -> Self {
+		let mut file = tempfile::tempfile().unwrap();
+		file.write_all(bytemuck::cast_slice(&[0u64, 0u64])).unwrap();
+		Self { file, phantom: std::marker::PhantomData }
 	}
 
 	pub fn save(&mut self, idx: usize, data: &[T]) {

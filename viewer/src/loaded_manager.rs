@@ -37,7 +37,7 @@ enum WorkerUpdate {
 }
 
 impl LoadedManager {
-	pub fn new(state: Arc<State>, path: PathBuf, property: &str) -> Self {
+	pub fn new(state: Arc<State>, path: Option<PathBuf>, property: &str) -> Self {
 		let (index_tx, index_rx) = crossbeam::channel::bounded(512);
 		let (pc_tx, pc_rx) = crossbeam::channel::bounded(512);
 
@@ -49,7 +49,10 @@ impl LoadedManager {
 			let pc_tx = pc_tx.clone();
 			let mut property_index = 0;
 
-			let mut reader = Reader::new(path.clone(), property);
+			let mut reader = path
+				.clone()
+				.map(|path| Reader::new(path, property))
+				.unwrap_or(Reader::fake());
 			let state = state.clone();
 
 			std::thread::spawn(move || loop {
@@ -152,10 +155,6 @@ impl LoadedManager {
 					.unwrap_or(&self.property_default),
 			),
 		}
-	}
-
-	pub fn loaded(&self) -> usize {
-		self.available.len()
 	}
 
 	pub fn update(&mut self) -> bool {

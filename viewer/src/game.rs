@@ -13,7 +13,7 @@ use crate::{
 	segment::{self, MeshRender, Segment},
 	state::State,
 	tree::{LookupName, Tree},
-	Error, Runner,
+	Error,
 };
 
 pub struct World {
@@ -39,7 +39,7 @@ impl std::ops::DerefMut for World {
 pub struct Game {
 	tree: Tree,
 	project: Project,
-	path: PathBuf,
+	path: Option<PathBuf>,
 	project_time: std::time::SystemTime,
 
 	pub state: Arc<State>,
@@ -55,13 +55,11 @@ pub struct Game {
 	level_of_detail_options: bool,
 	camera_options: bool,
 	quit: bool,
-
-	render_time: f32,
 }
 
 impl World {
-	pub async fn new(path: PathBuf, runner: &render::Runner) -> Result<Self, Error> {
-		let project = Project::from_file(&path);
+	pub async fn new(runner: &render::Runner) -> Result<Self, Error> {
+		let project = Project::empty();
 		let egui = render::egui::Context::default();
 
 		let (state, window) = render::State::new(&project.name, &runner, &egui).await?;
@@ -76,7 +74,7 @@ impl World {
 		let tree = Tree::new(
 			state.clone(),
 			&project,
-			path.parent().unwrap().to_owned(),
+			None,
 			project.properties[0].clone(),
 			&window,
 		);
@@ -89,8 +87,8 @@ impl World {
 
 				tree,
 				project,
-				project_time: std::fs::metadata(&path).unwrap().modified().unwrap(),
-				path,
+				project_time: std::time::SystemTime::now(),
+				path: None,
 
 				state,
 				mouse: input::Mouse::new(),
@@ -103,14 +101,8 @@ impl World {
 				camera_options: false,
 				visual_options: false,
 				quit: false,
-
-				render_time: 0.01,
 			},
 		})
-	}
-
-	fn request_redraw(&mut self) {
-		self.window.request_redraw();
 	}
 }
 
@@ -122,7 +114,7 @@ impl Game {
 		else {
 			return;
 		};
-		self.path = path;
+		self.path = Some(path);
 		self.reload(self.current_poject_time(), window);
 	}
 
@@ -138,19 +130,24 @@ impl Game {
 	}
 
 	fn current_poject_time(&self) -> std::time::SystemTime {
-		self.path
-			.metadata()
+		let Some(path) = &self.path else {
+			return self.project_time;
+		};
+		path.metadata()
 			.map(|meta| meta.modified().unwrap_or(self.project_time))
 			.unwrap_or(self.project_time)
 	}
 
 	fn reload(&mut self, project_time: std::time::SystemTime, window: &render::Window) {
 		self.project_time = project_time;
-		self.project = Project::from_file(&self.path);
+		let Some(path) = &self.path else {
+			return;
+		};
+		self.project = Project::from_file(path);
 		self.tree = Tree::new(
 			self.state.clone(),
 			&self.project,
-			self.path.parent().unwrap().to_owned(),
+			Some(path.parent().unwrap().to_owned()),
 			self.project.properties[0].clone(),
 			window,
 		);
@@ -170,7 +167,10 @@ impl Game {
 			.tree
 			.camera
 			.ray_direction(self.mouse.position(), window.get_size());
-		let path = self.path.parent().unwrap().to_path_buf();
+		let Some(path) = &self.path else {
+			return;
+		};
+		let path = path.parent().unwrap().to_path_buf();
 		let mut reader = Reader::new(path, "segment");
 		if let Some(segment) = self.tree.raycast(start, direction, &mut reader) {
 			self.tree.segment = Some(Segment::new(&self.state, &mut self.tree.segments, segment));
@@ -525,19 +525,19 @@ impl Game {
 							.width(RIGHT)
 							.selected_text(match self.tree.camera.lod {
 								lod::Mode::Auto { .. } => "Automatic",
-								lod::Mode::Normal { .. } => "Normal",
+								lod::Mode::Normal { .. } => "Distance",
 								lod::Mode::Level { .. } => "Level",
 							})
 							.show_ui(ui, |ui| {
 								ui.selectable_value(
 									&mut self.tree.camera.lod,
-									lod::Mode::new_auto(self.project.depth as usize),
+									lod::Mode::new_auto(),
 									"Automatic",
 								);
 								ui.selectable_value(
 									&mut self.tree.camera.lod,
-									lod::Mode::new_normal(self.project.depth as usize),
-									"Normal",
+									lod::Mode::new_normal(),
+									"Distance",
 								);
 								ui.selectable_value(
 									&mut self.tree.camera.lod,
@@ -547,22 +547,31 @@ impl Game {
 							});
 					});
 
-					ui.horizontal(|ui| {
-						ui.add_sized([LEFT, HEIGHT], Label::new("Precision"));
-
-						match &mut self.tree.camera.lod {
-							lod::Mode::Auto { threshold } => {
-								ui.set_enabled(false);
+					match &mut self.tree.camera.lod {
+						lod::Mode::Auto { threshold, target } => {
+							ui.horizontal(|ui| {
+								ui.add_sized([LEFT, HEIGHT], Label::new("Target FPS"));
+								ui.add_sized([RIGHT, HEIGHT], Slider::new(target, 10.0..=120.0));
+							});
+							ui.set_enabled(false);
+							ui.horizontal(|ui| {
+								ui.add_sized([LEFT, HEIGHT], Label::new("Precision"));
 								ui.add_sized([RIGHT, HEIGHT], Slider::new(threshold, 0.0..=10.0));
-							},
-							lod::Mode::Normal { threshold } => {
-								_ = ui.add_sized([RIGHT, HEIGHT], Slider::new(threshold, 0.0..=10.0))
-							},
-							lod::Mode::Level { target, max } => {
-								_ = ui.add_sized([RIGHT, HEIGHT], Slider::new(target, 0..=*max))
-							},
-						};
-					});
+							});
+						},
+						lod::Mode::Normal { threshold } => {
+							ui.horizontal(|ui| {
+								ui.add_sized([LEFT, HEIGHT], Label::new("Precision"));
+								ui.add_sized([RIGHT, HEIGHT], Slider::new(threshold, 0.0..=10.0));
+							});
+						},
+						lod::Mode::Level { target, max } => {
+							ui.horizontal(|ui| {
+								ui.add_sized([LEFT, HEIGHT], Label::new("Level"));
+								ui.add_sized([RIGHT, HEIGHT], Slider::new(target, 0..=*max));
+							});
+						},
+					};
 				}
 				ui.separator();
 
@@ -645,9 +654,6 @@ impl Game {
 impl render::Entry for World {
 	fn raw_event(&mut self, event: &render::Event) -> bool {
 		let response = self.window.window_event(event);
-		if response.repaint {
-			self.request_redraw();
-		}
 		response.consumed
 	}
 
@@ -664,15 +670,12 @@ impl render::Entry for World {
 			.egui
 			.run(raw_input, |ctx| self.game.ui(ctx, &mut self.window));
 
-		if let Some(time) = self.window.render(
+		self.window.render(
 			self.game.state.deref(),
 			&mut self.game.tree,
 			full_output,
 			&self.egui,
-		) {
-			log::info!("Render Time: {:.8}s", time);
-			self.render_time = time;
-		}
+		);
 	}
 
 	fn resize_window(&mut self, _window_id: render::WindowId, size: Vector<2, u32>) {
@@ -691,11 +694,14 @@ impl render::Entry for World {
 			&self.tree.camera.cam,
 			&self.tree.camera.transform,
 		);
-		self.request_redraw();
 		self.game
 			.tree
 			.eye_dome
 			.update_depth(&self.game.state, self.window.depth_texture());
+	}
+
+	fn request_redraw(&mut self) {
+		self.window.request_redraw();
 	}
 
 	fn close_window(&mut self, _window_id: render::WindowId) {
@@ -721,15 +727,10 @@ impl render::Entry for World {
 		if l > 0.0 {
 			direction *= 10.0 * delta.as_secs_f32() / l;
 			self.game.tree.camera.movement(direction, &self.game.state);
-			self.request_redraw();
 		}
 
-		if self.tree.loaded_manager.update()
-			|| (self.tree.loaded_manager.loaded() > 0
-				&& self.tree.segment.is_none()
-				&& self.game.tree.camera.time(self.render_time))
-		{
-			self.window.request_redraw();
+		if self.tree.loaded_manager.update().not() && self.tree.segment.is_none() {
+			self.game.tree.camera.time(delta.as_secs_f32())
 		}
 
 		if let Some(segment) = &mut self.game.tree.segment {
@@ -751,7 +752,6 @@ impl render::Entry for World {
 
 	fn mouse_wheel(&mut self, delta: f32) {
 		self.game.tree.camera.scroll(delta, &self.game.state);
-		self.request_redraw();
 	}
 
 	fn mouse_button_changed(
@@ -781,7 +781,6 @@ impl render::Entry for World {
 		let delta = self.mouse.delta(position);
 		if self.mouse.pressed(input::MouseButton::Left) {
 			self.game.tree.camera.rotate(delta, &self.game.state);
-			self.request_redraw();
 		}
 	}
 

@@ -46,7 +46,7 @@ impl Camera {
 			transform,
 			cam: camera,
 			controller,
-			lod: lod::Mode::Auto { threshold: 1.0 },
+			lod: lod::Mode::new_auto(),
 		}
 	}
 
@@ -77,22 +77,17 @@ impl Camera {
 		self.transform.position
 	}
 
-	pub fn time(&mut self, render_time: f32) -> bool {
+	pub fn time(&mut self, render_time: f32) {
+		let fps = 1.0 / render_time;
 		match &mut self.lod {
-			lod::Mode::Auto { threshold } => {
-				if render_time > 0.01 {
-					*threshold /= 1.1;
-					true
-				} else if render_time < 0.002 {
-					if *threshold <= 1000.0 {
-						*threshold *= 1.1
-					}
-					true
-				} else {
-					false
+			lod::Mode::Auto { threshold, target } => {
+				if fps < *target / 1.25 {
+					*threshold = (*threshold / 1.01).max(0.01);
+				} else if fps > *target * 1.25 {
+					*threshold = (*threshold * 1.01).min(10.0);
 				}
 			},
-			_ => false,
+			_ => {},
 		}
 	}
 

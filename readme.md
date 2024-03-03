@@ -14,7 +14,7 @@ Point cloud importer and viewer with focus on forest scans.
 		- > cargo install --path=treee --locked
 		- > treee
 	- or run directly by replacing `treee <...>` with
-		- > cargo run [--release] -- <...>
+		- > cargo run --package=treee [--release] -- <...>
 
 ### Interactive Shell
 
