@@ -6,12 +6,18 @@ use std::{
 
 use math::{Vector, X, Y};
 use project::Project;
-use window::{camera, lod, tree::LookupName, Game, State};
+use render::Window;
+use window::{
+	camera, lod,
+	tree::{LookupName, Tree},
+	Game, State,
+};
 
 use crate::{
+	loaded_manager::LoadedManager,
 	reader::Reader,
 	segment::{self, MeshRender, Segment},
-	tree::ProjectTree,
+	tree::{Node, ProjectScene, ProjectTree},
 	Error,
 };
 
@@ -73,7 +79,7 @@ impl World {
 		#[cfg(windows)]
 		window.set_taskbar_icon(include_bytes!("../assets/png/tree-fill-big.png"));
 
-		let tree = ProjectTree::new(
+		let tree = ProjectGame::new_tree(
 			state.clone(),
 			&project,
 			None,
@@ -98,6 +104,28 @@ impl World {
 }
 
 impl ProjectGame {
+	fn new_tree(
+		state: Arc<State>,
+		project: &Project,
+		path: Option<PathBuf>,
+		property: (String, String, u32),
+		window: &Window,
+	) -> ProjectTree {
+		let scene = ProjectScene {
+			root: Node::new(&project.root, &state),
+			segment: None,
+			segments: path
+				.clone()
+				.map(|path| {
+					let mut segments = path.clone();
+					segments.push("segments");
+					Reader::new(segments, &property.0)
+				})
+				.unwrap_or(Reader::fake()),
+			loaded_manager: LoadedManager::new(state.clone(), path, &property.0),
+		};
+		ProjectTree(Tree::new(state, property, window, scene))
+	}
 	fn change_project(&mut self, window: &render::Window) {
 		let Some(path) = rfd::FileDialog::new()
 			.add_filter("Project File", &["epc"])
@@ -135,7 +163,7 @@ impl ProjectGame {
 			return;
 		};
 		self.0.custom_state.project = Project::from_file(path);
-		self.tree = ProjectTree::new(
+		self.tree = Self::new_tree(
 			self.state.clone(),
 			&self.project,
 			Some(path.parent().unwrap().to_owned()),
@@ -165,7 +193,7 @@ impl ProjectGame {
 		};
 		let path = path.parent().unwrap().to_path_buf();
 		let mut reader = Reader::new(path, "segment");
-		if let Some(segment) = self.tree.raycast(start, direction, &mut reader) {
+		if let Some(segment) = self.tree.scene.raycast(start, direction, &mut reader) {
 			self.tree.scene.segment = Some(Segment::new(
 				&self.0.state,
 				&mut self.0.tree.scene.segments,
@@ -237,7 +265,7 @@ impl ProjectGame {
 										.scene
 										.segments
 										.change_property(&self.0.tree.0.context.property.0);
-									self.0.tree.update_lookup(&self.0.state);
+									self.0.tree.context.update_lookup(&self.0.state);
 									if let Some(seg) = &mut self.0.tree.0.scene.segment {
 										seg.change_property(&self.0.state, &mut self.0.tree.0.scene.segments);
 									}
@@ -462,7 +490,7 @@ impl ProjectGame {
 									)
 									.changed();
 								if changed {
-									self.0.tree.update_lookup(&self.0.state);
+									self.0.tree.context.update_lookup(&self.0.state);
 								}
 							});
 					});
@@ -700,7 +728,13 @@ impl render::Entry for World {
 			return;
 		}
 		if self.tree.scene.segment.is_none() {
-			self.tree.update();
+			let checker = lod::Checker::new(&self.tree.0.context.camera.lod);
+			let project_tree = &mut self.tree;
+			project_tree.0.scene.root.update(
+				checker,
+				&project_tree.0.context.camera,
+				&mut project_tree.0.scene.loaded_manager,
+			);
 		}
 
 		let raw_input = self.window.egui_winit.take_egui_input(&self.window.window);

@@ -23,6 +23,9 @@ impl LookupName {
 		}
 	}
 }
+pub trait Scene: Sized {
+	fn render<'a>(&'a self, state: &'a State, tree: &'a Tree<Self>, render_pass: &mut render::RenderPass<'a>);
+}
 pub struct Tree<T> {
 	pub context: TreeContext,
 	pub scene: T,
@@ -34,10 +37,6 @@ impl<T> std::ops::Deref for Tree<T> {
 	fn deref(&self) -> &Self::Target {
 		&self.context
 	}
-}
-
-pub trait Scene: Sized {
-	fn render<'a>(&'a self, state: &'a State, tree: &'a Tree<Self>, render_pass: &mut render::RenderPass<'a>);
 }
 
 impl<T: Scene> render::RenderEntry<State> for Tree<T> {
@@ -54,20 +53,6 @@ impl<T: Scene> render::RenderEntry<State> for Tree<T> {
 			render_pass.render(&self.context.eye_dome, ());
 		}
 	}
-}
-
-pub struct TreeContext {
-	pub camera: crate::camera::Camera,
-
-	pub lookup: render::Lookup,
-	pub environment: render::PointCloudEnvironment,
-	pub background: Vector<3, f32>,
-
-	pub lookup_name: LookupName,
-	pub eye_dome: render::EyeDome,
-	pub eye_dome_active: bool,
-	pub voxels_active: bool,
-	pub property: (String, String, u32),
 }
 
 impl<T> Tree<T> {
@@ -90,5 +75,25 @@ impl<T> Tree<T> {
 
 			scene,
 		}
+	}
+}
+
+pub struct TreeContext {
+	pub camera: crate::camera::Camera,
+
+	pub lookup: render::Lookup,
+	pub environment: render::PointCloudEnvironment,
+	pub background: Vector<3, f32>,
+
+	pub lookup_name: LookupName,
+	pub eye_dome: render::EyeDome,
+	pub eye_dome_active: bool,
+	pub voxels_active: bool,
+	pub property: (String, String, u32),
+}
+
+impl TreeContext {
+	pub fn update_lookup(&mut self, state: &State) {
+		self.lookup = render::Lookup::new_png(state, self.lookup_name.data(), self.property.2);
 	}
 }

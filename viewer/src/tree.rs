@@ -310,54 +310,19 @@ impl Node {
 	}
 }
 
-impl ProjectTree {
-	pub fn new(
-		state: Arc<State>,
-		project: &Project,
-		path: Option<PathBuf>,
-		property: (String, String, u32),
-		window: &Window,
-	) -> Self {
-		let scene = ProjectScene {
-			root: Node::new(&project.root, &state),
-			segment: None,
-			segments: path
-				.clone()
-				.map(|path| {
-					let mut segments = path.clone();
-					segments.push("segments");
-					Reader::new(segments, &property.0)
-				})
-				.unwrap_or(Reader::fake()),
-			loaded_manager: LoadedManager::new(state.clone(), path, &property.0),
-		};
-		Self(Tree::new(state, property, window, scene))
-	}
+// trait TreeExt {
+// 	pub fn new_project()
+// }
 
-	pub fn update_lookup(&mut self, state: &State) {
-		self.context.lookup = render::Lookup::new_png(
-			state,
-			self.context.lookup_name.data(),
-			self.context.property.2,
-		);
-	}
-
+impl ProjectScene {
 	pub fn raycast(
 		&mut self,
 		start: Vector<3, f32>,
 		direction: Vector<3, f32>,
 		reader: &mut Reader,
 	) -> Option<NonZeroU32> {
-		self.scene.root.raycast_distance(start, direction)?;
-		self.scene.root.raycast(start, direction, reader)
-	}
-
-	pub fn update(&mut self) {
-		self.0.scene.root.update(
-			lod::Checker::new(&self.0.context.camera.lod),
-			&self.0.context.camera,
-			&mut self.0.scene.loaded_manager,
-		);
+		self.root.raycast_distance(start, direction)?;
+		self.root.raycast(start, direction, reader)
 	}
 }
 
