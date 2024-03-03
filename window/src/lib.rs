@@ -4,4 +4,5 @@ pub mod lod;
 mod state;
 pub mod tree;
 
+pub use game::*;
 pub use state::*;

@@ -6,7 +6,7 @@ use std::{
 
 use math::{Vector, X, Y};
 use project::Project;
-use window::{camera, lod, tree::LookupName, State};
+use window::{camera, lod, tree::LookupName, Game, State};
 
 use crate::{
 	reader::Reader,
@@ -17,7 +17,7 @@ use crate::{
 
 pub struct World {
 	window: render::Window,
-	game: Game<ProjectCustomState>,
+	game: ProjectGame,
 	egui: render::egui::Context,
 }
 
@@ -35,47 +35,30 @@ impl std::ops::DerefMut for World {
 	}
 }
 
-pub trait CustomState {
-	type Tree;
-}
-
 pub struct ProjectCustomState {
 	project: Project,
 	path: Option<PathBuf>,
 	project_time: std::time::SystemTime,
 }
 
-impl CustomState for ProjectCustomState {
+impl window::CustomState for ProjectCustomState {
 	type Tree = crate::tree::ProjectTree;
 }
 
-pub struct Game<TCustomState: CustomState> {
-	tree: TCustomState::Tree,
-	custom_state: TCustomState,
-
-	pub state: Arc<State>,
-	mouse: input::Mouse,
-	mouse_start: Option<Vector<2, f32>>,
-
-	keyboard: input::Keyboard,
-	time: Time,
-	paused: bool,
-
-	property_options: bool,
-	visual_options: bool,
-	level_of_detail_options: bool,
-	camera_options: bool,
-	quit: bool,
-}
-
-impl<T: CustomState> Deref for Game<T> {
-	type Target = T;
+struct ProjectGame(Game<ProjectCustomState>);
+impl std::ops::Deref for ProjectGame {
+	type Target = Game<ProjectCustomState>;
 
 	fn deref(&self) -> &Self::Target {
-		&self.custom_state
+		&self.0
 	}
 }
 
+impl std::ops::DerefMut for ProjectGame {
+	fn deref_mut(&mut self) -> &mut Self::Target {
+		&mut self.0
+	}
+}
 impl World {
 	pub async fn new(runner: &render::Runner) -> Result<Self, Error> {
 		let project = Project::empty();
@@ -101,31 +84,20 @@ impl World {
 		Ok(Self {
 			window,
 			egui,
-			game: Game {
-				paused: false,
+			game: ProjectGame(Game::new(
 				tree,
-				custom_state: ProjectCustomState {
+				state,
+				ProjectCustomState {
 					project,
 					project_time: std::time::SystemTime::now(),
 					path: None,
 				},
-				state,
-				mouse: input::Mouse::new(),
-				mouse_start: None,
-				keyboard: input::Keyboard::new(),
-				time: Time::new(),
-
-				property_options: false,
-				level_of_detail_options: false,
-				camera_options: false,
-				visual_options: false,
-				quit: false,
-			},
+			)),
 		})
 	}
 }
 
-impl Game<ProjectCustomState> {
+impl ProjectGame {
 	fn change_project(&mut self, window: &render::Window) {
 		let Some(path) = rfd::FileDialog::new()
 			.add_filter("Project File", &["epc"])
@@ -158,11 +130,11 @@ impl Game<ProjectCustomState> {
 	}
 
 	fn reload(&mut self, project_time: std::time::SystemTime, window: &render::Window) {
-		self.custom_state.project_time = project_time;
-		let Some(path) = &self.custom_state.path else {
+		self.0.custom_state.project_time = project_time;
+		let Some(path) = &self.0.custom_state.path else {
 			return;
 		};
-		self.custom_state.project = Project::from_file(path);
+		self.0.custom_state.project = Project::from_file(path);
 		self.tree = ProjectTree::new(
 			self.state.clone(),
 			&self.project,
@@ -193,8 +165,8 @@ impl Game<ProjectCustomState> {
 		let mut reader = Reader::new(path, "segment");
 		if let Some(segment) = self.tree.raycast(start, direction, &mut reader) {
 			self.tree.scene.segment = Some(Segment::new(
-				&self.state,
-				&mut self.tree.scene.segments,
+				&self.0.state,
+				&mut self.0.tree.scene.segments,
 				segment,
 			));
 			window.request_redraw();
@@ -202,7 +174,7 @@ impl Game<ProjectCustomState> {
 	}
 }
 
-impl Game<ProjectCustomState> {
+impl ProjectGame {
 	fn ui(&mut self, ctx: &render::egui::Context, window: &mut render::Window) {
 		const HEIGHT: f32 = 10.0;
 		const LEFT: f32 = 100.0;
@@ -232,38 +204,40 @@ impl Game<ProjectCustomState> {
 				{
 					self.property_options = self.property_options.not();
 				};
-				if self.property_options {
+				if self.0.property_options {
 					ui.horizontal(|ui| {
 						ui.add_sized([LEFT, HEIGHT], Label::new("Selected"));
 						ComboBox::from_id_source("property_selected")
 							.width(RIGHT)
-							.selected_text(&self.tree.property.1)
+							.selected_text(&self.0.tree.property.1)
 							.show_ui(ui, |ui| {
 								let mut changed = false;
-								for prop in &self.custom_state.project.properties {
+								for prop in &self.0.custom_state.project.properties {
 									changed |= ui
-										.selectable_value(&mut self.tree.property.0, prop.0.clone(), &prop.1)
+										.selectable_value(&mut self.0.tree.property.0, prop.0.clone(), &prop.1)
 										.changed();
 								}
 								if changed {
-									for prop in &self.custom_state.project.properties {
+									for prop in &self.0.custom_state.project.properties {
 										if prop.0 == self.tree.property.0 {
-											self.tree.property = prop.clone();
+											self.0.tree.property = prop.clone();
 										}
 									}
-									self.tree
+									self.0
+										.tree
 										.0
 										.scene
 										.loaded_manager
-										.change_property(&self.tree.0.property.0);
-									self.tree
+										.change_property(&self.0.tree.0.property.0);
+									self.0
+										.tree
 										.0
 										.scene
 										.segments
-										.change_property(&self.tree.0.property.0);
-									self.tree.update_lookup(&self.state);
-									if let Some(seg) = &mut self.tree.0.scene.segment {
-										seg.change_property(&self.state, &mut self.tree.0.scene.segments);
+										.change_property(&self.0.tree.0.property.0);
+									self.0.tree.update_lookup(&self.0.state);
+									if let Some(seg) = &mut self.0.tree.0.scene.segment {
+										seg.change_property(&self.0.state, &mut self.0.tree.0.scene.segments);
 									}
 								}
 							});
@@ -271,14 +245,14 @@ impl Game<ProjectCustomState> {
 				}
 				ui.separator();
 
-				let mut seg = self.tree.scene.segment.is_some();
+				let mut seg = self.0.tree.scene.segment.is_some();
 				ui.with_layout(full, |ui| {
 					ui.set_enabled(seg);
 					if ui.toggle_value(&mut seg, "Segment").changed() && seg.not() {
-						self.tree.scene.segment = None;
+						self.0.tree.scene.segment = None;
 					}
 				});
-				if let Some(seg) = &mut self.tree.scene.segment {
+				if let Some(seg) = &mut self.0.tree.scene.segment {
 					ui.horizontal(|ui| {
 						ui.add_sized([LEFT, HEIGHT], Label::new("ID"));
 						ui.add_sized([RIGHT, HEIGHT], Label::new(format!("{}", seg.index())));
@@ -326,7 +300,7 @@ impl Game<ProjectCustomState> {
 								.add_sized([ui.available_width(), HEIGHT], Button::new("Start"))
 								.clicked()
 							{
-								seg.triangulate(&self.state);
+								seg.triangulate(&self.0.state);
 								if seg.render == MeshRender::Points {
 									seg.render = MeshRender::Mesh;
 								}
@@ -355,6 +329,7 @@ impl Game<ProjectCustomState> {
 					});
 
 					for (index, info) in self
+						.0
 						.custom_state
 						.project
 						.segment(seg.index())
@@ -364,7 +339,7 @@ impl Game<ProjectCustomState> {
 						ui.horizontal(|ui| {
 							ui.add_sized(
 								[LEFT, HEIGHT],
-								Label::new(&self.custom_state.project.segment_information[index]),
+								Label::new(&self.0.custom_state.project.segment_information[index]),
 							);
 							ui.add_sized([LEFT, HEIGHT], Label::new(format!("{}", info)));
 						});
@@ -449,21 +424,21 @@ impl Game<ProjectCustomState> {
 					ui.horizontal(|ui| {
 						ui.add_sized([LEFT, HEIGHT], Label::new("Color Palette"));
 						ComboBox::from_id_source("color_palette")
-							.selected_text(format!("{:?}", self.tree.lookup_name))
+							.selected_text(format!("{:?}", self.0.tree.lookup_name))
 							.width(RIGHT)
 							.show_ui(ui, |ui| {
 								let mut changed = false;
 								changed |= ui
-									.selectable_value(&mut self.tree.lookup_name, LookupName::Warm, "Warm")
+									.selectable_value(&mut self.0.tree.lookup_name, LookupName::Warm, "Warm")
 									.changed();
 								changed |= ui
-									.selectable_value(&mut self.tree.lookup_name, LookupName::Cold, "Cold")
+									.selectable_value(&mut self.0.tree.lookup_name, LookupName::Cold, "Cold")
 									.changed();
 								changed |= ui
-									.selectable_value(&mut self.tree.lookup_name, LookupName::Turbo, "Turbo")
+									.selectable_value(&mut self.0.tree.lookup_name, LookupName::Turbo, "Turbo")
 									.changed();
 								if changed {
-									self.tree.update_lookup(&self.state);
+									self.0.tree.update_lookup(&self.0.state);
 								}
 							});
 					});
@@ -494,7 +469,7 @@ impl Game<ProjectCustomState> {
 							else {
 								return;
 							};
-							window.screen_shot(self.state.deref(), &mut self.tree, path);
+							window.screen_shot(self.0.state.deref(), &mut self.0.tree, path);
 							window.request_redraw()
 						}
 					});
@@ -504,7 +479,7 @@ impl Game<ProjectCustomState> {
 						if ui
 							.add_sized(
 								[ui.available_width(), HEIGHT],
-								SelectableLabel::new(self.tree.voxels_active, "Voxels"),
+								SelectableLabel::new(self.0.tree.voxels_active, "Voxels"),
 							)
 							.clicked()
 						{
@@ -527,7 +502,7 @@ impl Game<ProjectCustomState> {
 							)
 							.changed()
 						{
-							self.tree.eye_dome.update_settings(&self.state);
+							self.0.tree.eye_dome.update_settings(&self.0.state);
 						}
 					});
 
@@ -538,7 +513,7 @@ impl Game<ProjectCustomState> {
 							.color_edit_button_rgb(self.tree.eye_dome.color.data_mut())
 							.changed()
 						{
-							self.tree.eye_dome.update_settings(&self.state);
+							self.0.tree.eye_dome.update_settings(&self.0.state);
 						}
 					});
 				};
@@ -575,8 +550,8 @@ impl Game<ProjectCustomState> {
 									"Distance",
 								);
 								ui.selectable_value(
-									&mut self.tree.camera.lod,
-									lod::Mode::new_level(self.custom_state.project.depth as usize),
+									&mut self.0.tree.camera.lod,
+									lod::Mode::new_level(self.0.custom_state.project.depth as usize),
 									"Level",
 								);
 							});
@@ -653,7 +628,10 @@ impl Game<ProjectCustomState> {
 								}
 								let diff = *offset - old;
 								if diff.abs() > 0.001 {
-									self.tree.camera.move_in_view_direction(diff, &self.state);
+									self.0
+										.tree
+										.camera
+										.move_in_view_direction(diff, &self.0.state);
 								}
 							},
 							camera::Controller::FirstPerson { sensitivity } => {
@@ -677,7 +655,7 @@ impl Game<ProjectCustomState> {
 							.add_sized([ui.available_width(), HEIGHT], Button::new("Load"))
 							.clicked()
 						{
-							self.tree.camera.load(&self.state);
+							self.0.tree.camera.load(&self.0.state);
 							window.request_redraw();
 						}
 					});
@@ -706,8 +684,8 @@ impl render::Entry for World {
 			.run(raw_input, |ctx| self.game.ui(ctx, &mut self.window));
 
 		self.window.render(
-			self.game.state.deref(),
-			&mut self.game.tree,
+			self.game.0.state.deref(),
+			&mut self.game.0.tree,
 			full_output,
 			&self.egui,
 		);
@@ -730,9 +708,10 @@ impl render::Entry for World {
 			&self.tree.camera.transform,
 		);
 		self.game
+			.0
 			.tree
 			.eye_dome
-			.update_depth(&self.game.state, self.window.depth_texture());
+			.update_depth(&self.game.0.state, self.window.depth_texture());
 	}
 
 	fn request_redraw(&mut self) {
@@ -761,16 +740,20 @@ impl render::Entry for World {
 		let l = direction.length();
 		if l > 0.0 {
 			direction *= 10.0 * delta.as_secs_f32() / l;
-			self.game.tree.camera.movement(direction, &self.game.state);
+			self.game
+				.0
+				.tree
+				.camera
+				.movement(direction, &self.game.0.state);
 		}
 
 		if self.tree.scene.loaded_manager.update().not() && self.tree.scene.segment.is_none() {
 			self.game.tree.camera.time(delta.as_secs_f32())
 		}
 
-		if let Some(segment) = &mut self.game.tree.scene.segment {
+		if let Some(segment) = &mut self.game.0.tree.scene.segment {
 			if matches!(segment.render, MeshRender::Mesh | MeshRender::MeshLines) {
-				segment.update(&self.game.state);
+				segment.update(&self.game.0.state);
 			}
 		}
 
@@ -786,7 +769,7 @@ impl render::Entry for World {
 	}
 
 	fn mouse_wheel(&mut self, delta: f32) {
-		self.game.tree.camera.scroll(delta, &self.game.state);
+		self.game.0.tree.camera.scroll(delta, &self.game.0.state);
 	}
 
 	fn mouse_button_changed(
@@ -815,27 +798,11 @@ impl render::Entry for World {
 	fn mouse_moved(&mut self, _window_id: render::WindowId, position: Vector<2, f32>) {
 		let delta = self.mouse.delta(position);
 		if self.mouse.pressed(input::MouseButton::Left) {
-			self.game.tree.camera.rotate(delta, &self.game.state);
+			self.game.0.tree.camera.rotate(delta, &self.game.0.state);
 		}
 	}
 
 	fn exit(&self) -> bool {
 		self.quit
-	}
-}
-
-struct Time {
-	last: std::time::Instant,
-}
-
-impl Time {
-	pub fn new() -> Self {
-		Self { last: std::time::Instant::now() }
-	}
-
-	pub fn elapsed(&mut self) -> std::time::Duration {
-		let delta = self.last.elapsed();
-		self.last = std::time::Instant::now();
-		delta
 	}
 }
