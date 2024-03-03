@@ -22,7 +22,6 @@ use crate::{
 };
 
 pub struct World {
-	window: render::Window,
 	game: Game<ProjectCustomState>,
 	egui: render::egui::Context,
 }
@@ -74,9 +73,9 @@ impl World {
 		);
 
 		Ok(Self {
-			window,
 			egui,
 			game: Game::new(
+				window,
 				tree,
 				state,
 				ProjectCustomState {
@@ -97,15 +96,15 @@ trait GameExt {
 		property: (String, String, u32),
 		window: &Window,
 	) -> Tree<ProjectScene>;
-	fn change_project(&mut self, window: &render::Window);
+	fn change_project(&mut self);
 
-	fn check_reload(&mut self, window: &render::Window);
+	fn check_reload(&mut self);
 
 	fn current_project_time(&self) -> std::time::SystemTime;
 
-	fn reload(&mut self, project_time: std::time::SystemTime, window: &render::Window);
+	fn reload(&mut self, project_time: std::time::SystemTime);
 
-	fn raycast(&mut self, window: &render::Window);
+	fn raycast(&mut self);
 }
 
 impl GameExt for Game<ProjectCustomState> {
@@ -131,7 +130,7 @@ impl GameExt for Game<ProjectCustomState> {
 		};
 		Tree::new(state, property, window, scene)
 	}
-	fn change_project(&mut self, window: &render::Window) {
+	fn change_project(&mut self) {
 		let Some(path) = rfd::FileDialog::new()
 			.add_filter("Project File", &["epc"])
 			.pick_file()
@@ -139,10 +138,10 @@ impl GameExt for Game<ProjectCustomState> {
 			return;
 		};
 		self.custom_state.path = Some(path);
-		self.reload(self.current_project_time(), window);
+		self.reload(self.current_project_time());
 	}
 
-	fn check_reload(&mut self, window: &render::Window) {
+	fn check_reload(&mut self) {
 		let project_time = self.current_project_time();
 		if self.project_time == project_time {
 			return;
@@ -150,7 +149,7 @@ impl GameExt for Game<ProjectCustomState> {
 		if project_time.elapsed().unwrap() < std::time::Duration::from_millis(1000) {
 			return;
 		}
-		self.reload(project_time, window);
+		self.reload(project_time);
 	}
 
 	fn current_project_time(&self) -> std::time::SystemTime {
@@ -162,7 +161,7 @@ impl GameExt for Game<ProjectCustomState> {
 			.unwrap_or(self.project_time)
 	}
 
-	fn reload(&mut self, project_time: std::time::SystemTime, window: &render::Window) {
+	fn reload(&mut self, project_time: std::time::SystemTime) {
 		self.custom_state.project_time = project_time;
 		let Some(path) = &self.custom_state.path else {
 			return;
@@ -173,13 +172,13 @@ impl GameExt for Game<ProjectCustomState> {
 			&self.project,
 			Some(path.parent().unwrap().to_owned()),
 			self.project.properties[0].clone(),
-			window,
+			&self.window,
 		);
-		window.set_title(&self.project.name);
-		window.request_redraw();
+		self.window.set_title(&self.project.name);
+		self.window.request_redraw();
 	}
 
-	fn raycast(&mut self, window: &render::Window) {
+	fn raycast(&mut self) {
 		if self.tree.scene.segment.is_some() {
 			return;
 		}
@@ -187,12 +186,12 @@ impl GameExt for Game<ProjectCustomState> {
 			.tree
 			.context
 			.camera
-			.ray_origin(self.mouse.position(), window.get_size());
+			.ray_origin(self.mouse.position(), self.window.get_size());
 		let direction = self
 			.tree
 			.context
 			.camera
-			.ray_direction(self.mouse.position(), window.get_size());
+			.ray_direction(self.mouse.position(), self.window.get_size());
 		let Some(path) = &self.path else {
 			return;
 		};
@@ -204,12 +203,12 @@ impl GameExt for Game<ProjectCustomState> {
 				&mut self.tree.scene.segments,
 				segment,
 			));
-			window.request_redraw();
+			self.window.request_redraw();
 		}
 	}
 }
 
-fn ui(ctx: &render::egui::Context, window: &mut render::Window, game: &mut Game<ProjectCustomState>) {
+fn ui(ctx: &render::egui::Context, game: &mut Game<ProjectCustomState>) {
 	const HEIGHT: f32 = 10.0;
 	const LEFT: f32 = 100.0;
 	const RIGHT: f32 = 150.0;
@@ -225,7 +224,7 @@ fn ui(ctx: &render::egui::Context, window: &mut render::Window, game: &mut Game<
 				.add_sized([ui.available_width(), HEIGHT], Button::new("Load Project"))
 				.clicked()
 			{
-				game.change_project(window);
+				game.change_project();
 			};
 			ui.separator();
 
@@ -408,7 +407,7 @@ fn ui(ctx: &render::egui::Context, window: &mut render::Window, game: &mut Game<
 							game.tree.context.environment.max,
 							game.tree.context.environment.scale,
 						);
-						window.request_redraw();
+						game.window.request_redraw();
 					}
 				});
 
@@ -432,7 +431,7 @@ fn ui(ctx: &render::egui::Context, window: &mut render::Window, game: &mut Game<
 							game.tree.context.environment.max,
 							game.tree.context.environment.scale,
 						);
-						window.request_redraw();
+						game.window.request_redraw();
 					}
 				});
 
@@ -456,7 +455,7 @@ fn ui(ctx: &render::egui::Context, window: &mut render::Window, game: &mut Game<
 							game.tree.context.environment.max,
 							game.tree.context.environment.scale,
 						);
-						window.request_redraw();
+						game.window.request_redraw();
 					}
 				});
 
@@ -493,7 +492,7 @@ fn ui(ctx: &render::egui::Context, window: &mut render::Window, game: &mut Game<
 						.color_edit_button_rgb(game.tree.context.background.data_mut())
 						.changed()
 					{
-						window.request_redraw();
+						game.window.request_redraw();
 					}
 				});
 
@@ -512,8 +511,9 @@ fn ui(ctx: &render::egui::Context, window: &mut render::Window, game: &mut Game<
 						else {
 							return;
 						};
-						window.screen_shot(game.state.deref(), &mut game.tree, path);
-						window.request_redraw()
+						game.window
+							.screen_shot(game.state.deref(), &mut game.tree, path);
+						game.window.request_redraw()
 					}
 				});
 
@@ -699,7 +699,7 @@ fn ui(ctx: &render::egui::Context, window: &mut render::Window, game: &mut Game<
 						.clicked()
 					{
 						game.tree.context.camera.load(&game.state);
-						window.request_redraw();
+						game.window.request_redraw();
 					}
 				});
 			}
@@ -724,12 +724,10 @@ impl render::Entry for World {
 			);
 		}
 
-		let raw_input = self.window.egui_winit.take_egui_input(&self.window.window);
-		let full_output = self
-			.egui
-			.run(raw_input, |ctx| ui(ctx, &mut self.window, &mut self.game));
+		let raw_input = self.game.take_egui_input();
+		let full_output = self.egui.run(raw_input, |ctx| ui(ctx, &mut self.game));
 
-		self.window.render(
+		self.game.window.render(
 			self.game.state.deref(),
 			&mut self.game.tree,
 			full_output,
@@ -742,23 +740,24 @@ impl render::Entry for World {
 		if self.paused {
 			return;
 		}
-		self.window.resized(self.game.state.deref());
+
+		self.game.window.resized(self.game.state.deref());
 		self.game
 			.tree
 			.context
 			.camera
 			.cam
 			.set_aspect(self.window.get_aspect());
-		self.tree.context.camera.gpu = render::Camera3DGPU::new(
-			&self.state,
-			&self.tree.camera.cam,
-			&self.tree.camera.transform,
+		self.game.tree.context.camera.gpu = render::Camera3DGPU::new(
+			&self.game.state,
+			&self.game.tree.camera.cam,
+			&self.game.tree.camera.transform,
 		);
 		self.game
 			.tree
 			.context
 			.eye_dome
-			.update_depth(&self.game.state, self.window.depth_texture());
+			.update_depth(&self.game.state, self.game.window.depth_texture());
 	}
 
 	fn request_redraw(&mut self) {
@@ -804,7 +803,7 @@ impl render::Entry for World {
 			}
 		}
 
-		self.game.check_reload(&self.window);
+		self.game.check_reload();
 	}
 
 	fn key_changed(&mut self, _window_id: render::WindowId, key: input::KeyCode, key_state: input::State) {
@@ -838,7 +837,7 @@ impl render::Entry for World {
 				if let Some(start) = self.mouse_start {
 					let dist = (start - self.mouse.position()).length();
 					if dist < 2.0 {
-						self.game.raycast(&self.window);
+						self.game.raycast();
 					}
 				}
 			},

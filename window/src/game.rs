@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use math::{Vector, X, Y};
-use render::Window;
+use render::{egui::RawInput, Window};
 
 use crate::{tree::Tree, State};
 
@@ -10,6 +10,7 @@ pub trait CustomState {
 }
 
 pub struct Game<TCustomState: CustomState> {
+	pub window: render::Window,
 	pub tree: Tree<TCustomState::Scene>,
 	pub custom_state: TCustomState,
 
@@ -29,8 +30,14 @@ pub struct Game<TCustomState: CustomState> {
 }
 
 impl<TCustomState: CustomState> Game<TCustomState> {
-	pub fn new(tree: Tree<TCustomState::Scene>, state: Arc<State>, custom_state: TCustomState) -> Self {
+	pub fn new(
+		window: render::Window,
+		tree: Tree<TCustomState::Scene>,
+		state: Arc<State>,
+		custom_state: TCustomState,
+	) -> Self {
 		Self {
+			window,
 			tree,
 			custom_state,
 			paused: false,
@@ -63,6 +70,10 @@ impl<TCustomState: CustomState> Game<TCustomState> {
 			&self.tree.camera.cam,
 			&self.tree.camera.transform,
 		);
+	}
+
+	pub fn take_egui_input(&mut self) -> RawInput {
+		self.window.egui_winit.take_egui_input(&self.window.window)
 	}
 }
 
