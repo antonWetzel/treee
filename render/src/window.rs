@@ -290,6 +290,23 @@ impl Window {
 		);
 		output.present();
 	}
+
+	pub fn render_without_egui<S: Has<State>>(&mut self, state: &S, renderable: &mut impl RenderEntry<S>) {
+		let Some(output) = self.surface.get_current_texture().ok() else {
+			return;
+		};
+		let view = output.texture.create_view(&Default::default());
+
+		self.render_to(
+			state,
+			renderable,
+			&view,
+			renderable.background(),
+			1.0,
+			(&[], &[], &[]),
+		);
+		output.present();
+	}
 }
 
 impl Drop for Window {

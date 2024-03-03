@@ -1,14 +1,11 @@
-mod camera;
 mod game;
 mod loaded_manager;
-mod lod;
 mod reader;
 mod segment;
-mod state;
 mod tree;
 
 use pollster::FutureExt;
-use state::State;
+use window::State;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

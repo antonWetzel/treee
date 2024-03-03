@@ -1,54 +1,21 @@
 use std::collections::HashSet;
 use std::num::NonZeroU32;
-use std::path::PathBuf;
-use std::sync::Arc;
 
 use crate::loaded_manager::LoadedManager;
 use crate::reader::Reader;
 use crate::segment::{MeshRender, Segment};
-use crate::state::State;
-use crate::{camera, lod};
 
 use math::{Vector, X, Y, Z};
+use project::IndexData;
 use project::IndexNode;
-use project::{IndexData, Project};
-use render::{LinesRenderExt, MeshRenderExt, PointCloudExt, Window};
+use render::{LinesRenderExt, MeshRenderExt, PointCloudExt};
+use window::tree::{Scene, Tree, TreeContext};
+use window::{camera, lod, State};
 
-pub const DEFAULT_BACKGROUND: Vector<3, f32> = Vector::new([0.1, 0.2, 0.3]);
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum LookupName {
-	Warm,
-	Cold,
-	Turbo,
-}
-
-impl LookupName {
-	pub fn data(self) -> &'static [u8] {
-		match self {
-			Self::Warm => include_bytes!("../assets/grad_warm.png"),
-			Self::Cold => include_bytes!("../assets/grad_cold.png"),
-			Self::Turbo => include_bytes!("../assets/grad_turbo.png"),
-		}
-	}
-}
-
-pub struct Tree {
-	pub root: Node,
-	pub camera: camera::Camera,
+pub struct ProjectScene {
 	pub loaded_manager: LoadedManager,
-	pub lookup: render::Lookup,
-	pub environment: render::PointCloudEnvironment,
-	pub background: Vector<3, f32>,
+	pub root: Node,
 	pub segment: Option<Segment>,
-
-	pub lookup_name: LookupName,
-	pub eye_dome: render::EyeDome,
-	pub eye_dome_active: bool,
-	pub voxels_active: bool,
-
-	pub property: (String, String, u32),
-
 	pub segments: Reader,
 }
 
@@ -314,45 +281,7 @@ impl Node {
 	}
 }
 
-impl Tree {
-	pub fn new(
-		state: Arc<State>,
-		project: &Project,
-		path: Option<PathBuf>,
-		property: (String, String, u32),
-		window: &Window,
-	) -> Self {
-		let lookup_name = LookupName::Warm;
-
-		Self {
-			background: DEFAULT_BACKGROUND,
-			camera: camera::Camera::new(&state, window.get_aspect()),
-			root: Node::new(&project.root, &state),
-			lookup_name,
-			lookup: render::Lookup::new_png(&state, lookup_name.data(), property.2),
-			environment: render::PointCloudEnvironment::new(&state, u32::MIN, u32::MAX, 1.0),
-			segment: None,
-			eye_dome: render::EyeDome::new(&state, window.config(), window.depth_texture(), 0.7),
-			eye_dome_active: true,
-			voxels_active: false,
-			segments: path
-				.clone()
-				.map(|path| {
-					let mut segments = path.clone();
-					segments.push("segments");
-					Reader::new(segments, &property.0)
-				})
-				.unwrap_or(Reader::fake()),
-
-			loaded_manager: LoadedManager::new(state, path, &property.0),
-			property,
-		}
-	}
-
-	pub fn update_lookup(&mut self, state: &State) {
-		self.lookup = render::Lookup::new_png(state, self.lookup_name.data(), self.property.2);
-	}
-
+impl ProjectScene {
 	pub fn raycast(
 		&mut self,
 		start: Vector<3, f32>,
@@ -362,75 +291,72 @@ impl Tree {
 		self.root.raycast_distance(start, direction)?;
 		self.root.raycast(start, direction, reader)
 	}
-
-	pub fn update(&mut self) {
-		self.root.update(
-			lod::Checker::new(&self.camera.lod),
-			&self.camera,
-			&mut self.loaded_manager,
-		);
-	}
 }
 
-impl render::PointCloudRender for Tree {
-	fn render<'a>(&'a self, point_cloud_pass: &mut render::PointCloudPass<'a>) {
+impl render::PointCloudRender<TreeContext> for ProjectScene {
+	fn render<'a>(&'a self, context: &'a TreeContext, point_cloud_pass: &mut render::PointCloudPass<'a>) {
 		self.root.render(
 			point_cloud_pass,
-			lod::Checker::new(&self.camera.lod),
-			&self.camera,
+			lod::Checker::new(&context.camera.lod),
+			&context.camera,
 			&self.loaded_manager,
 		);
 	}
 }
 
-impl render::LinesRender for Tree {
-	fn render<'a>(&'a self, lines_pass: &mut render::LinesPass<'a>) {
-		self.root.render_lines(
-			lines_pass,
-			lod::Checker::new(&self.camera.lod),
-			&self.camera,
-			&self.loaded_manager,
-		);
-	}
-}
-
-impl render::RenderEntry<State> for Tree {
-	fn background(&self) -> Vector<3, f32> {
-		self.background
-	}
-
-	fn render<'a>(&'a mut self, state: &'a State, render_pass: &mut render::RenderPass<'a>) {
+impl Scene for ProjectScene {
+	fn render<'a>(&'a self, state: &'a State, tree: &'a Tree<Self>, render_pass: &mut render::RenderPass<'a>) {
 		if let Some(segment) = &self.segment {
 			match segment.render {
 				MeshRender::Points => render_pass.render_point_clouds(
 					segment,
 					state,
-					&self.camera.gpu,
-					&self.lookup,
-					&self.environment,
+					&(),
+					&tree.context.camera.gpu,
+					&tree.context.lookup,
+					&tree.context.environment,
 				),
-				MeshRender::Mesh => render_pass.render_meshes(segment, state, &self.camera.gpu, &self.lookup),
-				MeshRender::MeshLines => {
-					render_pass.render_meshes(segment, &state.mesh_line, &self.camera.gpu, &self.lookup)
-				},
+				MeshRender::Mesh => render_pass.render_meshes(
+					segment,
+					state,
+					&tree.context.camera.gpu,
+					&tree.context.lookup,
+				),
+				MeshRender::MeshLines => render_pass.render_meshes(
+					segment,
+					&state.mesh_line,
+					&tree.context.camera.gpu,
+					&tree.context.lookup,
+				),
 			}
 		} else {
 			render_pass.render_point_clouds(
 				self,
 				state,
-				&self.camera.gpu,
-				&self.lookup,
-				&self.environment,
+				&tree.context,
+				&tree.context.camera.gpu,
+				&tree.context.lookup,
+				&tree.context.environment,
 			);
-			if self.voxels_active {
-				render_pass.render_lines(self, state, &self.camera.gpu);
+			if tree.context.voxels_active {
+				render_pass.render_lines(self, state, &tree.context, &tree.context.camera.gpu);
 			}
 		}
 	}
 
-	fn post_process<'a>(&'a mut self, _state: &'a State, render_pass: &mut render::RenderPass<'a>) {
-		if self.eye_dome_active {
-			render_pass.render(&self.eye_dome, ());
-		}
+	fn update(&mut self, view_checker: lod::Checker, camera: &camera::Camera) {
+		self.root
+			.update(view_checker, camera, &mut self.loaded_manager)
+	}
+}
+
+impl render::LinesRender<TreeContext> for ProjectScene {
+	fn render<'a>(&'a self, context: &'a TreeContext, lines_pass: &mut render::LinesPass<'a>) {
+		self.root.render_lines(
+			lines_pass,
+			lod::Checker::new(&context.camera.lod),
+			&context.camera,
+			&self.loaded_manager,
+		);
 	}
 }

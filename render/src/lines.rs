@@ -72,24 +72,24 @@ impl LinesState {
 #[repr(transparent)]
 pub struct LinesPass<'a>(wgpu::RenderPass<'a>);
 
-pub trait LinesRender {
-	fn render<'a>(&'a self, lines_pass: &mut LinesPass<'a>);
+pub trait LinesRender<T> {
+	fn render<'a>(&'a self, context: &'a T, lines_pass: &mut LinesPass<'a>);
 }
 
-pub trait LinesRenderExt<'a, V, S> {
-	fn render_lines(&mut self, value: &'a V, state: &'a S, camera: &'a Camera3DGPU);
+pub trait LinesRenderExt<'a, V, S, C> {
+	fn render_lines(&mut self, value: &'a V, state: &'a S, context: &'a C, camera: &'a Camera3DGPU);
 }
 
-impl<'a, V, S> LinesRenderExt<'a, V, S> for RenderPass<'a>
+impl<'a, V, S, C> LinesRenderExt<'a, V, S, C> for RenderPass<'a>
 where
 	S: Has<LinesState>,
-	V: LinesRender,
+	V: LinesRender<C>,
 {
-	fn render_lines(&mut self, value: &'a V, state: &'a S, camera: &'a Camera3DGPU) {
+	fn render_lines(&mut self, value: &'a V, state: &'a S, context: &'a C, camera: &'a Camera3DGPU) {
 		self.set_pipeline(&state.get().pipeline);
 		self.set_bind_group(0, camera.get_bind_group(), &[]);
 		let lines_pass = unsafe { std::mem::transmute::<_, &mut LinesPass<'a>>(self) };
-		value.render(lines_pass);
+		value.render(context, lines_pass);
 	}
 }
 
