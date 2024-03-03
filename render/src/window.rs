@@ -1,6 +1,6 @@
 use std::{path::PathBuf, sync::Arc};
 
-use math::{Vector, X, Y, Z};
+use nalgebra as na;
 
 use super::*;
 
@@ -22,7 +22,7 @@ impl Window {
 		self.config.width as f32 / self.config.height as f32
 	}
 
-	pub fn get_size(&self) -> Vector<2, f32> {
+	pub fn get_size(&self) -> na::Point2<f32> {
 		[self.config.width as f32, self.config.height as f32].into()
 	}
 
@@ -177,7 +177,7 @@ impl Window {
 		state: &S,
 		renderable: &mut impl RenderEntry<S>,
 		view: &wgpu::TextureView,
-		background: Vector<3, f32>,
+		background: na::Point3<f32>,
 		alpha: f32,
 
 		ui: (
@@ -197,9 +197,9 @@ impl Window {
 				resolve_target: None,
 				ops: wgpu::Operations {
 					load: wgpu::LoadOp::Clear(wgpu::Color {
-						r: background[X] as f64,
-						g: background[Y] as f64,
-						b: background[Z] as f64,
+						r: background.x as f64,
+						g: background.y as f64,
+						b: background.z as f64,
 						a: alpha as f64,
 					}),
 					store: wgpu::StoreOp::Store,

@@ -10,7 +10,7 @@ mod writer;
 
 use std::{num::NonZeroU32, path::PathBuf};
 
-use math::{X, Y, Z};
+use nalgebra as na;
 use point::PointsCollection;
 use progress::Progress;
 use rand::seq::SliceRandom;
@@ -190,7 +190,7 @@ fn import(settings: Settings, input: PathBuf, output: PathBuf) -> Result<(), Err
 
 	let mut progress = Progress::new("Calculate", total_points);
 
-	let mut tree = Tree::new(min, diff[X].max(diff[Y]).max(diff[Z]));
+	let mut tree = Tree::new(min, diff.x.max(diff.y).max(diff.z));
 	let segments_information = vec![String::from("Trunk"), String::from("Crown")];
 
 	let (sender, reciever) = crossbeam::channel::bounded(2);

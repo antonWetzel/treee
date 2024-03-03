@@ -1,5 +1,5 @@
 use super::State;
-use math::Vector;
+use nalgebra as na;
 use std::collections::HashSet;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -29,14 +29,14 @@ impl From<winit::event::MouseButton> for MouseButton {
 
 pub struct Mouse {
 	pub(crate) pressed: HashSet<MouseButton>,
-	pub(crate) position: Vector<2, f32>,
+	pub(crate) position: na::Point<f32, 2>,
 }
 
 impl Mouse {
 	pub fn new() -> Self {
 		Self {
 			pressed: HashSet::new(),
-			position: Vector::default(),
+			position: na::Point::default(),
 		}
 	}
 
@@ -47,7 +47,7 @@ impl Mouse {
 		};
 	}
 
-	pub fn delta(&mut self, position: Vector<2, f32>) -> Vector<2, f32> {
+	pub fn delta(&mut self, position: na::Point<f32, 2>) -> na::SVector<f32, 2> {
 		let delta = position - self.position;
 		self.position = position;
 		delta
@@ -57,7 +57,7 @@ impl Mouse {
 		self.pressed.contains(&button)
 	}
 
-	pub fn position(&self) -> Vector<2, f32> {
+	pub fn position(&self) -> na::Point<f32, 2> {
 		self.position
 	}
 }

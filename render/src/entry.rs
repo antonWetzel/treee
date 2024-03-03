@@ -1,15 +1,14 @@
-use math::Vector;
-
 use super::*;
 
 pub type Event = winit::event::WindowEvent;
+use nalgebra as na;
 
 pub trait Entry {
 	fn raw_event(&mut self, event: &Event) -> bool;
 
 	fn close_window(&mut self, window_id: WindowId);
 
-	fn resize_window(&mut self, window_id: WindowId, size: Vector<2, u32>);
+	fn resize_window(&mut self, window_id: WindowId, size: na::Point2<u32>);
 
 	fn request_redraw(&mut self);
 
@@ -19,7 +18,7 @@ pub trait Entry {
 
 	fn mouse_wheel(&mut self, delta: f32);
 
-	fn mouse_moved(&mut self, window_id: WindowId, position: Vector<2, f32>);
+	fn mouse_moved(&mut self, window_id: WindowId, position: na::Point2<f32>);
 
 	fn time(&mut self);
 

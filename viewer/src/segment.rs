@@ -4,7 +4,7 @@ use std::{
 	sync::mpsc::TryRecvError,
 };
 
-use math::{Vector, X, Y, Z};
+use nalgebra as na;
 
 use crate::{reader::Reader, state::State};
 
@@ -13,7 +13,7 @@ pub enum MeshState {
 	Progress(
 		Vec<u32>,
 		render::Mesh,
-		std::sync::mpsc::Receiver<Option<Vector<3, usize>>>,
+		std::sync::mpsc::Receiver<Option<na::Point3<usize>>>,
 	),
 	Done(render::Mesh),
 }
@@ -76,9 +76,9 @@ impl Segment {
 					match reciever.try_recv() {
 						Ok(None) => {},
 						Ok(Some(triangle)) => {
-							res.push(triangle[X] as u32);
-							res.push(triangle[Y] as u32);
-							res.push(triangle[Z] as u32);
+							res.push(triangle.x as u32);
+							res.push(triangle.y as u32);
+							res.push(triangle.z as u32);
 						},
 						Err(TryRecvError::Empty) => break,
 						Err(TryRecvError::Disconnected) => {
@@ -121,13 +121,19 @@ impl Segment {
 			return;
 		};
 
-		let mut min = Vector::new([f32::MAX, f32::MAX, f32::MAX]);
-		let mut max = Vector::new([f32::MIN, f32::MIN, f32::MIN]);
+		let mut min = na::Point {
+			coords: na::vector![f32::MAX, f32::MAX, f32::MAX],
+		};
+		let mut max = na::Point {
+			coords: na::vector![f32::MIN, f32::MIN, f32::MIN],
+		};
 		for &point in &self.points {
-			min = min.min(point.position);
-			max = max.max(point.position);
+			for d in 0..3 {
+				min[d] = min[d].min(point.position[d]);
+				max[d] = max[d].max(point.position[d]);
+			}
 		}
-		let diff = (max + min) / 2.0;
+		let diff = na::center(&min, &max);
 
 		let mut file = BufWriter::new(std::fs::File::create(location).unwrap());
 		file.write_all(b"ply\n").unwrap();
@@ -147,9 +153,9 @@ impl Segment {
 				format!(
 					// "{} {} {} {} {} {} {}\n",
 					"{} {} {}\n",
-					point.position[X] - diff[X],
-					-(point.position[Z] - diff[Z]),
-					point.position[Y] - min[Y],
+					point.position.x - diff.x,
+					-(point.position.z - diff.z),
+					point.position.y - min.y,
 					// point.normal[X],
 					// -point.normal[Z],
 					// point.normal[Y],

@@ -6,7 +6,6 @@ members = [
 	"importer",
 	"input",
 	"k-nearest",
-	"math",
 	"render",
 	"treee",
 	"triangulation",
@@ -27,7 +26,6 @@ rust-version = "1.73"
 
 [workspace.dependencies]
 render = { path = "./render" }
-math = { path = "./math" }
 input = { path = "./input" }
 project = { path = "./project" }
 k-nearest = { path = "./k-nearest" }
@@ -62,3 +60,8 @@ cfg-if = "1.0.0"
 laz = "0.8.3"
 static_assertions = "1.1.0"
 colored = "2.1.0"
+nalgebra = { version = "0.32.4", features = [
+	"macros",
+	"serde-serialize",
+	"bytemuck",
+] }

@@ -9,12 +9,12 @@ use crate::segment::{MeshRender, Segment};
 use crate::state::State;
 use crate::{camera, lod};
 
-use math::{Vector, X, Y, Z};
+use nalgebra as na;
 use project::IndexNode;
 use project::{IndexData, Project};
 use render::{LinesRenderExt, MeshRenderExt, PointCloudExt, Window};
 
-pub const DEFAULT_BACKGROUND: Vector<3, f32> = Vector::new([0.1, 0.2, 0.3]);
+pub const DEFAULT_BACKGROUND: na::Point3<f32> = na::Point3::new(0.1, 0.2, 0.3);
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum LookupName {
@@ -39,7 +39,7 @@ pub struct Tree {
 	pub loaded_manager: LoadedManager,
 	pub lookup: render::Lookup,
 	pub environment: render::PointCloudEnvironment,
-	pub background: Vector<3, f32>,
+	pub background: na::Point3<f32>,
 	pub segment: Option<Segment>,
 
 	pub lookup_name: LookupName,
@@ -54,7 +54,7 @@ pub struct Tree {
 
 pub struct Node {
 	data: Data,
-	pub corner: Vector<3, f32>,
+	pub corner: na::Point3<f32>,
 	pub size: f32,
 	index: usize,
 
@@ -93,14 +93,14 @@ impl Node {
 		};
 
 		let points = [
-			node.position + Vector::new([0.0, 0.0, 0.0]),
-			node.position + Vector::new([node.size, 0.0, 0.0]),
-			node.position + Vector::new([node.size, 0.0, node.size]),
-			node.position + Vector::new([0.0, 0.0, node.size]),
-			node.position + Vector::new([0.0, node.size, 0.0]),
-			node.position + Vector::new([node.size, node.size, 0.0]),
-			node.position + Vector::new([node.size, node.size, node.size]),
-			node.position + Vector::new([0.0, node.size, node.size]),
+			node.position + na::vector![0.0, 0.0, 0.0],
+			node.position + na::vector![node.size, 0.0, 0.0],
+			node.position + na::vector![node.size, 0.0, node.size],
+			node.position + na::vector![0.0, 0.0, node.size],
+			node.position + na::vector![0.0, node.size, 0.0],
+			node.position + na::vector![node.size, node.size, 0.0],
+			node.position + na::vector![node.size, node.size, node.size],
+			node.position + na::vector![0.0, node.size, node.size],
 		];
 
 		let indices = [
@@ -251,11 +251,11 @@ impl Node {
 	}
 
 	//https://tavianator.com/2011/ray_box.html
-	pub fn raycast_distance(&self, start: Vector<3, f32>, direction: Vector<3, f32>) -> Option<f32> {
+	pub fn raycast_distance(&self, start: na::Point3<f32>, direction: na::Vector3<f32>) -> Option<f32> {
 		let mut t_min = f32::NEG_INFINITY;
 		let mut t_max = f32::INFINITY;
 
-		for dir in [X, Y, Z] {
+		for dir in 0..3 {
 			if direction[dir] != 0.0 {
 				let tx_1 = (self.corner[dir] - start[dir]) / direction[dir];
 				let tx_2 = (self.corner[dir] + self.size - start[dir]) / direction[dir];
@@ -268,7 +268,12 @@ impl Node {
 		(t_max >= t_min).then_some(t_min)
 	}
 
-	pub fn raycast(&self, start: Vector<3, f32>, direction: Vector<3, f32>, reader: &mut Reader) -> Option<NonZeroU32> {
+	pub fn raycast(
+		&self,
+		start: na::Point3<f32>,
+		direction: na::Vector3<f32>,
+		reader: &mut Reader,
+	) -> Option<NonZeroU32> {
 		match &self.data {
 			Data::Branch { children, segments: _ } => {
 				let mut order = Vec::new();
@@ -293,11 +298,11 @@ impl Node {
 
 				for (point, segment) in data.into_iter().zip(segments) {
 					let diff = point.position - start;
-					let diff_length = diff.length();
+					let diff_length = diff.norm();
 					if diff_length >= best_dist {
 						continue;
 					}
-					let cos = direction.dot(diff.normalized());
+					let cos = direction.dot(&diff.normalize());
 					let sin = (1.0 - cos * cos).sqrt();
 					let distance = sin * diff_length;
 					if distance < point.size {
@@ -355,8 +360,8 @@ impl Tree {
 
 	pub fn raycast(
 		&mut self,
-		start: Vector<3, f32>,
-		direction: Vector<3, f32>,
+		start: na::Point3<f32>,
+		direction: na::Vector3<f32>,
 		reader: &mut Reader,
 	) -> Option<NonZeroU32> {
 		self.root.raycast_distance(start, direction)?;
@@ -395,7 +400,7 @@ impl render::LinesRender for Tree {
 }
 
 impl render::RenderEntry<State> for Tree {
-	fn background(&self) -> Vector<3, f32> {
+	fn background(&self) -> na::Point3<f32> {
 		self.background
 	}
 

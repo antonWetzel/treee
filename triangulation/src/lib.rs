@@ -3,23 +3,23 @@ use std::{
 	sync::mpsc::SendError,
 };
 
-use math::{Dimension, Vector, X, Y, Z};
+use nalgebra as na;
 
 pub struct Adapter;
 
-impl k_nearest::Adapter<3, f32, Vector<3, f32>> for Adapter {
-	fn get(point: &Vector<3, f32>, dimension: Dimension) -> f32 {
+impl k_nearest::Adapter<3, f32, na::Point<f32, 3>> for Adapter {
+	fn get(point: &na::Point<f32, 3>, dimension: usize) -> f32 {
 		point[dimension]
 	}
 
-	fn get_all(point: &Vector<3, f32>) -> [f32; 3] {
-		point.data()
+	fn get_all(point: &na::Point<f32, 3>) -> [f32; 3] {
+		point.coords.data.0[0]
 	}
 }
 
-type Tree = k_nearest::KDTree<3, f32, Vector<3, f32>, Adapter, k_nearest::EuclideanDistanceSquared>;
+type Tree = k_nearest::KDTree<3, f32, na::Point<f32, 3>, Adapter, k_nearest::EuclideanDistanceSquared>;
 
-type Package = Option<Vector<3, usize>>;
+type Package = Option<na::Point<usize, 3>>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum State {
@@ -29,7 +29,7 @@ enum State {
 }
 
 pub fn triangulate(
-	data: &[Vector<3, f32>],
+	data: &[na::Point<f32, 3>],
 	alpha: f32,
 	sub_sample_distance: f32,
 	res: std::sync::mpsc::Sender<Package>,
@@ -49,14 +49,14 @@ pub fn triangulate(
 	let mut found = HashSet::new();
 	while let Some(seed) = seed(data, &used, &tree, alpha, &res) {
 		res.send(Some(seed))?;
-		used[seed[X]] = State::Used;
-		used[seed[Y]] = State::Used;
-		used[seed[Z]] = State::Used;
+		used[seed.x] = State::Used;
+		used[seed.y] = State::Used;
+		used[seed.z] = State::Used;
 
 		let mut edges = [
-			(Edge::new(seed[X], seed[Z]), seed[Y]),
-			(Edge::new(seed[Z], seed[Y]), seed[X]),
-			(Edge::new(seed[Y], seed[X]), seed[Z]),
+			(Edge::new(seed.x, seed.z), seed.y),
+			(Edge::new(seed.z, seed.y), seed.x),
+			(Edge::new(seed.y, seed.x), seed.z),
 		]
 		.into_iter()
 		.collect::<VecDeque<_>>();
@@ -124,12 +124,12 @@ impl std::hash::Hash for Edge {
 }
 
 fn seed(
-	data: &[Vector<3, f32>],
+	data: &[na::Point<f32, 3>],
 	used: &[State],
 	tree: &Tree,
 	alpha: f32,
 	res: &std::sync::mpsc::Sender<Package>,
-) -> Option<Vector<3, usize>> {
+) -> Option<na::Point<usize, 3>> {
 	for (first, point) in data
 		.iter()
 		.enumerate()
@@ -176,7 +176,7 @@ fn seed(
 }
 
 fn find_third(
-	data: &[Vector<3, f32>],
+	data: &[na::Point<f32, 3>],
 	first: usize,
 	second: usize,
 	tree: &Tree,
@@ -188,11 +188,11 @@ fn find_third(
 	let b = data[old];
 	let c = data[second];
 	let center = sphere_location(a, b, c, alpha).unwrap();
-	let bar = (c - a).normalized();
-	let mid_point = (a + c) / 2.0;
-	let to_center = (center - mid_point).normalized();
+	let bar = (c - a).normalize();
+	let mid_point = na::center(&a, &c);
+	let to_center = (center - mid_point).normalize();
 
-	let search_distance = alpha + (alpha.powi(2) - a.distance(mid_point).powi(2)).sqrt();
+	let search_distance = alpha + (alpha.powi(2) - (a.coords - mid_point.coords).norm_squared()).sqrt();
 
 	let nearest = tree.nearest(&mid_point, search_distance.powi(2));
 	let mut best = None;
@@ -206,9 +206,9 @@ fn find_third(
 		let Some(center_2) = sphere_location(data[first], data[second], data[third.index], alpha) else {
 			continue;
 		};
-		let to_center_2 = (center_2 - mid_point).normalized();
-		let angle = to_center.dot(to_center_2).clamp(-1.0, 1.0).acos();
-		let angle = if to_center.cross(to_center_2).dot(bar) < 0.0 {
+		let to_center_2 = (center_2 - mid_point).normalize();
+		let angle = to_center.dot(&to_center_2).clamp(-1.0, 1.0).acos();
+		let angle = if to_center.cross(&to_center_2).dot(&bar) < 0.0 {
 			std::f32::consts::TAU - angle
 		} else {
 			angle
@@ -225,21 +225,21 @@ fn find_third(
 
 /// https://stackoverflow.com/a/34326390
 fn sphere_location(
-	point_a: Vector<3, f32>,
-	point_b: Vector<3, f32>,
-	point_c: Vector<3, f32>,
+	point_a: na::Point<f32, 3>,
+	point_b: na::Point<f32, 3>,
+	point_c: na::Point<f32, 3>,
 	alpha: f32,
-) -> Option<Vector<3, f32>> {
+) -> Option<na::Point<f32, 3>> {
 	let ac = point_c - point_a;
 	let ab = point_b - point_a;
-	let out = ab.cross(ac);
+	let out = ab.cross(&ac);
 
-	let to = (out.cross(ab) * ac.length_squared() + ac.cross(out) * ab.length_squared()) / (2.0 * out.length_squared());
+	let to = (out.cross(&ab) * ac.norm_squared() + ac.cross(&out) * ab.norm_squared()) / (2.0 * out.norm_squared());
 	let circumcenter = point_a + to;
 
-	let dist = alpha * alpha - to.length_squared();
+	let dist = alpha * alpha - to.norm_squared();
 	if dist <= 0.0 {
 		return None;
 	}
-	Some(circumcenter - out.normalized() * dist.sqrt())
+	Some(circumcenter - out.normalize() * dist.sqrt())
 }

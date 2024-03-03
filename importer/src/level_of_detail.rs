@@ -1,4 +1,4 @@
-use math::{Vector, X, Y, Z};
+use nalgebra as na;
 
 use crate::{point::PointsCollection, Settings};
 
@@ -8,8 +8,8 @@ const GRID_SIZE_3: usize = GRID_SIZE * GRID_SIZE * GRID_SIZE;
 #[derive(Clone, Copy)]
 struct Cell {
 	count: usize,
-	position: Vector<3, f32>,
-	normal: Vector<3, f32>,
+	position: na::Point3<f32>,
+	normal: na::Vector3<f32>,
 	total_area: f32,
 
 	slice: u32,
@@ -20,7 +20,7 @@ struct Cell {
 
 pub fn grid(
 	children: Vec<PointsCollection>,
-	corner: Vector<3, f32>,
+	corner: na::Point3<f32>,
 	size: f32,
 	settings: &Settings,
 ) -> PointsCollection {
@@ -29,8 +29,8 @@ pub fn grid(
 		GRID_SIZE_3,
 		Cell {
 			count: 0,
-			position: Vector::default(),
-			normal: Vector::default(),
+			position: na::Point3::default(),
+			normal: na::Vector3::default(),
 			total_area: 0.0,
 
 			slice: 0,
@@ -43,15 +43,15 @@ pub fn grid(
 	for points in children {
 		for (i, point) in points.render.iter().enumerate() {
 			let diff = (point.position - corner) * grid_scale;
-			let grid_x = (diff[X] as usize).min(GRID_SIZE - 1);
-			let grid_y = (diff[Y] as usize).min(GRID_SIZE - 1);
-			let grid_z = (diff[Z] as usize).min(GRID_SIZE - 1);
+			let grid_x = (diff.x as usize).min(GRID_SIZE - 1);
+			let grid_y = (diff.y as usize).min(GRID_SIZE - 1);
+			let grid_z = (diff.z as usize).min(GRID_SIZE - 1);
 
 			let grid_pos = grid_x + grid_y * GRID_SIZE + grid_z * GRID_SIZE * GRID_SIZE;
 
 			let cell = &mut grid[grid_pos];
 
-			cell.position += point.position;
+			cell.position += point.position.coords;
 			let area = point.size * point.size;
 			let weight = area / (cell.total_area + area);
 			cell.normal = fast_spherical_linear_interpolation(cell.normal, point.normal, weight);
@@ -95,9 +95,13 @@ fn approximate_theta(dist: f32) -> f32 {
 	LINEAR_SCALE * dist + QUADRATIC_SCALE * dist * dist
 }
 
-fn fast_spherical_linear_interpolation(start: Vector<3, f32>, end: Vector<3, f32>, percent: f32) -> Vector<3, f32> {
+fn fast_spherical_linear_interpolation(
+	start: na::Vector3<f32>,
+	end: na::Vector3<f32>,
+	percent: f32,
+) -> na::Vector3<f32> {
 	const SAME_DIRECTION_THRESHOLD: f32 = 0.999;
-	let overlap = start.dot(end);
+	let overlap = start.dot(&end);
 	if overlap.abs() >= SAME_DIRECTION_THRESHOLD {
 		return start;
 	}
@@ -105,10 +109,10 @@ fn fast_spherical_linear_interpolation(start: Vector<3, f32>, end: Vector<3, f32
 
 	let difference = end * end_flip - start;
 
-	let dist = difference.length();
+	let dist = difference.norm();
 	let theta = approximate_theta(dist);
 	let center_length = (1.0 - dist * dist / (2.0 * 2.0)).sqrt();
 	let percent = ((theta * (percent - 0.5).tan()) * center_length / dist) + 0.5;
 	let res = start + difference * percent;
-	res.normalized()
+	res.normalize()
 }

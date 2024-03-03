@@ -6,7 +6,7 @@ use std::{
 	path::Path,
 };
 
-use math::Vector;
+use nalgebra as na;
 use serde::{Deserialize, Serialize};
 
 pub const MAX_LEAF_SIZE: usize = 1 << 15;
@@ -24,7 +24,7 @@ pub enum IndexData {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct IndexNode {
 	pub data: IndexData,
-	pub position: Vector<3, f32>,
+	pub position: na::Point<f32, 3>,
 	pub size: f32,
 	pub index: u32,
 }
@@ -52,7 +52,7 @@ impl Project {
 			depth: 0,
 			root: IndexNode {
 				data: IndexData::Leaf { segments: HashSet::new() },
-				position: Vector::default(),
+				position: na::Point::default(),
 				size: 0.0,
 				index: 0,
 			},
@@ -80,8 +80,8 @@ impl Project {
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Point {
-	pub position: Vector<3, f32>,
-	pub normal: Vector<3, f32>,
+	pub position: na::Point<f32, 3>,
+	pub normal: na::SVector<f32, 3>,
 	pub size: f32,
 }
 

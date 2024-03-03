@@ -1,9 +1,7 @@
 use std::fs::File;
 
-use math::Angle;
-use math::Transform;
-use math::Vector;
-use math::{X, Y, Z};
+use na::vector;
+use nalgebra as na;
 use serde::{Deserialize, Serialize};
 
 use crate::lod;
@@ -11,12 +9,12 @@ use crate::State;
 
 const BASE_MOVE_SPEED: f32 = 0.1;
 const BASE_ROTATE_SPEED: f32 = 0.002;
-const FIELD_OF_VIEW: f32 = 45.0;
+const FIELD_OF_VIEW: f32 = 45.0 * std::f32::consts::TAU / 360.0;
 
 pub struct Camera {
 	pub gpu: render::Camera3DGPU,
 	pub cam: render::Camera3D,
-	pub transform: Transform<3, f32>,
+	pub transform: na::Affine3<f32>,
 	pub controller: Controller,
 	pub lod: lod::Mode,
 }
@@ -38,8 +36,7 @@ impl Camera {
 		// 	far: 10_000.0,
 		// };
 		let controller = Controller::Orbital { offset: 100.0 };
-		let position = [0.0, 0.0, 100.0].into();
-		let transform = Transform::translation(position);
+		let transform = na::Affine3::identity() * na::Translation3::new(0.0, 0.0, 100.0);
 
 		Self {
 			gpu: render::Camera3DGPU::new(state, &camera, &transform),
@@ -50,17 +47,17 @@ impl Camera {
 		}
 	}
 
-	pub fn movement(&mut self, direction: Vector<2, f32>, state: &State) {
+	pub fn movement(&mut self, direction: na::Vector2<f32>, state: &State) {
 		self.controller.movement(direction, &mut self.transform);
 		self.gpu = render::Camera3DGPU::new(state, &self.cam, &self.transform);
 	}
 
 	pub fn move_in_view_direction(&mut self, amount: f32, state: &State) {
-		self.transform.position += self.transform.basis[Z] * amount;
+		self.transform *= na::Translation3::new(0.0, 0.0, amount);
 		self.gpu = render::Camera3DGPU::new(state, &self.cam, &self.transform);
 	}
 
-	pub fn rotate(&mut self, delta: Vector<2, f32>, state: &State) {
+	pub fn rotate(&mut self, delta: na::Vector2<f32>, state: &State) {
 		self.controller.rotate(delta, &mut self.transform);
 		self.gpu = render::Camera3DGPU::new(state, &self.cam, &self.transform);
 	}
@@ -73,8 +70,8 @@ impl Camera {
 		self.gpu = render::Camera3DGPU::new(state, &self.cam, &self.transform);
 	}
 
-	pub fn position(&self) -> Vector<3, f32> {
-		self.transform.position
+	pub fn position(&self) -> na::Point3<f32> {
+		self.transform * na::Point3::origin()
 	}
 
 	pub fn time(&mut self, render_time: f32) {
@@ -105,40 +102,42 @@ impl Camera {
 		}
 	}
 
-	pub fn inside_frustrum(&self, corner: Vector<3, f32>, size: f32) -> bool {
+	pub fn inside_frustrum(&self, corner: na::Point3<f32>, size: f32) -> bool {
 		self.cam.inside(corner, size, self.transform)
 	}
 
-	pub fn inside_moved_frustrum(&self, corner: Vector<3, f32>, size: f32, difference: f32) -> bool {
+	pub fn inside_moved_frustrum(&self, corner: na::Point3<f32>, size: f32, difference: f32) -> bool {
 		self.cam.inside(
 			corner,
 			size,
-			self.transform * Transform::translation([0.0, 0.0, -difference].into()),
+			self.transform * na::Translation3::new(0.0, 0.0, -difference),
 		)
 	}
 
-	pub fn ray_origin(&self, position: Vector<2, f32>, window_size: Vector<2, f32>) -> Vector<3, f32> {
+	pub fn ray_origin(&self, position: na::Point2<f32>, window_size: na::Point2<f32>) -> na::Point3<f32> {
 		match self.cam {
-			render::Camera3D::Perspective { .. } => self.transform.position,
+			render::Camera3D::Perspective { .. } => self.transform * na::Point::origin(),
 			render::Camera3D::Orthographic { aspect, height, .. } => {
-				self.transform.position
-					+ self.transform.basis[X] * ((position[X] / window_size[X]) - 0.5) * (height * aspect)
-					- self.transform.basis[Y] * ((position[Y] / window_size[Y]) - 0.5) * height
+				self.transform * na::Point::origin()
+					+ self.transform
+						* na::vector![
+							((position.x / window_size.x) - 0.5) * (height * aspect),
+							0.0,
+							0.0
+						] - self.transform * na::vector![0.0, ((position.y / window_size.y) - 0.5) * height, 0.0]
 			},
 		}
 	}
 
-	pub fn ray_direction(&self, position: Vector<2, f32>, window_size: Vector<2, f32>) -> Vector<3, f32> {
+	pub fn ray_direction(&self, position: na::Point2<f32>, window_size: na::Point2<f32>) -> na::Vector3<f32> {
 		match self.cam {
 			render::Camera3D::Perspective { .. } => {
-				let dist = window_size[Y] / (2.0 * Angle::degree(FIELD_OF_VIEW / 2.0).as_radians().tan());
+				println!("{} {}", position, window_size);
+				let dist = (window_size.y / 2.0) / (FIELD_OF_VIEW / 2.0).tan();
 				let position = position - window_size / 2.0;
-				let intersection = -self.transform.basis[Z] * dist
-					+ self.transform.basis[X] * position[X]
-					+ -self.transform.basis[Y] * position[Y];
-				intersection.normalized()
+				(self.transform * vector![position.x, -position.y, -dist]).normalize()
 			},
-			render::Camera3D::Orthographic { .. } => -self.transform.basis[Z],
+			render::Camera3D::Orthographic { .. } => self.transform * vector![0.0, 0.0, -1.0],
 		}
 	}
 
@@ -181,7 +180,7 @@ impl Camera {
 
 #[derive(Serialize, Deserialize)]
 struct CameraData {
-	transform: Transform<3, f32>,
+	transform: na::Affine3<f32>,
 	controller: Controller,
 	lod: lod::Mode,
 }
@@ -193,53 +192,56 @@ pub enum Controller {
 }
 
 impl Controller {
-	pub fn movement(&mut self, direction: Vector<2, f32>, transform: &mut Transform<3, f32>) {
+	pub fn movement(&mut self, direction: na::Vector2<f32>, transform: &mut na::Affine3<f32>) {
 		match *self {
 			Self::FirstPerson { sensitivity } => {
-				let direction = [
-					direction[X] * sensitivity * BASE_MOVE_SPEED,
+				*transform *= na::Translation3::new(
+					direction.x * sensitivity * BASE_MOVE_SPEED,
 					0.0,
-					direction[Y] * sensitivity * BASE_MOVE_SPEED,
-				]
-				.into();
-				*transform *= Transform::translation(direction);
+					direction.y * sensitivity * BASE_MOVE_SPEED,
+				)
 			},
 			Self::Orbital { offset } => {
-				transform.position += (transform.basis[X] * direction[X]
-					+ transform.basis[X].cross([0.0, 1.0, 0.0].into()) * direction[Y])
+				let vector = (*transform * vector![1.0, 0.0, 0.0] * direction.x
+					+ (*transform * vector![1.0, 0.0, 0.0]).cross(&vector![0.0, 1.0, 0.0]) * direction.y)
 					* offset * BASE_MOVE_SPEED;
+				*transform = na::Translation3 { vector } * *transform;
 			},
 		}
 	}
 
-	pub fn rotate(&mut self, delta: Vector<2, f32>, transform: &mut Transform<3, f32>) {
+	pub fn rotate(&mut self, delta: na::Vector2<f32>, transform: &mut na::Affine3<f32>) {
 		match *self {
 			Self::FirstPerson { .. } => {
-				transform.rotate_local_before(
-					[0.0, 1.0, 0.0].into(),
-					Angle::radians(delta[X]) * -BASE_ROTATE_SPEED,
-				);
-				transform.rotate_local(
-					[1.0, 0.0, 0.0].into(),
-					Angle::radians(delta[Y]) * -BASE_ROTATE_SPEED,
+				let p = *transform * na::Point3::origin();
+
+				*transform = na::Translation3 { vector: p.coords }
+					* na::Rotation3::from_axis_angle(
+						&na::Unit::new_unchecked(vector![0.0, 1.0, 0.0]),
+						delta.x * -BASE_ROTATE_SPEED,
+					) * na::Translation3 { vector: -p.coords }
+					* *transform * na::Rotation3::from_axis_angle(
+					&na::Unit::new_unchecked(vector![1.0, 0.0, 0.0]),
+					delta.y * -BASE_ROTATE_SPEED,
 				);
 			},
 			Self::Orbital { offset } => {
-				transform.position += transform.basis[Z] * -offset;
-				transform.rotate_local_before(
-					[0.0, 1.0, 0.0].into(),
-					Angle::radians(delta[X]) * -BASE_ROTATE_SPEED,
-				);
-				transform.rotate_local(
-					[1.0, 0.0, 0.0].into(),
-					Angle::radians(delta[Y]) * -BASE_ROTATE_SPEED,
-				);
-				transform.position += transform.basis[Z] * offset;
+				let d = *transform * (na::Point3::origin() + vector![0.0, 0.0, -1.0] * offset);
+				*transform = na::Translation3 { vector: d.coords }
+					* na::Rotation3::from_axis_angle(
+						&na::Unit::new_unchecked(vector![0.0, 1.0, 0.0]),
+						delta.x * -BASE_ROTATE_SPEED,
+					) * na::Translation3 { vector: -d.coords }
+					* *transform * na::Translation3::new(0.0, 0.0, -offset)
+					* na::Rotation3::from_axis_angle(
+						&&na::Unit::new_unchecked(vector![1.0, 0.0, 0.0]),
+						delta.y * -BASE_ROTATE_SPEED,
+					) * na::Translation3::new(0.0, 0.0, offset);
 			},
 		}
 	}
 
-	pub fn scroll(&mut self, value: f32, transform: &mut Transform<3, f32>) {
+	pub fn scroll(&mut self, value: f32, transform: &mut na::Affine3<f32>) {
 		match self {
 			Self::FirstPerson { sensitivity } => {
 				*sensitivity *= 1.0 + value / 10.0;
@@ -252,7 +254,7 @@ impl Controller {
 				if new_offset < 0.01 {
 					new_offset = 0.01;
 				}
-				transform.position -= transform.basis[Z] * (*offset - new_offset);
+				*transform *= na::Translation3::new(0.0, 0.0, new_offset - *offset);
 				*offset = new_offset;
 			},
 		}

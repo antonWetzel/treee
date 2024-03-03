@@ -8,7 +8,7 @@ edition.workspace = true
 workspace = true
 
 [dependencies]
-math.workspace = true
+nalgebra.workspace = true
 bincode.workspace = true
 serde.workspace = true
 bytemuck.workspace = true

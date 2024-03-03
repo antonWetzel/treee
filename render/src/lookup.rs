@@ -1,4 +1,3 @@
-use math::{X, Y};
 use wgpu::util::DeviceExt;
 
 use crate::{Has, State, Texture};
@@ -11,14 +10,14 @@ impl Lookup {
 	pub fn new_png(state: &impl Has<State>, data: &[u8], range: u32) -> Self {
 		let state = state.get();
 		let texture = Texture::new_1d(state, data);
-		assert!(texture.size[X].is_power_of_two());
-		assert_eq!(texture.size[Y], 1);
+		assert!(texture.size.x.is_power_of_two());
+		assert_eq!(texture.size.y, 1);
 
 		let view = texture.gpu.create_view(&Default::default());
 
 		let bind_group_layout = Self::get_layout(state);
 
-		let scale = range / texture.size[X] + 1;
+		let scale = range / texture.size.x + 1;
 
 		let buffer = state
 			.device

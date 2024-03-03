@@ -4,7 +4,7 @@ use std::{
 	sync::Arc,
 };
 
-use math::{Vector, X, Y};
+use nalgebra as na;
 use project::Project;
 
 use crate::{
@@ -44,7 +44,7 @@ pub struct Game {
 
 	pub state: Arc<State>,
 	mouse: input::Mouse,
-	mouse_start: Option<Vector<2, f32>>,
+	mouse_start: Option<na::Point2<f32>>,
 
 	keyboard: input::Keyboard,
 	time: Time,
@@ -437,7 +437,7 @@ impl Game {
 						ui.add_sized([LEFT, HEIGHT], Label::new("Background"));
 						ui.style_mut().spacing.interact_size.x = ui.available_width();
 						if ui
-							.color_edit_button_rgb(self.tree.background.data_mut())
+							.color_edit_button_rgb(&mut self.tree.background.coords.data.0[0])
 							.changed()
 						{
 							window.request_redraw();
@@ -500,7 +500,7 @@ impl Game {
 						ui.add_sized([LEFT, HEIGHT], Label::new("Color"));
 						ui.style_mut().spacing.interact_size.x = ui.available_size().x;
 						if ui
-							.color_edit_button_rgb(self.tree.eye_dome.color.data_mut())
+							.color_edit_button_rgb(&mut self.tree.eye_dome.color.coords.data.0[0])
 							.changed()
 						{
 							self.tree.eye_dome.update_settings(&self.state);
@@ -678,8 +678,8 @@ impl render::Entry for World {
 		);
 	}
 
-	fn resize_window(&mut self, _window_id: render::WindowId, size: Vector<2, u32>) {
-		self.paused = size[X] == 0 || size[Y] == 0;
+	fn resize_window(&mut self, _window_id: render::WindowId, size: na::Point2<u32>) {
+		self.paused = size.x == 0 || size.y == 0;
 		if self.paused {
 			return;
 		}
@@ -710,20 +710,20 @@ impl render::Entry for World {
 
 	fn time(&mut self) {
 		let delta = self.time.elapsed();
-		let mut direction: Vector<2, f32> = [0.0, 0.0].into();
+		let mut direction = na::vector![0.0, 0.0];
 		if self.keyboard.pressed(input::KeyCode::KeyD) || self.keyboard.pressed(input::KeyCode::ArrowRight) {
-			direction[X] += 1.0;
+			direction.x += 1.0;
 		}
 		if self.keyboard.pressed(input::KeyCode::KeyS) || self.keyboard.pressed(input::KeyCode::ArrowDown) {
-			direction[Y] += 1.0;
+			direction.y += 1.0;
 		}
 		if self.keyboard.pressed(input::KeyCode::KeyA) || self.keyboard.pressed(input::KeyCode::ArrowLeft) {
-			direction[X] -= 1.0;
+			direction.x -= 1.0;
 		}
 		if self.keyboard.pressed(input::KeyCode::KeyW) || self.keyboard.pressed(input::KeyCode::ArrowUp) {
-			direction[Y] -= 1.0;
+			direction.y -= 1.0;
 		}
-		let l = direction.length();
+		let l = direction.norm();
 		if l > 0.0 {
 			direction *= 10.0 * delta.as_secs_f32() / l;
 			self.game.tree.camera.movement(direction, &self.game.state);
@@ -767,7 +767,7 @@ impl render::Entry for World {
 			},
 			(input::MouseButton::Left, input::State::Released) => {
 				if let Some(start) = self.mouse_start {
-					let dist = (start - self.mouse.position()).length();
+					let dist = (start - self.mouse.position()).norm();
 					if dist < 2.0 {
 						self.game.raycast(&self.window);
 					}
@@ -777,7 +777,7 @@ impl render::Entry for World {
 		}
 	}
 
-	fn mouse_moved(&mut self, _window_id: render::WindowId, position: Vector<2, f32>) {
+	fn mouse_moved(&mut self, _window_id: render::WindowId, position: na::Point2<f32>) {
 		let delta = self.mouse.delta(position);
 		if self.mouse.pressed(input::MouseButton::Left) {
 			self.game.tree.camera.rotate(delta, &self.game.state);

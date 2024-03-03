@@ -9,4 +9,4 @@ workspace = true
 
 [dependencies]
 winit.workspace = true
-math.workspace = true
+nalgebra.workspace = true

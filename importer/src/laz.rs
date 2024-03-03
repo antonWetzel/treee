@@ -4,7 +4,8 @@ use laz::{
 	record::{LayeredPointRecordDecompressor, RecordDecompressor, SequentialPointRecordDecompressor},
 	LazVlr,
 };
-use math::{Vector, X, Y, Z};
+use nalgebra as na;
+
 use rayon::prelude::*;
 use std::{
 	io::{BufReader, Read, Seek, SeekFrom},
@@ -18,14 +19,14 @@ pub struct Laz {
 	vlr: LazVlr,
 	chunks: Vec<(u64, usize)>,
 	point_length: usize,
-	center: Vector<3, f64>,
-	offset: Vector<3, f64>,
-	scale: Vector<3, f64>,
+	center: na::Point3<f64>,
+	offset: na::Point3<f64>,
+	scale: na::Point3<f64>,
 
 	path: PathBuf,
 
-	pub min: Vector<3, f32>,
-	pub max: Vector<3, f32>,
+	pub min: na::Point3<f32>,
+	pub max: na::Point3<f32>,
 }
 
 impl Laz {
@@ -40,15 +41,15 @@ impl Laz {
 		let total = header.number_of_point_records as usize;
 
 		let point_length = header.point_data_record_length as usize;
-		let scale = Vector::new([
+		let scale = na::Point3::new(
 			header.x_scale_factor,
 			header.y_scale_factor,
 			header.z_scale_factor,
-		]);
-		let offset = Vector::new([header.x_offset, header.y_offset, header.z_offset]);
-		let min = Vector::new([header.min_x, header.min_z, -header.max_y]);
-		let max = Vector::new([header.max_x, header.max_z, -header.min_y]);
-		let center = (min + max) / 2.0;
+		);
+		let offset = na::Point3::new(header.x_offset, header.y_offset, header.z_offset);
+		let min = na::Point3::new(header.min_x, header.min_z, -header.max_y);
+		let max = na::Point3::new(header.max_x, header.max_z, -header.min_y);
+		let center = na::center(&min, &max);
 
 		let chunks = ChunkTable::read_from(&mut file, &vlr)?;
 
@@ -76,8 +77,8 @@ impl Laz {
 			center,
 			path: path.to_owned(),
 
-			min: (min - center).map(|x| x as f32),
-			max: (max - center).map(|x| x as f32),
+			min: (min - center).map(|x| x as f32).into(),
+			max: (max - center).map(|x| x as f32).into(),
 		})
 	}
 
@@ -127,9 +128,9 @@ pub struct Chunk {
 	slice: Vec<u8>,
 	current: usize,
 	point_length: usize,
-	offset: Vector<3, f64>,
-	scale: Vector<3, f64>,
-	center: Vector<3, f64>,
+	offset: na::Point3<f64>,
+	scale: na::Point3<f64>,
+	center: na::Point3<f64>,
 }
 
 impl Chunk {
@@ -139,9 +140,9 @@ impl Chunk {
 }
 
 impl Iterator for Chunk {
-	type Item = Vector<3, f32>;
+	type Item = na::Point3<f32>;
 
-	fn next(&mut self) -> Option<Vector<3, f32>> {
+	fn next(&mut self) -> Option<na::Point3<f32>> {
 		if self.current >= self.slice.len() {
 			return None;
 		}
@@ -151,12 +152,12 @@ impl Iterator for Chunk {
 		let z = i32::from_le_bytes(slice[8..12].try_into().unwrap());
 		self.current += self.point_length;
 
-		let v = Vector::new([
-			self.offset[X] + x as f64 * self.scale[X],
-			self.offset[Y] + y as f64 * self.scale[Y],
-			self.offset[Z] + z as f64 * self.scale[Z],
-		]);
-		Some((Vector::new([v[X], v[Z], -v[Y]]) - self.center).map(|x| x as f32))
+		let v = self.offset + na::vector![x as f64, y as f64, z as f64].zip_map(&self.scale.coords, |a, b| a * b);
+		Some(
+			(na::vector![v.x, v.z, -v.y] - self.center.coords)
+				.map(|x| x as f32)
+				.into(),
+		)
 	}
 }
 

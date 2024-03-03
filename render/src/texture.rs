@@ -1,10 +1,10 @@
 use image::GenericImageView;
-use math::Vector;
+use nalgebra as na;
 
 use crate::{Has, State};
 
 pub struct Texture {
-	pub size: Vector<2, u32>,
+	pub size: na::Point2<u32>,
 	pub gpu: wgpu::Texture,
 }
 

@@ -1,4 +1,4 @@
-use math::Vector;
+use nalgebra as na;
 use wgpu::{util::DeviceExt, vertex_attr_array};
 
 use crate::{depth_texture::DepthTexture, Camera3DGPU, Has, RenderPass, State};
@@ -101,7 +101,7 @@ pub struct Lines {
 }
 
 impl Lines {
-	pub fn new(state: &impl Has<State>, points: &[Vector<3, f32>], indices: &[u32]) -> Self {
+	pub fn new(state: &impl Has<State>, points: &[na::Point3<f32>], indices: &[u32]) -> Self {
 		let buffer = state
 			.get()
 			.device
@@ -140,7 +140,7 @@ const ATTRIBUTES: [wgpu::VertexAttribute; 1] = vertex_attr_array![0 => Float32x3
 
 pub fn description<'a>(step_mode: wgpu::VertexStepMode) -> wgpu::VertexBufferLayout<'a> {
 	wgpu::VertexBufferLayout {
-		array_stride: std::mem::size_of::<Vector<3, f32>>() as wgpu::BufferAddress,
+		array_stride: std::mem::size_of::<na::Point3<f32>>() as wgpu::BufferAddress,
 		step_mode,
 		attributes: &ATTRIBUTES,
 	}

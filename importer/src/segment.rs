@@ -1,4 +1,4 @@
-use math::{Vector, X, Y, Z};
+use nalgebra as na;
 use rayon::prelude::*;
 use voronator::delaunator::Point;
 
@@ -12,11 +12,11 @@ use crate::{
 };
 
 pub struct Segment {
-	data: CacheEntry<Vector<3, f32>>,
+	data: CacheEntry<na::Point3<f32>>,
 }
 
 impl Segment {
-	pub fn points(self) -> Vec<Vector<3, f32>> {
+	pub fn points(self) -> Vec<na::Point3<f32>> {
 		self.data.read()
 	}
 
@@ -26,17 +26,17 @@ impl Segment {
 }
 
 pub struct Segmenter {
-	slices: Vec<CacheIndex<Vector<3, f32>>>,
-	min: Vector<3, f32>,
-	max: Vector<3, f32>,
+	slices: Vec<CacheIndex<na::Point3<f32>>>,
+	min: na::Point3<f32>,
+	max: na::Point3<f32>,
 	slice_height: f32,
 	max_distance: f32,
 	min_segment_size: usize,
 }
 
 impl Segmenter {
-	pub fn new(min: Vector<3, f32>, max: Vector<3, f32>, cache: &mut Cache, settings: &Settings) -> Self {
-		let slice_count = ((max[Y] - min[Y]) / settings.segmenting_slice_width) as usize + 1;
+	pub fn new(min: na::Point3<f32>, max: na::Point3<f32>, cache: &mut Cache, settings: &Settings) -> Self {
+		let slice_count = ((max.y - min.y) / settings.segmenting_slice_width) as usize + 1;
 		let slices = (0..slice_count).map(|_| cache.new_entry()).collect();
 		Self {
 			slices,
@@ -48,8 +48,8 @@ impl Segmenter {
 		}
 	}
 
-	pub fn add_point(&mut self, point: Vector<3, f32>, cache: &mut Cache) {
-		let slice = ((self.max[Y] - point[Y]) / self.slice_height) as usize;
+	pub fn add_point(&mut self, point: na::Point3<f32>, cache: &mut Cache) {
+		let slice = ((self.max.y - point.y) / self.slice_height) as usize;
 		cache.add_value(&self.slices[slice], point);
 	}
 
@@ -62,12 +62,12 @@ impl Segmenter {
 		let mut progress = Progress::new("Segmenting", total);
 
 		let min = Point {
-			x: self.min[X] as f64,
-			y: self.min[Z] as f64,
+			x: self.min.x as f64,
+			y: self.min.z as f64,
 		};
 		let max = Point {
-			x: self.max[X] as f64,
-			y: self.max[Z] as f64,
+			x: self.max.x as f64,
+			y: self.max.z as f64,
 		};
 
 		cfg_if::cfg_if! {
@@ -106,10 +106,10 @@ impl Segmenter {
 								svg.write_all(
 									format!(
 										"<svg viewbox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\" width=\"{}\" height=\"{}\" >\n",
-										size[X] * 10.0,
-										size[Z] * 10.0,
-										size[X] * 10.0,
-										size[Z] * 10.0
+										size.x * 10.0,
+										size.z * 10.0,
+										size.x * 10.0,
+										size.z * 10.0
 									)
 									.as_bytes(),
 								)
@@ -130,8 +130,8 @@ impl Segmenter {
 						let points = centroids
 							.iter()
 							.map(|centroid| Point {
-								x: centroid.center[X] as f64,
-								y: centroid.center[Y] as f64,
+								x: centroid.center.x as f64,
+								y: centroid.center.y as f64,
 							})
 							.collect::<Vec<_>>();
 
@@ -140,8 +140,8 @@ impl Segmenter {
 							svg.write_all(
 								format!(
 									"  <circle cx=\"{}\" cy=\"{}\" r=\"10\" />\n",
-									(centroid.center[X] - self.min[X]) * 10.0,
-									(centroid.center[Y] - self.min[Z]) * 10.0
+									(centroid.center.x - self.min.x) * 10.0,
+									(centroid.center.y - self.min.z) * 10.0
 								)
 								.as_bytes(),
 							)
@@ -157,7 +157,7 @@ impl Segmenter {
 							.map(|cell| cell.points())
 							.map(|p| {
 								p.iter()
-									.map(|p| Vector::new([p.x as f32, p.y as f32]))
+									.map(|p| na::Point2::new(p.x as f32, p.y as f32))
 									.collect::<Vec<_>>()
 							})
 							.map(|p| Tree::from_points(p, 0.1))
@@ -178,7 +178,7 @@ impl Segmenter {
 							let Some((idx, _)) = trees
 								.iter_mut()
 								.enumerate()
-								.find(|(_, (_, tree, _))| tree.contains(Vector::new([p[X], p[Z]]), 0.1))
+								.find(|(_, (_, tree, _))| tree.contains(na::Point2::new(p.x, p.z), 0.1))
 							else {
 								continue;
 							};
@@ -226,25 +226,25 @@ struct TreeSet {
 
 #[derive(Debug)]
 struct Tree {
-	points: Vec<Vector<2, f32>>,
-	min: Vector<2, f32>,
-	max: Vector<2, f32>,
+	points: Vec<na::Point2<f32>>,
+	min: na::Point2<f32>,
+	max: na::Point2<f32>,
 }
 
 impl Tree {
-	pub fn new(p: Vector<2, f32>, max_distance: f32) -> Self {
+	pub fn new(p: na::Point2<f32>, max_distance: f32) -> Self {
 		Self {
 			points: vec![
 				p,
-				Vector::new([p[X] + 0.1, p[Y]]),
-				Vector::new([p[X], p[Y] + 0.1]),
+				na::Point2::new(p.x + 0.1, p.y),
+				na::Point2::new(p.x, p.y + 0.1),
 			],
-			min: p - Vector::new([max_distance, max_distance]),
-			max: p + Vector::new([max_distance + 0.1, max_distance + 0.1]),
+			min: p - na::vector![max_distance, max_distance],
+			max: p + na::vector![max_distance + 0.1, max_distance + 0.1],
 		}
 	}
 
-	pub fn from_points(mut points: Vec<Vector<2, f32>>, max_distance: f32) -> Self {
+	pub fn from_points(mut points: Vec<na::Point2<f32>>, max_distance: f32) -> Self {
 		match points.len() {
 			0 => {
 				return Self {
@@ -254,30 +254,30 @@ impl Tree {
 				}
 			},
 			1 => {
-				points.push(points[0] + [0.1, 0.0].into());
-				points.push(points[0] + [0.0, 0.1].into());
+				points.push(points[0] + na::vector![0.1, 0.0]);
+				points.push(points[0] + na::vector![0.0, 0.1]);
 			},
 			2 => {
 				let diff = points[1] - points[0];
-				points.push(points[0] + Vector::new([-diff[Y], diff[X]]).normalized() * 0.1);
+				points.push(points[0] + na::vector![-diff.y, diff.x].normalize() * 0.1);
 			},
 			_ => {},
 		}
 		let mut min = points[0];
 		let mut max = points[0];
 		for &p in points.iter().skip(1) {
-			min = min.min(p);
-			max = max.max(p);
+			min = min.coords.zip_map(&p.coords, |a, b| a.min(b)).into();
+			max = max.coords.zip_map(&p.coords, |a, b| a.max(b)).into();
 		}
 		Self {
 			points,
-			min: min - Vector::new([max_distance, max_distance]),
-			max: max + Vector::new([max_distance, max_distance]),
+			min: min - na::vector![max_distance, max_distance],
+			max: max + na::vector![max_distance, max_distance],
 		}
 	}
 
-	fn distance(&self, point: Vector<2, f32>, max_distance: f32) -> f32 {
-		if point[X] < self.min[X] || point[X] >= self.max[X] || point[Y] < self.min[Y] || point[Y] >= self.max[Y] {
+	fn distance(&self, point: na::Point2<f32>, max_distance: f32) -> f32 {
+		if point.x < self.min.x || point.x >= self.max.x || point.y < self.min.y || point.y >= self.max.y {
 			return f32::MAX;
 		}
 		let mut best = f32::MIN;
@@ -285,9 +285,9 @@ impl Tree {
 			let a = self.points[i];
 			let b = self.points[(i + 1) % self.points.len()];
 			let dir = b - a;
-			let out = Vector::new([dir[Y], -dir[X]]).normalized();
+			let out = na::vector![dir.y, -dir.x].normalize();
 			let diff = point - a;
-			let dist = out.dot(diff);
+			let dist = out.dot(&diff);
 			if dist > max_distance {
 				return f32::MAX;
 			}
@@ -296,17 +296,17 @@ impl Tree {
 		best
 	}
 
-	fn contains(&self, point: Vector<2, f32>, max_distance: f32) -> bool {
-		if point[X] < self.min[X] || point[X] >= self.max[X] || point[Y] < self.min[Y] || point[Y] >= self.max[Y] {
+	fn contains(&self, point: na::Point2<f32>, max_distance: f32) -> bool {
+		if point.x < self.min.x || point.x >= self.max.x || point.y < self.min.y || point.y >= self.max.y {
 			return false;
 		}
 		for i in 0..self.points.len() {
 			let a = self.points[i];
 			let b = self.points[(i + 1) % self.points.len()];
 			let dir = b - a;
-			let out = Vector::new([dir[Y], -dir[X]]).normalized();
+			let out = na::vector![dir.y, -dir.x].normalize();
 			let diff = point - a;
-			let dist = out.dot(diff);
+			let dist = out.dot(&diff);
 			if dist > max_distance {
 				return false;
 			}
@@ -314,12 +314,12 @@ impl Tree {
 		true
 	}
 
-	fn insert(&mut self, point: Vector<2, f32>, max_distance: f32) {
-		fn outside(a: Vector<2, f32>, b: Vector<2, f32>, point: Vector<2, f32>) -> bool {
+	fn insert(&mut self, point: na::Point2<f32>, max_distance: f32) {
+		fn outside(a: na::Point2<f32>, b: na::Point2<f32>, point: na::Point2<f32>) -> bool {
 			let dir = b - a;
-			let out = Vector::new([dir[Y], -dir[X]]).normalized();
+			let out = na::vector![dir.y, -dir.x].normalize();
 			let diff = point - a;
-			let dist = out.dot(diff);
+			let dist = out.dot(&diff);
 			dist > 0.0
 		}
 
@@ -352,52 +352,28 @@ impl Tree {
 
 		self.min = self
 			.min
-			.min(point - Vector::new([max_distance, max_distance]));
+			.coords
+			.zip_map(
+				&(point - na::vector![max_distance, max_distance]).coords,
+				|a, b| a.min(b),
+			)
+			.into();
 		self.max = self
 			.max
-			.max(point + Vector::new([max_distance, max_distance]));
+			.coords
+			.zip_map(
+				&(point + na::vector![max_distance, max_distance]).coords,
+				|a, b| a.max(b),
+			)
+			.into();
 	}
 
-	// pub fn intersections(&self, trees: &[Tree]) -> Vec<usize> {
-	// 	let mut res = Vec::new();
-	// 	for (idx, tree) in trees.iter().enumerate() {
-	// 		if self.max[X] < tree.min[X]
-	// 			|| tree.max[X] < self.min[X]
-	// 			|| self.max[Y] < tree.min[Y]
-	// 			|| tree.max[Y] < self.min[Y]
-	// 		{
-	// 			continue;
-	// 		}
-	// 		let seperated = (0..self.points.len()).any(|i| {
-	// 			let a = self.points[i];
-	// 			let b = self.points[(i + 1) % self.points.len()];
-	// 			let dir = b - a;
-	// 			let out = Vector::new([dir[Y], -dir[X]]).normalized();
-	// 			tree.points.iter().all(|&p| {
-	// 				let diff = p - a;
-	// 				diff.dot(out) >= 0.0
-	// 			})
-	// 		});
-	// 		if seperated.not() {
-	// 			res.push(idx);
-	// 		}
-	// 	}
-	// 	res
-	// }
-
 	#[cfg(feature = "segmentation-svgs")]
-	pub fn save_svg(&self, file: &mut std::fs::File, min: Vector<3, f32>, fill: bool) {
+	pub fn save_svg(&self, file: &mut std::fs::File, min: na::Point3<f32>, fill: bool) {
 		file.write_all(b"  <polygon points=\"").unwrap();
 		for &point in &self.points {
-			file.write_all(
-				format!(
-					"{},{} ",
-					(point[X] - min[X]) * 10.0,
-					(point[Y] - min[Z]) * 10.0
-				)
-				.as_bytes(),
-			)
-			.unwrap();
+			file.write_all(format!("{},{} ", (point.x - min.x) * 10.0, (point.y - min.z) * 10.0).as_bytes())
+				.unwrap();
 		}
 		if fill {
 			file.write_all(
@@ -419,15 +395,15 @@ impl Tree {
 
 #[derive(Clone, Copy)]
 struct Centroid {
-	center: Vector<2, f32>,
+	center: na::Point2<f32>,
 }
 
 impl TreeSet {
-	pub fn new(points: &[Vector<3, f32>], max_distance: f32) -> Self {
+	pub fn new(points: &[na::Point3<f32>], max_distance: f32) -> Self {
 		let mut trees = Vec::<Tree>::new();
 		'iter_points: for &point in points {
 			let mut near = Vec::new();
-			let p = Vector::new([point[X], point[Z]]);
+			let p = na::Point2::new(point.x, point.z);
 			for (i, tree) in trees.iter().enumerate() {
 				let dist = tree.distance(p, max_distance);
 				if dist <= 0.0 {
@@ -488,7 +464,7 @@ impl TreeSet {
 			let mut nearest = None;
 			let mut nearest_dist = max_distance * 2.0;
 			for (idx, &c) in centroids.iter().enumerate() {
-				let d = center.center.distance(c);
+				let d = (center.center - c).norm();
 				if d < nearest_dist {
 					nearest = Some(idx);
 					nearest_dist = d;
@@ -509,8 +485,8 @@ impl TreeSet {
 }
 
 //https://math.stackexchange.com/questions/90463/how-can-i-calculate-the-centroid-of-polygon
-fn centroid(points: &[Vector<2, f32>]) -> (Vector<2, f32>, f32) {
-	let mut center = Vector::new([0.0, 0.0]);
+fn centroid(points: &[na::Point2<f32>]) -> (na::Point2<f32>, f32) {
+	let mut center = na::vector![0.0, 0.0];
 	let mut area = 0.0;
 
 	let a = points[0];
@@ -518,7 +494,7 @@ fn centroid(points: &[Vector<2, f32>]) -> (Vector<2, f32>, f32) {
 		let b = points[i] - a;
 		let c = points[i + 1] - a;
 		let t_center = (b + c) / 3.0;
-		let t_area = (b[X] * c[Y] - b[Y] * c[X]) / 2.0;
+		let t_area = (b.x * c.y - b.y * c.x) / 2.0;
 
 		center += t_center * t_area;
 		area += t_area;

@@ -3,8 +3,7 @@ use std::num::NonZeroU32;
 use std::sync::Mutex;
 
 use crossbeam::atomic::AtomicCell;
-use math::Vector;
-use math::{X, Z};
+use nalgebra as na;
 use project::{IndexData, IndexNode, Project, MAX_LEAF_SIZE};
 use rayon::prelude::*;
 
@@ -27,13 +26,13 @@ pub enum Data {
 
 #[derive(Debug)]
 pub struct Node {
-	corner: Vector<3, f32>,
+	corner: na::Point3<f32>,
 	size: f32,
 	data: Data,
 }
 
 impl Node {
-	fn new_branch(corner: Vector<3, f32>, size: f32) -> Self {
+	fn new_branch(corner: na::Point3<f32>, size: f32) -> Self {
 		Self {
 			corner,
 			size,
@@ -41,7 +40,7 @@ impl Node {
 		}
 	}
 
-	fn new_leaf(corner: Vector<3, f32>, size: f32, cache: &mut Cache) -> Self {
+	fn new_leaf(corner: na::Point3<f32>, size: f32, cache: &mut Cache) -> Self {
 		Self {
 			corner,
 			size,
@@ -57,22 +56,22 @@ impl Node {
 		fn insert_into_children(
 			children: &mut [Option<Node>; 8],
 			point: Point,
-			corner: Vector<3, f32>,
+			corner: na::Point3<f32>,
 			size: f32,
 			cache: &mut Cache,
 		) {
 			let mut index = 0;
-			for dim in X.to(Z) {
+			for dim in 0..3 {
 				if point.render.position[dim] >= corner[dim] + size / 2.0 {
-					index += 1 << dim.0;
+					index += 1 << dim;
 				}
 			}
 			match &mut children[index] {
 				Some(v) => v.insert_position(point, cache),
 				None => {
 					let mut corner = corner;
-					for dim in X.to(Z) {
-						if index & (1 << dim.0) != 0 {
+					for dim in 0..3 {
+						if index & (1 << dim) != 0 {
 							corner[dim] += size / 2.0;
 						}
 					}
@@ -165,7 +164,7 @@ pub struct Tree {
 }
 
 impl Tree {
-	pub fn new(corner: Vector<3, f32>, size: f32) -> Self {
+	pub fn new(corner: na::Point3<f32>, size: f32) -> Self {
 		Self { root: Node::new_branch(corner, size) }
 	}
 
@@ -213,7 +212,7 @@ pub enum FlatData {
 
 #[derive(Debug)]
 pub struct FLatNode {
-	corner: Vector<3, f32>,
+	corner: na::Point3<f32>,
 	size: f32,
 	data: FlatData,
 	index: u32,

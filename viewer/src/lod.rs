@@ -1,4 +1,4 @@
-use math::Vector;
+use nalgebra as na;
 use serde::{Deserialize, Serialize};
 
 use crate::camera;
@@ -45,13 +45,13 @@ impl Checker {
 		}
 	}
 
-	pub fn should_render(self, corner: Vector<3, f32>, size: f32, camera: &camera::Camera) -> bool {
+	pub fn should_render(self, corner: na::Point3<f32>, size: f32, camera: &camera::Camera) -> bool {
 		match self {
 			Self::Level { current, target } => current >= target,
 			Self::Normal { threshold } => {
 				let rad = size * 0.5;
-				let pos = corner + Vector::new([rad, rad, rad]);
-				let dist = (camera.position() - pos).length() - (3.0 * rad * rad).sqrt();
+				let pos = corner + na::vector![rad, rad, rad];
+				let dist = (camera.position() - pos).norm() - (3.0 * rad * rad).sqrt();
 				// let dist = if dist < 0.0 { 0.0 } else { dist };
 				(dist / (size * size)) > threshold
 			},

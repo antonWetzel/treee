@@ -1,4 +1,5 @@
-use math::{Mat, Projection, Transform, Vector};
+use nalgebra as na;
+
 use wgpu::util::DeviceExt;
 
 use crate::{Has, State};
@@ -20,11 +21,13 @@ pub enum Camera3D {
 }
 
 impl Camera3D {
-	pub fn projection(&self) -> Mat<4, f32> {
+	pub fn projection(&self) -> na::Matrix4<f32> {
 		match *self {
-			Self::Perspective { aspect, fovy, near, far } => Projection::create_perspective(aspect, fovy, near, far),
+			Self::Perspective { aspect, fovy, near, far } => {
+				na::Perspective3::new(aspect, fovy, near, far).to_homogeneous()
+			},
 			Self::Orthographic { aspect, height, near, far } => {
-				Projection::create_orthographic(aspect, height, near, far)
+				na::Orthographic3::from_fov(aspect, height, near, far).to_homogeneous()
 			},
 		}
 	}
@@ -50,33 +53,33 @@ impl Camera3D {
 		}
 	}
 
-	pub fn inside(&self, corner: Vector<3, f32>, size: f32, transform: Transform<3, f32>) -> bool {
+	pub fn inside(&self, corner: na::Point<f32, 3>, size: f32, transform: na::Affine3<f32>) -> bool {
 		let y = (self.fovy() / 2.0).tan();
 		let x = y * self.aspect();
 
 		let planes = [
-			Vector::new([-1.0, 0.0, x]),
-			Vector::new([1.0, 0.0, x]),
-			Vector::new([0.0, -1.0, y]),
-			Vector::new([0.0, 1.0, y]),
+			na::vector![-1.0, 0.0, x],
+			na::vector![1.0, 0.0, x],
+			na::vector![0.0, -1.0, y],
+			na::vector![0.0, 1.0, y],
 		];
 
 		let t = transform.inverse();
 		let points = [
-			[0.0, 0.0, 0.0].into(),
-			[0.0, 0.0, size].into(),
-			[0.0, size, 0.0].into(),
-			[0.0, size, size].into(),
-			[size, 0.0, 0.0].into(),
-			[size, 0.0, size].into(),
-			[size, size, 0.0].into(),
-			[size, size, size].into(),
+			na::vector![0.0, 0.0, 0.0],
+			na::vector![0.0, 0.0, size],
+			na::vector![0.0, size, 0.0],
+			na::vector![0.0, size, size],
+			na::vector![size, 0.0, 0.0],
+			na::vector![size, 0.0, size],
+			na::vector![size, size, 0.0],
+			na::vector![size, size, size],
 		]
 		.map(|point| corner + point)
 		.map(|point| t * point);
 
 		for plane in planes {
-			if points.iter().copied().all(|p| p.dot(plane) > 0.0) {
+			if points.iter().copied().all(|p| p.coords.dot(&plane) > 0.0) {
 				return false;
 			}
 		}
@@ -89,8 +92,8 @@ pub struct Camera3DGPU {
 }
 
 impl Camera3DGPU {
-	pub fn new(state: &impl Has<State>, camera: &crate::Camera3D, transform: &Transform<3, f32>) -> Self {
-		let view = transform.inverse().as_matrix();
+	pub fn new(state: &impl Has<State>, camera: &crate::Camera3D, transform: &na::Affine3<f32>) -> Self {
+		let view = transform.inverse().to_homogeneous();
 		let proj = camera.projection();
 
 		let uniform = Uniform { view_proj: proj * view };
@@ -144,7 +147,7 @@ impl Camera3DGPU {
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 struct Uniform {
-	pub view_proj: Mat<4, f32>,
+	pub view_proj: na::Matrix4<f32>,
 }
 
 unsafe impl bytemuck::Zeroable for Uniform {}

@@ -1,4 +1,4 @@
-use math::Vector;
+use nalgebra as na;
 use project::{Point, MAX_LEAF_SIZE};
 use wgpu::util::DeviceExt;
 
@@ -20,9 +20,9 @@ mod vertices {
 	const DIFF: f32 = 1.732_050_8;
 
 	pub const BASE_VERTICES: [PointEdge; 3] = [
-		PointEdge { position: Vector::new([-DIFF, -1.0]) },
-		PointEdge { position: Vector::new([DIFF, -1.0]) },
-		PointEdge { position: Vector::new([0.0, 2.0]) },
+		PointEdge { position: na::Point2::new(-DIFF, -1.0) },
+		PointEdge { position: na::Point2::new(DIFF, -1.0) },
+		PointEdge { position: na::Point2::new(0.0, 2.0) },
 	];
 }
 

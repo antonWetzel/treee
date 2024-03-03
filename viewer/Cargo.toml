@@ -11,7 +11,6 @@ workspace = true
 [dependencies]
 render.workspace = true
 input.workspace = true
-math.workspace = true
 project.workspace = true
 triangulation.workspace = true
 pollster.workspace = true
@@ -23,3 +22,4 @@ bincode.workspace = true
 serde.workspace = true
 env_logger.workspace = true
 log.workspace = true
+nalgebra.workspace = true

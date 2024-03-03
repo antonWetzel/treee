@@ -1,10 +1,10 @@
-use math::Vector;
+use nalgebra as na;
 use wgpu::vertex_attr_array;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
 pub struct PointEdge {
-	pub position: Vector<2, f32>,
+	pub position: na::Point2<f32>,
 }
 
 unsafe impl bytemuck::Zeroable for PointEdge {}

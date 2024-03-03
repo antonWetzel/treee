@@ -1,4 +1,4 @@
-use math::{Vector, X, Y, Z};
+use nalgebra as na;
 use wgpu::util::DeviceExt;
 
 use crate::{depth_texture::DepthTexture, Has, Render, RenderPass, State, Vertex2D};
@@ -28,7 +28,7 @@ pub struct EyeDome {
 	vertex_buffer: wgpu::Buffer,
 	render_pipeline: wgpu::RenderPipeline,
 
-	pub color: Vector<3, f32>,
+	pub color: na::Point3<f32>,
 	pub strength: f32,
 }
 
@@ -187,12 +187,12 @@ impl EyeDome {
 	fn get_settings_bindgroup(
 		state: &State,
 		layout: &wgpu::BindGroupLayout,
-		color: Vector<3, f32>,
+		color: na::Point3<f32>,
 		strength: f32,
 	) -> wgpu::BindGroup {
 		let strength = 1.0 - strength;
 		let uniform = EyeDomeUniform {
-			color: [color[X], color[Y], color[Z]],
+			color: color.coords.data.0[0],
 			strength: if strength < 0.1 { 0.1 } else { strength }.powi(6),
 		};
 		let buffer = state

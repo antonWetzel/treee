@@ -13,5 +13,5 @@ categories = ["algorithms"]
 workspace = true
 
 [dependencies]
-math.workspace = true
+nalgebra.workspace = true
 bytemuck.workspace = true

@@ -1,7 +1,6 @@
+use nalgebra as na;
 use std::sync::Arc;
 use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
-
-use math::Vector;
 
 use super::*;
 
@@ -147,7 +146,7 @@ impl Runner {
 							game.mouse_wheel(delta)
 						},
 						winit::event::WindowEvent::CursorMoved { position, .. } => {
-							let position = Vector::from([position.x as f32, position.y as f32]);
+							let position = na::vector![position.x as f32, position.y as f32].into();
 							game.mouse_moved(window_id, position)
 						},
 						winit::event::WindowEvent::ModifiersChanged(modifiers) => {

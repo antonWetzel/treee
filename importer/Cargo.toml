@@ -9,7 +9,6 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
-math.workspace = true
 k-nearest.workspace = true
 project.workspace = true
 rand.workspace = true
@@ -27,6 +26,7 @@ serde_json.workspace = true
 cfg-if.workspace = true
 laz.workspace = true
 static_assertions.workspace = true
+nalgebra.workspace = true
 
 [features]
 default = []

@@ -31,10 +31,10 @@ pub use texture::*;
 pub use vertex_2d::*;
 pub use window::*;
 
-use math::Vector;
+use nalgebra as na;
 
 pub trait RenderEntry<State> {
-	fn background(&self) -> Vector<3, f32>;
+	fn background(&self) -> na::Point3<f32>;
 
 	fn render<'a>(&'a mut self, state: &'a State, render_pass: &mut RenderPass<'a>);
 

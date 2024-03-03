@@ -8,7 +8,6 @@ edition.workspace = true
 workspace = true
 
 [dependencies]
-math.workspace = true
 input.workspace = true
 project.workspace = true
 bytemuck.workspace = true
@@ -19,6 +18,7 @@ winit.workspace = true
 egui-wgpu.workspace = true
 egui.workspace = true
 egui-winit.workspace = true
+nalgebra.workspace = true
 
 [features]
 default = []
