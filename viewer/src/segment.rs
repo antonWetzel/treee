@@ -5,7 +5,7 @@ use std::{
 };
 
 use math::{Vector, X, Y, Z};
-use window::{tree::TreeContext, State};
+use window::State;
 
 use crate::reader::Reader;
 

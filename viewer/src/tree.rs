@@ -1,16 +1,14 @@
 use std::collections::HashSet;
 use std::num::NonZeroU32;
-use std::path::PathBuf;
-use std::sync::Arc;
 
 use crate::loaded_manager::LoadedManager;
 use crate::reader::Reader;
 use crate::segment::{MeshRender, Segment};
 
 use math::{Vector, X, Y, Z};
+use project::IndexData;
 use project::IndexNode;
-use project::{IndexData, Project};
-use render::{LinesRenderExt, MeshRenderExt, PointCloudExt, Window};
+use render::{LinesRenderExt, MeshRenderExt, PointCloudExt};
 use window::tree::{Scene, Tree, TreeContext};
 use window::{camera, lod, State};
 
@@ -282,10 +280,6 @@ impl Node {
 		}
 	}
 }
-
-// trait TreeExt {
-// 	pub fn new_project()
-// }
 
 impl ProjectScene {
 	pub fn raycast(

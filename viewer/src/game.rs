@@ -4,12 +4,12 @@ use std::{
 	sync::Arc,
 };
 
-use math::{Vector, X, Y};
+use math::Vector;
 use project::Project;
 use render::Window;
 use window::{
 	camera, lod,
-	tree::{LookupName, Tree},
+	tree::{LookupName, Scene, Tree},
 	Game, State,
 };
 
@@ -711,12 +711,15 @@ impl render::Entry for World {
 		self.game.raw_event(event)
 	}
 
-	fn render(&mut self, window_id: render::WindowId) {
+	fn render(&mut self, _window_id: render::WindowId) {
 		if self.paused {
 			return;
 		}
 		if self.game.tree.scene.segment.is_none() {
-			self.game.render(window_id);
+			self.game.tree.scene.update(
+				lod::Checker::new(&self.game.tree.context.camera.lod),
+				&self.game.tree.context.camera,
+			);
 		}
 
 		let raw_input = self.game.take_egui_input();

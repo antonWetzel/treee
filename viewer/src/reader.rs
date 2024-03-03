@@ -31,7 +31,9 @@ impl Reader {
 	}
 
 	pub fn get_points(&mut self, index: usize) -> Vec<project::Point> {
-		self.points.read(index)
+		let p = self.points.read(index);
+		println!("{}", p[0].size);
+		p
 	}
 
 	pub fn get_property(&mut self, index: usize) -> Vec<u32> {

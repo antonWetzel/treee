@@ -33,12 +33,10 @@ pub use window::*;
 
 use math::Vector;
 
-pub trait RenderEntry<State> {
+pub trait RenderEntry<TState> {
 	fn background(&self) -> Vector<3, f32>;
-
-	fn render<'a>(&'a mut self, state: &'a State, render_pass: &mut RenderPass<'a>);
-
-	fn post_process<'a>(&'a mut self, state: &'a State, render_pass: &mut RenderPass<'a>);
+	fn render<'a>(&'a mut self, state: &'a TState, render_pass: &mut RenderPass<'a>);
+	fn post_process<'a>(&'a mut self, state: &'a TState, render_pass: &mut RenderPass<'a>);
 }
 
 pub trait Has<T> {

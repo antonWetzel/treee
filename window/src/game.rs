@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{ops::Deref, sync::Arc};
 
 use math::{Vector, X, Y};
 use render::egui::RawInput;
@@ -120,6 +120,8 @@ impl<T: CustomState> render::Entry for Game<T> {
 			lod::Checker::new(&self.tree.context.camera.lod),
 			&self.tree.context.camera,
 		);
+		self.window
+			.render_without_egui(self.state.deref(), &mut self.tree);
 	}
 
 	fn resize_window(&mut self, _window_id: render::WindowId, size: Vector<2, u32>) {

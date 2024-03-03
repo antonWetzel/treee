@@ -3,7 +3,7 @@ use std::sync::Arc;
 use math::Vector;
 use render::Window;
 
-use crate::{camera::Camera, State, lod};
+use crate::{camera::Camera, lod, State};
 
 pub const DEFAULT_BACKGROUND: Vector<3, f32> = Vector::new([0.1, 0.2, 0.3]);
 

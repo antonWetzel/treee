@@ -17,5 +17,10 @@ rfd.workspace = true
 #bytemuck.workspace = true
 bincode.workspace = true
 
+[dev-dependencies]
+env_logger.workspace = true
+pollster.workspace = true
+project.workspace = true
+
 [lints]
 workspace = true
