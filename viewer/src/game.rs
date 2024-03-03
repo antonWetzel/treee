@@ -1,5 +1,5 @@
 use std::{
-	ops::{Deref, Not},
+	ops::{Deref, DerefMut, Not},
 	path::PathBuf,
 	sync::Arc,
 };
@@ -18,12 +18,12 @@ use crate::{
 
 pub struct World {
 	window: render::Window,
-	game: Game,
+	game: Game<CustomState>,
 	egui: render::egui::Context,
 }
 
 impl std::ops::Deref for World {
-	type Target = Game;
+	type Target = Game<CustomState>;
 
 	fn deref(&self) -> &Self::Target {
 		&self.game
@@ -36,11 +36,15 @@ impl std::ops::DerefMut for World {
 	}
 }
 
-pub struct Game {
-	tree: Tree,
+pub struct CustomState {
 	project: Project,
 	path: Option<PathBuf>,
 	project_time: std::time::SystemTime,
+}
+
+pub struct Game<TCustomState> {
+	tree: Tree,
+	custom_state: TCustomState,
 
 	pub state: Arc<State>,
 	mouse: input::Mouse,
@@ -55,6 +59,14 @@ pub struct Game {
 	level_of_detail_options: bool,
 	camera_options: bool,
 	quit: bool,
+}
+
+impl<T> Deref for Game<T> {
+	type Target = T;
+
+	fn deref(&self) -> &Self::Target {
+		&self.custom_state
+	}
 }
 
 impl World {
@@ -84,12 +96,12 @@ impl World {
 			egui,
 			game: Game {
 				paused: false,
-
 				tree,
-				project,
-				project_time: std::time::SystemTime::now(),
-				path: None,
-
+				custom_state: CustomState {
+					project,
+					project_time: std::time::SystemTime::now(),
+					path: None,
+				},
 				state,
 				mouse: input::Mouse::new(),
 				mouse_start: None,
@@ -106,7 +118,7 @@ impl World {
 	}
 }
 
-impl Game {
+impl Game<CustomState> {
 	fn change_project(&mut self, window: &render::Window) {
 		let Some(path) = rfd::FileDialog::new()
 			.add_filter("Project File", &["epc"])
@@ -114,7 +126,7 @@ impl Game {
 		else {
 			return;
 		};
-		self.path = Some(path);
+		self.custom_state.path = Some(path);
 		self.reload(self.current_poject_time(), window);
 	}
 
@@ -139,11 +151,11 @@ impl Game {
 	}
 
 	fn reload(&mut self, project_time: std::time::SystemTime, window: &render::Window) {
-		self.project_time = project_time;
-		let Some(path) = &self.path else {
+		self.custom_state.project_time = project_time;
+		let Some(path) = &self.custom_state.path else {
 			return;
 		};
-		self.project = Project::from_file(path);
+		self.custom_state.project = Project::from_file(path);
 		self.tree = Tree::new(
 			self.state.clone(),
 			&self.project,
@@ -179,7 +191,7 @@ impl Game {
 	}
 }
 
-impl Game {
+impl Game<CustomState> {
 	fn ui(&mut self, ctx: &render::egui::Context, window: &mut render::Window) {
 		const HEIGHT: f32 = 10.0;
 		const LEFT: f32 = 100.0;
@@ -217,13 +229,13 @@ impl Game {
 							.selected_text(&self.tree.property.1)
 							.show_ui(ui, |ui| {
 								let mut changed = false;
-								for prop in &self.project.properties {
+								for prop in &self.custom_state.project.properties {
 									changed |= ui
 										.selectable_value(&mut self.tree.property.0, prop.0.clone(), &prop.1)
 										.changed();
 								}
 								if changed {
-									for prop in &self.project.properties {
+									for prop in &self.custom_state.project.properties {
 										if prop.0 == self.tree.property.0 {
 											self.tree.property = prop.clone();
 										}
@@ -325,11 +337,17 @@ impl Game {
 						});
 					});
 
-					for (index, info) in self.project.segment(seg.index()).iter().enumerate() {
+					for (index, info) in self
+						.custom_state
+						.project
+						.segment(seg.index())
+						.iter()
+						.enumerate()
+					{
 						ui.horizontal(|ui| {
 							ui.add_sized(
 								[LEFT, HEIGHT],
-								Label::new(&self.project.segment_information[index]),
+								Label::new(&self.custom_state.project.segment_information[index]),
 							);
 							ui.add_sized([LEFT, HEIGHT], Label::new(format!("{}", info)));
 						});
@@ -541,7 +559,7 @@ impl Game {
 								);
 								ui.selectable_value(
 									&mut self.tree.camera.lod,
-									lod::Mode::new_level(self.project.depth as usize),
+									lod::Mode::new_level(self.custom_state.project.depth as usize),
 									"Level",
 								);
 							});
