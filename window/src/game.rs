@@ -1,12 +1,16 @@
 use std::sync::Arc;
 
 use math::{Vector, X, Y};
-use render::{egui::RawInput, Window};
+use render::egui::RawInput;
 
-use crate::{tree::Tree, State};
+use crate::{
+	lod,
+	tree::{Scene, Tree},
+	State,
+};
 
 pub trait CustomState {
-	type Scene;
+	type Scene: Scene;
 }
 
 pub struct Game<TCustomState: CustomState> {
@@ -112,7 +116,10 @@ impl<T: CustomState> render::Entry for Game<T> {
 	}
 
 	fn render(&mut self, _window_id: render::WindowId) {
-		todo!("Not yet standalone usable")
+		self.tree.scene.update(
+			lod::Checker::new(&self.tree.context.camera.lod),
+			&self.tree.context.camera,
+		);
 	}
 
 	fn resize_window(&mut self, _window_id: render::WindowId, size: Vector<2, u32>) {

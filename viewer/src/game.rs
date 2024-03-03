@@ -711,16 +711,12 @@ impl render::Entry for World {
 		self.game.raw_event(event)
 	}
 
-	fn render(&mut self, _window_id: render::WindowId) {
+	fn render(&mut self, window_id: render::WindowId) {
 		if self.paused {
 			return;
 		}
 		if self.game.tree.scene.segment.is_none() {
-			self.game.tree.scene.root.update(
-				lod::Checker::new(&self.game.tree.context.camera.lod),
-				&self.game.tree.context.camera,
-				&mut self.game.tree.scene.loaded_manager,
-			);
+			self.game.render(window_id);
 		}
 
 		let raw_input = self.game.take_egui_input();

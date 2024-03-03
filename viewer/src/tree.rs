@@ -349,6 +349,11 @@ impl Scene for ProjectScene {
 			}
 		}
 	}
+
+	fn update(&mut self, view_checker: lod::Checker, camera: &camera::Camera) {
+		self.root
+			.update(view_checker, camera, &mut self.loaded_manager)
+	}
 }
 
 impl render::LinesRender<TreeContext> for ProjectScene {

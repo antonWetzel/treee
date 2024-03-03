@@ -3,7 +3,7 @@ use std::sync::Arc;
 use math::Vector;
 use render::Window;
 
-use crate::{camera::Camera, State};
+use crate::{camera::Camera, State, lod};
 
 pub const DEFAULT_BACKGROUND: Vector<3, f32> = Vector::new([0.1, 0.2, 0.3]);
 
@@ -24,6 +24,7 @@ impl LookupName {
 	}
 }
 pub trait Scene: Sized {
+	fn update(&mut self, view_checker: lod::Checker, camera: &Camera);
 	fn render<'a>(&'a self, state: &'a State, tree: &'a Tree<Self>, render_pass: &mut render::RenderPass<'a>);
 }
 pub struct Tree<T> {
