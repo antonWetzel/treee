@@ -1,6 +1,7 @@
-use std::sync::Arc;
+use std::{ops::Deref, sync::Arc};
 
 use math::Vector;
+use render::Window;
 
 use crate::State;
 

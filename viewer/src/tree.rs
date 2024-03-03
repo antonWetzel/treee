@@ -322,7 +322,11 @@ impl ProjectTree {
 	}
 
 	pub fn update_lookup(&mut self, state: &State) {
-		self.lookup = render::Lookup::new_png(state, self.lookup_name.data(), self.property.2);
+		self.context.lookup = render::Lookup::new_png(
+			state,
+			self.context.lookup_name.data(),
+			self.context.property.2,
+		);
 	}
 
 	pub fn raycast(
@@ -337,8 +341,8 @@ impl ProjectTree {
 
 	pub fn update(&mut self) {
 		self.0.scene.root.update(
-			lod::Checker::new(&self.0.camera.lod),
-			&self.0.camera,
+			lod::Checker::new(&self.0.context.camera.lod),
+			&self.0.context.camera,
 			&mut self.0.scene.loaded_manager,
 		);
 	}
@@ -348,8 +352,8 @@ impl render::PointCloudRender for ProjectTree {
 	fn render<'a>(&'a self, point_cloud_pass: &mut render::PointCloudPass<'a>) {
 		self.scene.root.render(
 			point_cloud_pass,
-			lod::Checker::new(&self.camera.lod),
-			&self.camera,
+			lod::Checker::new(&self.context.camera.lod),
+			&self.context.camera,
 			&self.scene.loaded_manager,
 		);
 	}
@@ -359,8 +363,8 @@ impl render::LinesRender for ProjectTree {
 	fn render<'a>(&'a self, lines_pass: &mut render::LinesPass<'a>) {
 		self.scene.root.render_lines(
 			lines_pass,
-			lod::Checker::new(&self.camera.lod),
-			&self.camera,
+			lod::Checker::new(&self.context.camera.lod),
+			&self.context.camera,
 			&self.scene.loaded_manager,
 		);
 	}
@@ -368,7 +372,7 @@ impl render::LinesRender for ProjectTree {
 
 impl render::RenderEntry<State> for ProjectTree {
 	fn background(&self) -> Vector<3, f32> {
-		self.background
+		self.context.background
 	}
 
 	fn render<'a>(&'a mut self, state: &'a State, render_pass: &mut render::RenderPass<'a>) {
@@ -377,32 +381,40 @@ impl render::RenderEntry<State> for ProjectTree {
 				MeshRender::Points => render_pass.render_point_clouds(
 					segment,
 					state,
-					&self.camera.gpu,
-					&self.lookup,
-					&self.environment,
+					&self.context.camera.gpu,
+					&self.context.lookup,
+					&self.context.environment,
 				),
-				MeshRender::Mesh => render_pass.render_meshes(segment, state, &self.camera.gpu, &self.lookup),
-				MeshRender::MeshLines => {
-					render_pass.render_meshes(segment, &state.mesh_line, &self.camera.gpu, &self.lookup)
-				},
+				MeshRender::Mesh => render_pass.render_meshes(
+					segment,
+					state,
+					&self.context.camera.gpu,
+					&self.context.lookup,
+				),
+				MeshRender::MeshLines => render_pass.render_meshes(
+					segment,
+					&state.mesh_line,
+					&self.context.camera.gpu,
+					&self.context.lookup,
+				),
 			}
 		} else {
 			render_pass.render_point_clouds(
 				self,
 				state,
-				&self.camera.gpu,
-				&self.lookup,
-				&self.environment,
+				&self.context.camera.gpu,
+				&self.context.lookup,
+				&self.context.environment,
 			);
-			if self.voxels_active {
-				render_pass.render_lines(self, state, &self.camera.gpu);
+			if self.context.voxels_active {
+				render_pass.render_lines(self, state, &self.context.camera.gpu);
 			}
 		}
 	}
 
 	fn post_process<'a>(&'a mut self, _state: &'a State, render_pass: &mut render::RenderPass<'a>) {
-		if self.eye_dome_active {
-			render_pass.render(&self.eye_dome, ());
+		if self.context.eye_dome_active {
+			render_pass.render(&self.context.eye_dome, ());
 		}
 	}
 }

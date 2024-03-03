@@ -152,10 +152,12 @@ impl ProjectGame {
 		}
 		let start = self
 			.tree
+			.context
 			.camera
 			.ray_origin(self.mouse.position(), window.get_size());
 		let direction = self
 			.tree
+			.context
 			.camera
 			.ray_direction(self.mouse.position(), window.get_size());
 		let Some(path) = &self.path else {
@@ -209,18 +211,18 @@ impl ProjectGame {
 						ui.add_sized([LEFT, HEIGHT], Label::new("Selected"));
 						ComboBox::from_id_source("property_selected")
 							.width(RIGHT)
-							.selected_text(&self.0.tree.property.1)
+							.selected_text(&self.0.tree.context.property.1)
 							.show_ui(ui, |ui| {
 								let mut changed = false;
 								for prop in &self.0.custom_state.project.properties {
 									changed |= ui
-										.selectable_value(&mut self.0.tree.property.0, prop.0.clone(), &prop.1)
+										.selectable_value(&mut self.0.tree.context.property.0, prop.0.clone(), &prop.1)
 										.changed();
 								}
 								if changed {
 									for prop in &self.0.custom_state.project.properties {
-										if prop.0 == self.tree.property.0 {
-											self.0.tree.property = prop.clone();
+										if prop.0 == self.tree.context.property.0 {
+											self.0.tree.context.property = prop.clone();
 										}
 									}
 									self.0
@@ -228,13 +230,13 @@ impl ProjectGame {
 										.0
 										.scene
 										.loaded_manager
-										.change_property(&self.0.tree.0.property.0);
+										.change_property(&self.0.tree.0.context.property.0);
 									self.0
 										.tree
 										.0
 										.scene
 										.segments
-										.change_property(&self.0.tree.0.property.0);
+										.change_property(&self.0.tree.0.context.property.0);
 									self.0.tree.update_lookup(&self.0.state);
 									if let Some(seg) = &mut self.0.tree.0.scene.segment {
 										seg.change_property(&self.0.state, &mut self.0.tree.0.scene.segments);
@@ -369,15 +371,15 @@ impl ProjectGame {
 						if ui
 							.add_sized(
 								[RIGHT, HEIGHT],
-								Slider::new(&mut self.tree.environment.scale, 0.0..=2.0),
+								Slider::new(&mut self.tree.context.environment.scale, 0.0..=2.0),
 							)
 							.changed()
 						{
-							self.tree.environment = render::PointCloudEnvironment::new(
+							self.tree.context.environment = render::PointCloudEnvironment::new(
 								&self.state,
-								self.tree.environment.min,
-								self.tree.environment.max,
-								self.tree.environment.scale,
+								self.tree.context.environment.min,
+								self.tree.context.environment.max,
+								self.tree.context.environment.scale,
 							);
 							window.request_redraw();
 						}
@@ -385,18 +387,23 @@ impl ProjectGame {
 
 					ui.horizontal(|ui| {
 						ui.add_sized([LEFT, HEIGHT], Label::new("Min"));
-						let mut min = self.tree.environment.min as f32 / u32::MAX as f32;
+						let mut min = self.tree.context.environment.min as f32 / u32::MAX as f32;
 						if ui
 							.add_sized([RIGHT, HEIGHT], Slider::new(&mut min, 0.0..=1.0))
 							.changed()
 						{
-							self.tree.environment.min = (min * u32::MAX as f32) as u32;
-							self.tree.environment.max = self.tree.environment.max.max(self.tree.environment.min);
-							self.tree.environment = render::PointCloudEnvironment::new(
+							self.tree.context.environment.min = (min * u32::MAX as f32) as u32;
+							self.tree.context.environment.max = self
+								.tree
+								.context
+								.environment
+								.max
+								.max(self.tree.context.environment.min);
+							self.tree.context.environment = render::PointCloudEnvironment::new(
 								&self.state,
-								self.tree.environment.min,
-								self.tree.environment.max,
-								self.tree.environment.scale,
+								self.tree.context.environment.min,
+								self.tree.context.environment.max,
+								self.tree.context.environment.scale,
 							);
 							window.request_redraw();
 						}
@@ -404,18 +411,23 @@ impl ProjectGame {
 
 					ui.horizontal(|ui| {
 						ui.add_sized([LEFT, HEIGHT], Label::new("Max"));
-						let mut max = self.tree.environment.max as f32 / u32::MAX as f32;
+						let mut max = self.tree.context.environment.max as f32 / u32::MAX as f32;
 						if ui
 							.add_sized([RIGHT, HEIGHT], Slider::new(&mut max, 0.0..=1.0))
 							.changed()
 						{
-							self.tree.environment.max = (max * u32::MAX as f32) as u32;
-							self.tree.environment.min = self.tree.environment.min.min(self.tree.environment.max);
-							self.tree.environment = render::PointCloudEnvironment::new(
+							self.tree.context.environment.max = (max * u32::MAX as f32) as u32;
+							self.tree.context.environment.min = self
+								.tree
+								.context
+								.environment
+								.min
+								.min(self.tree.context.environment.max);
+							self.tree.context.environment = render::PointCloudEnvironment::new(
 								&self.state,
-								self.tree.environment.min,
-								self.tree.environment.max,
-								self.tree.environment.scale,
+								self.tree.context.environment.min,
+								self.tree.context.environment.max,
+								self.tree.context.environment.scale,
 							);
 							window.request_redraw();
 						}
@@ -424,18 +436,30 @@ impl ProjectGame {
 					ui.horizontal(|ui| {
 						ui.add_sized([LEFT, HEIGHT], Label::new("Color Palette"));
 						ComboBox::from_id_source("color_palette")
-							.selected_text(format!("{:?}", self.0.tree.lookup_name))
+							.selected_text(format!("{:?}", self.0.tree.context.lookup_name))
 							.width(RIGHT)
 							.show_ui(ui, |ui| {
 								let mut changed = false;
 								changed |= ui
-									.selectable_value(&mut self.0.tree.lookup_name, LookupName::Warm, "Warm")
+									.selectable_value(
+										&mut self.0.tree.context.lookup_name,
+										LookupName::Warm,
+										"Warm",
+									)
 									.changed();
 								changed |= ui
-									.selectable_value(&mut self.0.tree.lookup_name, LookupName::Cold, "Cold")
+									.selectable_value(
+										&mut self.0.tree.context.lookup_name,
+										LookupName::Cold,
+										"Cold",
+									)
 									.changed();
 								changed |= ui
-									.selectable_value(&mut self.0.tree.lookup_name, LookupName::Turbo, "Turbo")
+									.selectable_value(
+										&mut self.0.tree.context.lookup_name,
+										LookupName::Turbo,
+										"Turbo",
+									)
 									.changed();
 								if changed {
 									self.0.tree.update_lookup(&self.0.state);
@@ -447,7 +471,7 @@ impl ProjectGame {
 						ui.add_sized([LEFT, HEIGHT], Label::new("Background"));
 						ui.style_mut().spacing.interact_size.x = ui.available_width();
 						if ui
-							.color_edit_button_rgb(self.tree.background.data_mut())
+							.color_edit_button_rgb(self.tree.context.background.data_mut())
 							.changed()
 						{
 							window.request_redraw();
@@ -479,18 +503,18 @@ impl ProjectGame {
 						if ui
 							.add_sized(
 								[ui.available_width(), HEIGHT],
-								SelectableLabel::new(self.0.tree.voxels_active, "Voxels"),
+								SelectableLabel::new(self.0.tree.context.voxels_active, "Voxels"),
 							)
 							.clicked()
 						{
-							self.tree.voxels_active = self.tree.voxels_active.not();
+							self.tree.context.voxels_active = self.tree.context.voxels_active.not();
 						}
 					});
 				}
 				ui.separator();
 
 				ui.with_layout(full, |ui| {
-					ui.toggle_value(&mut self.tree.eye_dome_active, "Eye Dome")
+					ui.toggle_value(&mut self.tree.context.eye_dome_active, "Eye Dome")
 				});
 				if self.tree.eye_dome_active {
 					ui.horizontal(|ui| {
@@ -498,11 +522,11 @@ impl ProjectGame {
 						if ui
 							.add_sized(
 								[RIGHT, HEIGHT],
-								Slider::new(&mut self.tree.eye_dome.strength, 0.0..=1.0),
+								Slider::new(&mut self.tree.context.eye_dome.strength, 0.0..=1.0),
 							)
 							.changed()
 						{
-							self.0.tree.eye_dome.update_settings(&self.0.state);
+							self.0.tree.context.eye_dome.update_settings(&self.0.state);
 						}
 					});
 
@@ -510,10 +534,10 @@ impl ProjectGame {
 						ui.add_sized([LEFT, HEIGHT], Label::new("Color"));
 						ui.style_mut().spacing.interact_size.x = ui.available_size().x;
 						if ui
-							.color_edit_button_rgb(self.tree.eye_dome.color.data_mut())
+							.color_edit_button_rgb(self.tree.context.eye_dome.color.data_mut())
 							.changed()
 						{
-							self.0.tree.eye_dome.update_settings(&self.0.state);
+							self.0.tree.context.eye_dome.update_settings(&self.0.state);
 						}
 					});
 				};
@@ -540,24 +564,24 @@ impl ProjectGame {
 							})
 							.show_ui(ui, |ui| {
 								ui.selectable_value(
-									&mut self.tree.camera.lod,
+									&mut self.tree.context.camera.lod,
 									lod::Mode::new_auto(),
 									"Automatic",
 								);
 								ui.selectable_value(
-									&mut self.tree.camera.lod,
+									&mut self.tree.context.camera.lod,
 									lod::Mode::new_normal(),
 									"Distance",
 								);
 								ui.selectable_value(
-									&mut self.0.tree.camera.lod,
+									&mut self.0.tree.context.camera.lod,
 									lod::Mode::new_level(self.0.custom_state.project.depth as usize),
 									"Level",
 								);
 							});
 					});
 
-					match &mut self.tree.camera.lod {
+					match &mut self.tree.context.camera.lod {
 						lod::Mode::Auto { threshold, target } => {
 							ui.horizontal(|ui| {
 								ui.add_sized([LEFT, HEIGHT], Label::new("Target FPS"));
@@ -605,9 +629,9 @@ impl ProjectGame {
 							})
 							.show_ui(ui, |ui| {
 								let c = self.tree.camera.orbital();
-								ui.selectable_value(&mut self.tree.camera.controller, c, "Orbital");
+								ui.selectable_value(&mut self.tree.context.camera.controller, c, "Orbital");
 								let c = self.tree.camera.first_person();
-								ui.selectable_value(&mut self.tree.camera.controller, c, "First Person");
+								ui.selectable_value(&mut self.tree.context.camera.controller, c, "First Person");
 							});
 					});
 
@@ -619,7 +643,7 @@ impl ProjectGame {
 								camera::Controller::FirstPerson { .. } => "Speed",
 							}),
 						);
-						match &mut self.tree.camera.controller {
+						match &mut self.tree.context.camera.controller {
 							camera::Controller::Orbital { offset } => {
 								let old = *offset;
 								ui.add_sized([RIGHT, HEIGHT], DragValue::new(offset));
@@ -630,6 +654,7 @@ impl ProjectGame {
 								if diff.abs() > 0.001 {
 									self.0
 										.tree
+										.context
 										.camera
 										.move_in_view_direction(diff, &self.0.state);
 								}
@@ -655,7 +680,7 @@ impl ProjectGame {
 							.add_sized([ui.available_width(), HEIGHT], Button::new("Load"))
 							.clicked()
 						{
-							self.0.tree.camera.load(&self.0.state);
+							self.0.tree.context.camera.load(&self.0.state);
 							window.request_redraw();
 						}
 					});
@@ -699,10 +724,11 @@ impl render::Entry for World {
 		self.window.resized(self.game.state.deref());
 		self.game
 			.tree
+			.context
 			.camera
 			.cam
 			.set_aspect(self.window.get_aspect());
-		self.tree.camera.gpu = render::Camera3DGPU::new(
+		self.tree.context.camera.gpu = render::Camera3DGPU::new(
 			&self.state,
 			&self.tree.camera.cam,
 			&self.tree.camera.transform,
@@ -710,6 +736,7 @@ impl render::Entry for World {
 		self.game
 			.0
 			.tree
+			.context
 			.eye_dome
 			.update_depth(&self.game.0.state, self.window.depth_texture());
 	}
@@ -743,12 +770,13 @@ impl render::Entry for World {
 			self.game
 				.0
 				.tree
+				.context
 				.camera
 				.movement(direction, &self.game.0.state);
 		}
 
 		if self.tree.scene.loaded_manager.update().not() && self.tree.scene.segment.is_none() {
-			self.game.tree.camera.time(delta.as_secs_f32())
+			self.game.tree.context.camera.time(delta.as_secs_f32())
 		}
 
 		if let Some(segment) = &mut self.game.0.tree.scene.segment {
@@ -769,7 +797,12 @@ impl render::Entry for World {
 	}
 
 	fn mouse_wheel(&mut self, delta: f32) {
-		self.game.0.tree.camera.scroll(delta, &self.game.0.state);
+		self.game
+			.0
+			.tree
+			.context
+			.camera
+			.scroll(delta, &self.game.0.state);
 	}
 
 	fn mouse_button_changed(
@@ -798,7 +831,12 @@ impl render::Entry for World {
 	fn mouse_moved(&mut self, _window_id: render::WindowId, position: Vector<2, f32>) {
 		let delta = self.mouse.delta(position);
 		if self.mouse.pressed(input::MouseButton::Left) {
-			self.game.0.tree.camera.rotate(delta, &self.game.0.state);
+			self.game
+				.0
+				.tree
+				.context
+				.camera
+				.rotate(delta, &self.game.0.state);
 		}
 	}
 

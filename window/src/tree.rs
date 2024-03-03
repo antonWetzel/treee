@@ -24,6 +24,19 @@ impl LookupName {
 	}
 }
 pub struct Tree<T> {
+	pub context: TreeContext,
+	pub scene: T,
+}
+
+impl<T> std::ops::Deref for Tree<T> {
+	type Target = TreeContext;
+
+	fn deref(&self) -> &Self::Target {
+		&self.context
+	}
+}
+
+pub struct TreeContext {
 	pub camera: crate::camera::Camera,
 
 	pub lookup: render::Lookup,
@@ -34,8 +47,6 @@ pub struct Tree<T> {
 	pub eye_dome: render::EyeDome,
 	pub eye_dome_active: bool,
 	pub voxels_active: bool,
-	pub scene: T,
-
 	pub property: (String, String, u32),
 }
 
@@ -44,18 +55,21 @@ impl<T> Tree<T> {
 		let lookup_name = LookupName::Warm;
 
 		Self {
-			background: DEFAULT_BACKGROUND,
-			camera: Camera::new(&state, window.get_aspect()),
+			context: TreeContext {
+				background: DEFAULT_BACKGROUND,
+				camera: Camera::new(&state, window.get_aspect()),
 
-			lookup_name,
-			lookup: render::Lookup::new_png(&state, lookup_name.data(), property.2),
-			environment: render::PointCloudEnvironment::new(&state, u32::MIN, u32::MAX, 1.0),
-			eye_dome: render::EyeDome::new(&state, window.config(), window.depth_texture(), 0.7),
+				lookup_name,
+				lookup: render::Lookup::new_png(&state, lookup_name.data(), property.2),
+				environment: render::PointCloudEnvironment::new(&state, u32::MIN, u32::MAX, 1.0),
+				eye_dome: render::EyeDome::new(&state, window.config(), window.depth_texture(), 0.7),
+				eye_dome_active: true,
+				voxels_active: false,
+
+				property,
+			},
+
 			scene,
-			eye_dome_active: true,
-			voxels_active: false,
-
-			property,
 		}
 	}
 }
