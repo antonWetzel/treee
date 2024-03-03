@@ -17,12 +17,12 @@ use crate::{
 
 pub struct World {
 	window: render::Window,
-	game: Game<CustomState>,
+	game: Game<ProjectCustomState>,
 	egui: render::egui::Context,
 }
 
 impl std::ops::Deref for World {
-	type Target = Game<CustomState>;
+	type Target = Game<ProjectCustomState>;
 
 	fn deref(&self) -> &Self::Target {
 		&self.game
@@ -35,14 +35,22 @@ impl std::ops::DerefMut for World {
 	}
 }
 
-pub struct CustomState {
+trait CustomState {
+	type Scene;
+}
+
+pub struct ProjectCustomState {
 	project: Project,
 	path: Option<PathBuf>,
 	project_time: std::time::SystemTime,
 }
 
-pub struct Game<TCustomState> {
-	tree: Tree,
+impl CustomState for ProjectCustomState {
+	type Scene = crate::tree::TreeScene;
+}
+
+pub struct Game<TCustomState: CustomState> {
+	tree: Tree<TCustomState::Scene>,
 	custom_state: TCustomState,
 
 	pub state: Arc<State>,
@@ -60,7 +68,7 @@ pub struct Game<TCustomState> {
 	quit: bool,
 }
 
-impl<T> Deref for Game<T> {
+impl<T: CustomState> Deref for Game<T> {
 	type Target = T;
 
 	fn deref(&self) -> &Self::Target {
@@ -96,7 +104,7 @@ impl World {
 			game: Game {
 				paused: false,
 				tree,
-				custom_state: CustomState {
+				custom_state: ProjectCustomState {
 					project,
 					project_time: std::time::SystemTime::now(),
 					path: None,
@@ -117,7 +125,7 @@ impl World {
 	}
 }
 
-impl Game<CustomState> {
+impl Game<ProjectCustomState> {
 	fn change_project(&mut self, window: &render::Window) {
 		let Some(path) = rfd::FileDialog::new()
 			.add_filter("Project File", &["epc"])
@@ -167,7 +175,7 @@ impl Game<CustomState> {
 	}
 
 	fn raycast(&mut self, window: &render::Window) {
-		if self.tree.segment.is_some() {
+		if self.tree.scene.segment.is_some() {
 			return;
 		}
 		let start = self
@@ -184,13 +192,17 @@ impl Game<CustomState> {
 		let path = path.parent().unwrap().to_path_buf();
 		let mut reader = Reader::new(path, "segment");
 		if let Some(segment) = self.tree.raycast(start, direction, &mut reader) {
-			self.tree.segment = Some(Segment::new(&self.state, &mut self.tree.segments, segment));
+			self.tree.scene.segment = Some(Segment::new(
+				&self.state,
+				&mut self.tree.scene.segments,
+				segment,
+			));
 			window.request_redraw();
 		}
 	}
 }
 
-impl Game<CustomState> {
+impl Game<ProjectCustomState> {
 	fn ui(&mut self, ctx: &render::egui::Context, window: &mut render::Window) {
 		const HEIGHT: f32 = 10.0;
 		const LEFT: f32 = 100.0;
@@ -242,10 +254,13 @@ impl Game<CustomState> {
 									self.tree
 										.loaded_manager
 										.change_property(&self.tree.property.0);
-									self.tree.segments.change_property(&self.tree.property.0);
+									self.tree
+										.scene
+										.segments
+										.change_property(&self.tree.property.0);
 									self.tree.update_lookup(&self.state);
-									if let Some(seg) = &mut self.tree.segment {
-										seg.change_property(&self.state, &mut self.tree.segments);
+									if let Some(seg) = &mut self.tree.scene.segment {
+										seg.change_property(&self.state, &mut self.tree.scene.segments);
 									}
 								}
 							});
@@ -253,14 +268,14 @@ impl Game<CustomState> {
 				}
 				ui.separator();
 
-				let mut seg = self.tree.segment.is_some();
+				let mut seg = self.tree.scene.segment.is_some();
 				ui.with_layout(full, |ui| {
 					ui.set_enabled(seg);
 					if ui.toggle_value(&mut seg, "Segment").changed() && seg.not() {
-						self.tree.segment = None;
+						self.tree.scene.segment = None;
 					}
 				});
-				if let Some(seg) = &mut self.tree.segment {
+				if let Some(seg) = &mut self.tree.scene.segment {
 					ui.horizontal(|ui| {
 						ui.add_sized([LEFT, HEIGHT], Label::new("ID"));
 						ui.add_sized([RIGHT, HEIGHT], Label::new(format!("{}", seg.index())));
@@ -678,7 +693,7 @@ impl render::Entry for World {
 		if self.paused {
 			return;
 		}
-		if self.tree.segment.is_none() {
+		if self.tree.scene.segment.is_none() {
 			self.tree.update();
 		}
 
@@ -746,11 +761,11 @@ impl render::Entry for World {
 			self.game.tree.camera.movement(direction, &self.game.state);
 		}
 
-		if self.tree.loaded_manager.update().not() && self.tree.segment.is_none() {
+		if self.tree.loaded_manager.update().not() && self.tree.scene.segment.is_none() {
 			self.game.tree.camera.time(delta.as_secs_f32())
 		}
 
-		if let Some(segment) = &mut self.game.tree.segment {
+		if let Some(segment) = &mut self.game.tree.scene.segment {
 			if matches!(segment.render, MeshRender::Mesh | MeshRender::MeshLines) {
 				segment.update(&self.game.state);
 			}

@@ -3,6 +3,7 @@ use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use crate::game::ProjectCustomState;
 use crate::loaded_manager::LoadedManager;
 use crate::reader::Reader;
 use crate::segment::{MeshRender, Segment};
@@ -32,22 +33,25 @@ impl LookupName {
 	}
 }
 
-pub struct Tree {
+pub struct Tree<T> {
 	pub root: Node,
 	pub camera: camera::Camera,
 	pub loaded_manager: LoadedManager,
 	pub lookup: render::Lookup,
 	pub environment: render::PointCloudEnvironment,
 	pub background: Vector<3, f32>,
-	pub segment: Option<Segment>,
 
 	pub lookup_name: LookupName,
 	pub eye_dome: render::EyeDome,
 	pub eye_dome_active: bool,
 	pub voxels_active: bool,
+	pub scene: T,
 
 	pub property: (String, String, u32),
+}
 
+pub struct TreeScene {
+	pub segment: Option<Segment>,
 	pub segments: Reader,
 }
 
@@ -313,7 +317,7 @@ impl Node {
 	}
 }
 
-impl Tree {
+impl Tree<TreeScene> {
 	pub fn new(
 		state: Arc<State>,
 		project: &Project,
@@ -330,18 +334,20 @@ impl Tree {
 			lookup_name,
 			lookup: render::Lookup::new_png(&state, lookup_name.data(), property.2),
 			environment: render::PointCloudEnvironment::new(&state, u32::MIN, u32::MAX, 1.0),
-			segment: None,
+			scene: TreeScene {
+				segment: None,
+				segments: path
+					.clone()
+					.map(|path| {
+						let mut segments = path.clone();
+						segments.push("segments");
+						Reader::new(segments, &property.0)
+					})
+					.unwrap_or(Reader::fake()),
+			},
 			eye_dome: render::EyeDome::new(&state, window.config(), window.depth_texture(), 0.7),
 			eye_dome_active: true,
 			voxels_active: false,
-			segments: path
-				.clone()
-				.map(|path| {
-					let mut segments = path.clone();
-					segments.push("segments");
-					Reader::new(segments, &property.0)
-				})
-				.unwrap_or(Reader::fake()),
 
 			loaded_manager: LoadedManager::new(state, path, &property.0),
 			property,
@@ -371,7 +377,7 @@ impl Tree {
 	}
 }
 
-impl render::PointCloudRender for Tree {
+impl<T> render::PointCloudRender for Tree<T> {
 	fn render<'a>(&'a self, point_cloud_pass: &mut render::PointCloudPass<'a>) {
 		self.root.render(
 			point_cloud_pass,
@@ -382,7 +388,7 @@ impl render::PointCloudRender for Tree {
 	}
 }
 
-impl render::LinesRender for Tree {
+impl<T> render::LinesRender for Tree<T> {
 	fn render<'a>(&'a self, lines_pass: &mut render::LinesPass<'a>) {
 		self.root.render_lines(
 			lines_pass,
@@ -393,13 +399,13 @@ impl render::LinesRender for Tree {
 	}
 }
 
-impl render::RenderEntry<State> for Tree {
+impl render::RenderEntry<State> for Tree<TreeScene> {
 	fn background(&self) -> Vector<3, f32> {
 		self.background
 	}
 
 	fn render<'a>(&'a mut self, state: &'a State, render_pass: &mut render::RenderPass<'a>) {
-		if let Some(segment) = &self.segment {
+		if let Some(segment) = &self.scene.segment {
 			match segment.render {
 				MeshRender::Points => render_pass.render_point_clouds(
 					segment,
