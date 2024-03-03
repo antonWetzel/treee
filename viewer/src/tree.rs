@@ -6,13 +6,12 @@ use std::sync::Arc;
 use crate::loaded_manager::LoadedManager;
 use crate::reader::Reader;
 use crate::segment::{MeshRender, Segment};
-use crate::{camera, lod};
 
 use math::{Vector, X, Y, Z};
 use project::IndexNode;
 use project::{IndexData, Project};
 use render::{LinesRenderExt, MeshRenderExt, PointCloudExt, Window};
-use window::State;
+use window::{camera, lod, State};
 
 pub const DEFAULT_BACKGROUND: Vector<3, f32> = Vector::new([0.1, 0.2, 0.3]);
 

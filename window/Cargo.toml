@@ -10,6 +10,12 @@ rust-version.workspace = true
 render.workspace = true
 input.workspace = true
 math.workspace = true
+serde.workspace = true
+rfd.workspace = true
+#crossbeam.workspace = true
+#thiserror.workspace = true
+#bytemuck.workspace = true
+bincode.workspace = true
 
 [lints]
 workspace = true

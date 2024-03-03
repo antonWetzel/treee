@@ -1,15 +1,14 @@
 use std::{
-	ops::{Deref, DerefMut, Not},
+	ops::{Deref, Not},
 	path::PathBuf,
 	sync::Arc,
 };
 
 use math::{Vector, X, Y};
 use project::Project;
-use window::State;
+use window::{camera, lod, State};
 
 use crate::{
-	camera, lod,
 	reader::Reader,
 	segment::{self, MeshRender, Segment},
 	tree::{LookupName, Tree},
