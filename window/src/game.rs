@@ -3,14 +3,14 @@ use std::sync::Arc;
 use math::{Vector, X, Y};
 use render::Window;
 
-use crate::{tree::TreeContext, State};
+use crate::{tree::Tree, State};
 
 pub trait CustomState {
-	type Tree: AsRef<TreeContext> + AsMut<TreeContext>;
+	type Scene;
 }
 
 pub struct Game<TCustomState: CustomState> {
-	pub tree: TCustomState::Tree,
+	pub tree: Tree<TCustomState::Scene>,
 	pub custom_state: TCustomState,
 
 	pub state: Arc<State>, // todo: this was the only public, make the rest private again
@@ -29,7 +29,7 @@ pub struct Game<TCustomState: CustomState> {
 }
 
 impl<TCustomState: CustomState> Game<TCustomState> {
-	pub fn new(tree: TCustomState::Tree, state: Arc<State>, custom_state: TCustomState) -> Self {
+	pub fn new(tree: Tree<TCustomState::Scene>, state: Arc<State>, custom_state: TCustomState) -> Self {
 		Self {
 			tree,
 			custom_state,
@@ -53,19 +53,15 @@ impl<TCustomState: CustomState> Game<TCustomState> {
 			return;
 		}
 		window.resized(&self.state);
+		self.tree.context.camera.cam.set_aspect(window.get_aspect());
 		self.tree
-			.as_mut()
-			.camera
-			.cam
-			.set_aspect(window.get_aspect());
-		self.tree
-			.as_mut()
+			.context
 			.eye_dome
 			.update_depth(&self.state, &window.depth_texture());
-		self.tree.as_mut().camera.gpu = render::Camera3DGPU::new(
+		self.tree.context.camera.gpu = render::Camera3DGPU::new(
 			&self.state,
-			&self.tree.as_ref().camera.cam,
-			&self.tree.as_ref().camera.transform,
+			&self.tree.camera.cam,
+			&self.tree.camera.transform,
 		);
 	}
 }

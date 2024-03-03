@@ -30,33 +30,6 @@ pub struct Node {
 	lines: render::Lines,
 }
 
-pub struct ProjectTree(pub Tree<ProjectScene>);
-impl std::ops::Deref for ProjectTree {
-	type Target = Tree<ProjectScene>;
-
-	fn deref(&self) -> &Self::Target {
-		&self.0
-	}
-}
-
-impl AsMut<TreeContext> for ProjectTree {
-	fn as_mut(&mut self) -> &mut TreeContext {
-		&mut self.0.context
-	}
-}
-
-impl AsRef<TreeContext> for ProjectTree {
-	fn as_ref(&self) -> &TreeContext {
-		&self.0
-	}
-}
-
-impl std::ops::DerefMut for ProjectTree {
-	fn deref_mut(&mut self) -> &mut Self::Target {
-		&mut self.0
-	}
-}
-
 pub enum Data {
 	Branch {
 		children: Box<[Option<Node>; 8]>,

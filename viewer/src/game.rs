@@ -17,7 +17,7 @@ use crate::{
 	loaded_manager::LoadedManager,
 	reader::Reader,
 	segment::{self, MeshRender, Segment},
-	tree::{Node, ProjectScene, ProjectTree},
+	tree::{Node, ProjectScene},
 	Error,
 };
 
@@ -48,7 +48,7 @@ pub struct ProjectCustomState {
 }
 
 impl window::CustomState for ProjectCustomState {
-	type Tree = crate::tree::ProjectTree;
+	type Scene = ProjectScene;
 }
 
 struct ProjectGame(Game<ProjectCustomState>);
@@ -110,7 +110,7 @@ impl ProjectGame {
 		path: Option<PathBuf>,
 		property: (String, String, u32),
 		window: &Window,
-	) -> ProjectTree {
+	) -> Tree<ProjectScene> {
 		let scene = ProjectScene {
 			root: Node::new(&project.root, &state),
 			segment: None,
@@ -124,7 +124,7 @@ impl ProjectGame {
 				.unwrap_or(Reader::fake()),
 			loaded_manager: LoadedManager::new(state.clone(), path, &property.0),
 		};
-		ProjectTree(Tree::new(state, property, window, scene))
+		Tree::new(state, property, window, scene)
 	}
 	fn change_project(&mut self, window: &render::Window) {
 		let Some(path) = rfd::FileDialog::new()
@@ -255,19 +255,17 @@ impl ProjectGame {
 									}
 									self.0
 										.tree
-										.0
 										.scene
 										.loaded_manager
-										.change_property(&self.0.tree.0.context.property.0);
+										.change_property(&self.0.tree.context.property.0);
 									self.0
 										.tree
-										.0
 										.scene
 										.segments
-										.change_property(&self.0.tree.0.context.property.0);
+										.change_property(&self.0.tree.context.property.0);
 									self.0.tree.context.update_lookup(&self.0.state);
-									if let Some(seg) = &mut self.0.tree.0.scene.segment {
-										seg.change_property(&self.0.state, &mut self.0.tree.0.scene.segments);
+									if let Some(seg) = &mut self.0.tree.scene.segment {
+										seg.change_property(&self.0.state, &mut self.0.tree.scene.segments);
 									}
 								}
 							});
@@ -521,7 +519,7 @@ impl ProjectGame {
 							else {
 								return;
 							};
-							window.screen_shot(self.0.state.deref(), &mut self.0.tree.0, path);
+							window.screen_shot(self.0.state.deref(), &mut self.0.tree, path);
 							window.request_redraw()
 						}
 					});
@@ -728,12 +726,10 @@ impl render::Entry for World {
 			return;
 		}
 		if self.tree.scene.segment.is_none() {
-			let checker = lod::Checker::new(&self.tree.0.context.camera.lod);
-			let project_tree = &mut self.tree;
-			project_tree.0.scene.root.update(
-				checker,
-				&project_tree.0.context.camera,
-				&mut project_tree.0.scene.loaded_manager,
+			self.game.0.tree.scene.root.update(
+				lod::Checker::new(&self.game.0.tree.context.camera.lod),
+				&self.game.0.tree.context.camera,
+				&mut self.game.0.tree.scene.loaded_manager,
 			);
 		}
 
@@ -744,7 +740,7 @@ impl render::Entry for World {
 
 		self.window.render(
 			self.game.0.state.deref(),
-			&mut self.game.0.tree.0,
+			&mut self.game.0.tree,
 			full_output,
 			&self.egui,
 		);
