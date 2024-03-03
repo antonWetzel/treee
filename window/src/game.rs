@@ -1,12 +1,12 @@
-use std::{ops::Deref, sync::Arc};
+use std::sync::Arc;
 
-use math::Vector;
+use math::{Vector, X, Y};
 use render::Window;
 
-use crate::State;
+use crate::{tree::TreeContext, State};
 
 pub trait CustomState {
-	type Tree;
+	type Tree: AsRef<TreeContext> + AsMut<TreeContext>;
 }
 
 pub struct Game<TCustomState: CustomState> {
@@ -46,6 +46,27 @@ impl<TCustomState: CustomState> Game<TCustomState> {
 			visual_options: false,
 			quit: false,
 		}
+	}
+	pub fn resize_window(&mut self, window: &mut Window, size: Vector<2, u32>) {
+		self.paused = size[X] == 0 || size[Y] == 0;
+		if self.paused {
+			return;
+		}
+		window.resized(&self.state);
+		self.tree
+			.as_mut()
+			.camera
+			.cam
+			.set_aspect(window.get_aspect());
+		self.tree
+			.as_mut()
+			.eye_dome
+			.update_depth(&self.state, &window.depth_texture());
+		self.tree.as_mut().camera.gpu = render::Camera3DGPU::new(
+			&self.state,
+			&self.tree.as_ref().camera.cam,
+			&self.tree.as_ref().camera.transform,
+		);
 	}
 }
 

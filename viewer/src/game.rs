@@ -106,11 +106,11 @@ impl ProjectGame {
 			return;
 		};
 		self.custom_state.path = Some(path);
-		self.reload(self.current_poject_time(), window);
+		self.reload(self.current_project_time(), window);
 	}
 
 	fn check_reload(&mut self, window: &render::Window) {
-		let project_time = self.current_poject_time();
+		let project_time = self.current_project_time();
 		if self.project_time == project_time {
 			return;
 		}
@@ -120,7 +120,7 @@ impl ProjectGame {
 		self.reload(project_time, window);
 	}
 
-	fn current_poject_time(&self) -> std::time::SystemTime {
+	fn current_project_time(&self) -> std::time::SystemTime {
 		let Some(path) = &self.path else {
 			return self.project_time;
 		};

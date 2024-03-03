@@ -12,7 +12,7 @@ use project::IndexNode;
 use project::{IndexData, Project};
 use render::{LinesRenderExt, MeshRenderExt, PointCloudExt, Window};
 use window::tree::{Tree, TreeContext, TreeScene};
-use window::{camera, lod, tree::LookupName, State};
+use window::{camera, lod, State};
 
 pub struct ProjectScene {
 	pub loaded_manager: LoadedManager,
@@ -38,6 +38,19 @@ impl std::ops::Deref for ProjectTree {
 		&self.0
 	}
 }
+
+impl AsMut<TreeContext> for ProjectTree {
+	fn as_mut(&mut self) -> &mut TreeContext {
+		&mut self.0.context
+	}
+}
+
+impl AsRef<TreeContext> for ProjectTree {
+	fn as_ref(&self) -> &TreeContext {
+		&self.0
+	}
+}
+
 impl std::ops::DerefMut for ProjectTree {
 	fn deref_mut(&mut self) -> &mut Self::Target {
 		&mut self.0
