@@ -14,8 +14,6 @@ use render::{LinesRenderExt, MeshRenderExt, PointCloudExt, Window};
 use window::tree::Tree;
 use window::{camera, lod, tree::LookupName, State};
 
-pub const DEFAULT_BACKGROUND: Vector<3, f32> = Vector::new([0.1, 0.2, 0.3]);
-
 pub struct ProjectScene {
 	pub loaded_manager: LoadedManager,
 	pub root: Node,
@@ -307,34 +305,20 @@ impl ProjectTree {
 		property: (String, String, u32),
 		window: &Window,
 	) -> Self {
-		let lookup_name = LookupName::Warm;
-
-		Self(Tree {
-			background: DEFAULT_BACKGROUND,
-			camera: camera::Camera::new(&state, window.get_aspect()),
-
-			lookup_name,
-			lookup: render::Lookup::new_png(&state, lookup_name.data(), property.2),
-			environment: render::PointCloudEnvironment::new(&state, u32::MIN, u32::MAX, 1.0),
-			eye_dome: render::EyeDome::new(&state, window.config(), window.depth_texture(), 0.7),
-			scene: ProjectScene {
-				root: Node::new(&project.root, &state),
-				segment: None,
-				segments: path
-					.clone()
-					.map(|path| {
-						let mut segments = path.clone();
-						segments.push("segments");
-						Reader::new(segments, &property.0)
-					})
-					.unwrap_or(Reader::fake()),
-				loaded_manager: LoadedManager::new(state, path, &property.0),
-			},
-			eye_dome_active: true,
-			voxels_active: false,
-
-			property,
-		})
+		let scene = ProjectScene {
+			root: Node::new(&project.root, &state),
+			segment: None,
+			segments: path
+				.clone()
+				.map(|path| {
+					let mut segments = path.clone();
+					segments.push("segments");
+					Reader::new(segments, &property.0)
+				})
+				.unwrap_or(Reader::fake()),
+			loaded_manager: LoadedManager::new(state.clone(), path, &property.0),
+		};
+		Self(Tree::new(state, property, window, scene))
 	}
 
 	pub fn update_lookup(&mut self, state: &State) {
