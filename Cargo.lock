@@ -2488,6 +2488,7 @@ dependencies = [
  "serde",
  "thiserror",
  "triangulation",
+ "window",
 ]
 
 [[package]]

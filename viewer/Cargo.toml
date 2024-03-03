@@ -12,6 +12,7 @@ workspace = true
 render.workspace = true
 input.workspace = true
 math.workspace = true
+window.workspace = true
 project.workspace = true
 triangulation.workspace = true
 pollster.workspace = true

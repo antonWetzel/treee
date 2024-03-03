@@ -5,8 +5,9 @@ use std::{
 };
 
 use math::{Vector, X, Y, Z};
+use window::State;
 
-use crate::{reader::Reader, state::State};
+use crate::reader::Reader;
 
 pub enum MeshState {
 	None,

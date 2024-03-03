@@ -6,12 +6,12 @@ use std::{
 
 use math::{Vector, X, Y};
 use project::Project;
+use window::State;
 
 use crate::{
 	camera, lod,
 	reader::Reader,
 	segment::{self, MeshRender, Segment},
-	state::State,
 	tree::{LookupName, Tree},
 	Error,
 };
