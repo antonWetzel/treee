@@ -708,15 +708,14 @@ fn ui(ctx: &render::egui::Context, game: &mut Game<ProjectCustomState>) {
 
 impl render::Entry for World {
 	fn raw_event(&mut self, event: &render::Event) -> bool {
-		let response = self.window.window_event(event);
-		response.consumed
+		self.game.raw_event(event)
 	}
 
 	fn render(&mut self, _window_id: render::WindowId) {
 		if self.paused {
 			return;
 		}
-		if self.tree.scene.segment.is_none() {
+		if self.game.tree.scene.segment.is_none() {
 			self.game.tree.scene.root.update(
 				lod::Checker::new(&self.game.tree.context.camera.lod),
 				&self.game.tree.context.camera,
@@ -736,62 +735,20 @@ impl render::Entry for World {
 	}
 
 	fn resize_window(&mut self, _window_id: render::WindowId, size: Vector<2, u32>) {
-		self.paused = size[X] == 0 || size[Y] == 0;
-		if self.paused {
-			return;
-		}
-
-		self.game.window.resized(self.game.state.deref());
-		self.game
-			.tree
-			.context
-			.camera
-			.cam
-			.set_aspect(self.window.get_aspect());
-		self.game.tree.context.camera.gpu = render::Camera3DGPU::new(
-			&self.game.state,
-			&self.game.tree.camera.cam,
-			&self.game.tree.camera.transform,
-		);
-		self.game
-			.tree
-			.context
-			.eye_dome
-			.update_depth(&self.game.state, self.game.window.depth_texture());
+		self.game.resize_window(_window_id, size)
 	}
 
 	fn request_redraw(&mut self) {
-		self.window.request_redraw();
+		self.game.request_redraw();
 	}
 
-	fn close_window(&mut self, _window_id: render::WindowId) {
-		self.quit = true;
+	fn close_window(&mut self, window_id: render::WindowId) {
+		self.game.close_window(window_id);
 	}
 
 	fn time(&mut self) {
 		let delta = self.time.elapsed();
-		let mut direction: Vector<2, f32> = [0.0, 0.0].into();
-		if self.keyboard.pressed(input::KeyCode::KeyD) || self.keyboard.pressed(input::KeyCode::ArrowRight) {
-			direction[X] += 1.0;
-		}
-		if self.keyboard.pressed(input::KeyCode::KeyS) || self.keyboard.pressed(input::KeyCode::ArrowDown) {
-			direction[Y] += 1.0;
-		}
-		if self.keyboard.pressed(input::KeyCode::KeyA) || self.keyboard.pressed(input::KeyCode::ArrowLeft) {
-			direction[X] -= 1.0;
-		}
-		if self.keyboard.pressed(input::KeyCode::KeyW) || self.keyboard.pressed(input::KeyCode::ArrowUp) {
-			direction[Y] -= 1.0;
-		}
-		let l = direction.length();
-		if l > 0.0 {
-			direction *= 10.0 * delta.as_secs_f32() / l;
-			self.game
-				.tree
-				.context
-				.camera
-				.movement(direction, &self.game.state);
-		}
+		self.game.time_delta(delta);
 
 		if self.tree.scene.loaded_manager.update().not() && self.tree.scene.segment.is_none() {
 			self.game.tree.context.camera.time(delta.as_secs_f32())
@@ -806,29 +763,26 @@ impl render::Entry for World {
 		self.game.check_reload();
 	}
 
-	fn key_changed(&mut self, _window_id: render::WindowId, key: input::KeyCode, key_state: input::State) {
-		self.keyboard.update(key, key_state);
+	fn key_changed(&mut self, window_id: render::WindowId, key: input::KeyCode, key_state: input::State) {
+		self.game.key_changed(window_id, key, key_state)
 	}
 
 	fn modifiers_changed(&mut self, modifiers: input::Modifiers) {
-		self.keyboard.update_modifiers(modifiers);
+		self.game.modifiers_changed(modifiers)
 	}
 
 	fn mouse_wheel(&mut self, delta: f32) {
-		self.game
-			.tree
-			.context
-			.camera
-			.scroll(delta, &self.game.state);
+		self.game.mouse_wheel(delta)
 	}
 
 	fn mouse_button_changed(
 		&mut self,
-		_window_id: render::WindowId,
+		window_id: render::WindowId,
 		button: input::MouseButton,
 		button_state: input::State,
 	) {
-		self.mouse.update(button, button_state);
+		self.game
+			.mouse_button_changed(window_id, button, button_state);
 		match (button, button_state) {
 			(input::MouseButton::Left, input::State::Pressed) => {
 				self.mouse_start = Some(self.mouse.position());
@@ -845,18 +799,11 @@ impl render::Entry for World {
 		}
 	}
 
-	fn mouse_moved(&mut self, _window_id: render::WindowId, position: Vector<2, f32>) {
-		let delta = self.mouse.delta(position);
-		if self.mouse.pressed(input::MouseButton::Left) {
-			self.game
-				.tree
-				.context
-				.camera
-				.rotate(delta, &self.game.state);
-		}
+	fn mouse_moved(&mut self, window_id: render::WindowId, position: Vector<2, f32>) {
+		self.game.mouse_moved(window_id, position)
 	}
 
 	fn exit(&self) -> bool {
-		self.quit
+		self.game.exit()
 	}
 }
