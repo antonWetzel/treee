@@ -23,7 +23,7 @@ use crate::{
 
 pub struct World {
 	window: render::Window,
-	game: ProjectGame,
+	game: Game<ProjectCustomState>,
 	egui: render::egui::Context,
 }
 
@@ -51,20 +51,6 @@ impl window::CustomState for ProjectCustomState {
 	type Scene = ProjectScene;
 }
 
-struct ProjectGame(Game<ProjectCustomState>);
-impl std::ops::Deref for ProjectGame {
-	type Target = Game<ProjectCustomState>;
-
-	fn deref(&self) -> &Self::Target {
-		&self.0
-	}
-}
-
-impl std::ops::DerefMut for ProjectGame {
-	fn deref_mut(&mut self) -> &mut Self::Target {
-		&mut self.0
-	}
-}
 impl World {
 	pub async fn new(runner: &render::Runner) -> Result<Self, Error> {
 		let project = Project::empty();
@@ -90,7 +76,7 @@ impl World {
 		Ok(Self {
 			window,
 			egui,
-			game: ProjectGame(Game::new(
+			game: Game::new(
 				tree,
 				state,
 				ProjectCustomState {
@@ -98,7 +84,7 @@ impl World {
 					project_time: std::time::SystemTime::now(),
 					path: None,
 				},
-			)),
+			),
 		})
 	}
 }
@@ -731,21 +717,21 @@ impl render::Entry for World {
 			return;
 		}
 		if self.tree.scene.segment.is_none() {
-			self.game.0.tree.scene.root.update(
-				lod::Checker::new(&self.game.0.tree.context.camera.lod),
-				&self.game.0.tree.context.camera,
-				&mut self.game.0.tree.scene.loaded_manager,
+			self.game.tree.scene.root.update(
+				lod::Checker::new(&self.game.tree.context.camera.lod),
+				&self.game.tree.context.camera,
+				&mut self.game.tree.scene.loaded_manager,
 			);
 		}
 
 		let raw_input = self.window.egui_winit.take_egui_input(&self.window.window);
 		let full_output = self
 			.egui
-			.run(raw_input, |ctx| ui(ctx, &mut self.window, &mut self.game.0));
+			.run(raw_input, |ctx| ui(ctx, &mut self.window, &mut self.game));
 
 		self.window.render(
-			self.game.0.state.deref(),
-			&mut self.game.0.tree,
+			self.game.state.deref(),
+			&mut self.game.tree,
 			full_output,
 			&self.egui,
 		);
@@ -769,11 +755,10 @@ impl render::Entry for World {
 			&self.tree.camera.transform,
 		);
 		self.game
-			.0
 			.tree
 			.context
 			.eye_dome
-			.update_depth(&self.game.0.state, self.window.depth_texture());
+			.update_depth(&self.game.state, self.window.depth_texture());
 	}
 
 	fn request_redraw(&mut self) {
@@ -803,20 +788,19 @@ impl render::Entry for World {
 		if l > 0.0 {
 			direction *= 10.0 * delta.as_secs_f32() / l;
 			self.game
-				.0
 				.tree
 				.context
 				.camera
-				.movement(direction, &self.game.0.state);
+				.movement(direction, &self.game.state);
 		}
 
 		if self.tree.scene.loaded_manager.update().not() && self.tree.scene.segment.is_none() {
 			self.game.tree.context.camera.time(delta.as_secs_f32())
 		}
 
-		if let Some(segment) = &mut self.game.0.tree.scene.segment {
+		if let Some(segment) = &mut self.game.tree.scene.segment {
 			if matches!(segment.render, MeshRender::Mesh | MeshRender::MeshLines) {
-				segment.update(&self.game.0.state);
+				segment.update(&self.game.state);
 			}
 		}
 
@@ -833,11 +817,10 @@ impl render::Entry for World {
 
 	fn mouse_wheel(&mut self, delta: f32) {
 		self.game
-			.0
 			.tree
 			.context
 			.camera
-			.scroll(delta, &self.game.0.state);
+			.scroll(delta, &self.game.state);
 	}
 
 	fn mouse_button_changed(
@@ -867,11 +850,10 @@ impl render::Entry for World {
 		let delta = self.mouse.delta(position);
 		if self.mouse.pressed(input::MouseButton::Left) {
 			self.game
-				.0
 				.tree
 				.context
 				.camera
-				.rotate(delta, &self.game.0.state);
+				.rotate(delta, &self.game.state);
 		}
 	}
 
