@@ -6,12 +6,12 @@ use std::{
 
 use math::{Vector, X, Y};
 use project::Project;
-use window::{camera, lod, State};
+use window::{camera, lod, tree::LookupName, State};
 
 use crate::{
 	reader::Reader,
 	segment::{self, MeshRender, Segment},
-	tree::{LookupName, Tree},
+	tree::Tree,
 	Error,
 };
 
@@ -46,7 +46,7 @@ pub struct ProjectCustomState {
 }
 
 impl CustomState for ProjectCustomState {
-	type Scene = crate::tree::TreeScene;
+	type Scene = crate::tree::ProjectScene;
 }
 
 pub struct Game<TCustomState: CustomState> {
@@ -252,6 +252,7 @@ impl Game<ProjectCustomState> {
 										}
 									}
 									self.tree
+										.scene
 										.loaded_manager
 										.change_property(&self.tree.property.0);
 									self.tree
@@ -761,7 +762,7 @@ impl render::Entry for World {
 			self.game.tree.camera.movement(direction, &self.game.state);
 		}
 
-		if self.tree.loaded_manager.update().not() && self.tree.scene.segment.is_none() {
+		if self.tree.scene.loaded_manager.update().not() && self.tree.scene.segment.is_none() {
 			self.game.tree.camera.time(delta.as_secs_f32())
 		}
 

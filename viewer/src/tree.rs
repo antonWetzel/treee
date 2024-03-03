@@ -3,7 +3,6 @@ use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::game::ProjectCustomState;
 use crate::loaded_manager::LoadedManager;
 use crate::reader::Reader;
 use crate::segment::{MeshRender, Segment};
@@ -12,31 +11,13 @@ use math::{Vector, X, Y, Z};
 use project::IndexNode;
 use project::{IndexData, Project};
 use render::{LinesRenderExt, MeshRenderExt, PointCloudExt, Window};
-use window::{camera, lod, State};
+use window::{camera, lod, tree::LookupName, State};
 
 pub const DEFAULT_BACKGROUND: Vector<3, f32> = Vector::new([0.1, 0.2, 0.3]);
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum LookupName {
-	Warm,
-	Cold,
-	Turbo,
-}
-
-impl LookupName {
-	pub fn data(self) -> &'static [u8] {
-		match self {
-			Self::Warm => include_bytes!("../assets/grad_warm.png"),
-			Self::Cold => include_bytes!("../assets/grad_cold.png"),
-			Self::Turbo => include_bytes!("../assets/grad_turbo.png"),
-		}
-	}
-}
-
 pub struct Tree<T> {
-	pub root: Node,
 	pub camera: camera::Camera,
-	pub loaded_manager: LoadedManager,
+
 	pub lookup: render::Lookup,
 	pub environment: render::PointCloudEnvironment,
 	pub background: Vector<3, f32>,
@@ -50,7 +31,9 @@ pub struct Tree<T> {
 	pub property: (String, String, u32),
 }
 
-pub struct TreeScene {
+pub struct ProjectScene {
+	pub loaded_manager: LoadedManager,
+	pub root: Node,
 	pub segment: Option<Segment>,
 	pub segments: Reader,
 }
@@ -317,7 +300,7 @@ impl Node {
 	}
 }
 
-impl Tree<TreeScene> {
+impl Tree<ProjectScene> {
 	pub fn new(
 		state: Arc<State>,
 		project: &Project,
@@ -330,11 +313,13 @@ impl Tree<TreeScene> {
 		Self {
 			background: DEFAULT_BACKGROUND,
 			camera: camera::Camera::new(&state, window.get_aspect()),
-			root: Node::new(&project.root, &state),
+
 			lookup_name,
 			lookup: render::Lookup::new_png(&state, lookup_name.data(), property.2),
 			environment: render::PointCloudEnvironment::new(&state, u32::MIN, u32::MAX, 1.0),
-			scene: TreeScene {
+			eye_dome: render::EyeDome::new(&state, window.config(), window.depth_texture(), 0.7),
+			scene: ProjectScene {
+				root: Node::new(&project.root, &state),
 				segment: None,
 				segments: path
 					.clone()
@@ -344,12 +329,11 @@ impl Tree<TreeScene> {
 						Reader::new(segments, &property.0)
 					})
 					.unwrap_or(Reader::fake()),
+				loaded_manager: LoadedManager::new(state, path, &property.0),
 			},
-			eye_dome: render::EyeDome::new(&state, window.config(), window.depth_texture(), 0.7),
 			eye_dome_active: true,
 			voxels_active: false,
 
-			loaded_manager: LoadedManager::new(state, path, &property.0),
 			property,
 		}
 	}
@@ -364,42 +348,42 @@ impl Tree<TreeScene> {
 		direction: Vector<3, f32>,
 		reader: &mut Reader,
 	) -> Option<NonZeroU32> {
-		self.root.raycast_distance(start, direction)?;
-		self.root.raycast(start, direction, reader)
+		self.scene.root.raycast_distance(start, direction)?;
+		self.scene.root.raycast(start, direction, reader)
 	}
 
 	pub fn update(&mut self) {
-		self.root.update(
+		self.scene.root.update(
 			lod::Checker::new(&self.camera.lod),
 			&self.camera,
-			&mut self.loaded_manager,
+			&mut self.scene.loaded_manager,
 		);
 	}
 }
 
-impl<T> render::PointCloudRender for Tree<T> {
+impl render::PointCloudRender for Tree<ProjectScene> {
 	fn render<'a>(&'a self, point_cloud_pass: &mut render::PointCloudPass<'a>) {
-		self.root.render(
+		self.scene.root.render(
 			point_cloud_pass,
 			lod::Checker::new(&self.camera.lod),
 			&self.camera,
-			&self.loaded_manager,
+			&self.scene.loaded_manager,
 		);
 	}
 }
 
-impl<T> render::LinesRender for Tree<T> {
+impl render::LinesRender for Tree<ProjectScene> {
 	fn render<'a>(&'a self, lines_pass: &mut render::LinesPass<'a>) {
-		self.root.render_lines(
+		self.scene.root.render_lines(
 			lines_pass,
 			lod::Checker::new(&self.camera.lod),
 			&self.camera,
-			&self.loaded_manager,
+			&self.scene.loaded_manager,
 		);
 	}
 }
 
-impl render::RenderEntry<State> for Tree<TreeScene> {
+impl render::RenderEntry<State> for Tree<ProjectScene> {
 	fn background(&self) -> Vector<3, f32> {
 		self.background
 	}
