@@ -47,7 +47,7 @@ impl ProjectScene {
 			&state,
 			&[Point {
 				position: Vector::new([0., 0., 0.]),
-				normal: Vector::new([0., 0., 0.]),
+				normal: Vector::new([1., 0., 0.]),
 				size: 0.09672646,
 			}],
 		);
