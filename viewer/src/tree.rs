@@ -265,7 +265,7 @@ impl Node {
 			}
 		}
 
-		(t_max >= t_min).then_some(t_min)
+		(t_max >= t_min && t_max >= 0.0).then_some(t_min)
 	}
 
 	pub fn raycast(
@@ -307,7 +307,7 @@ impl Node {
 					let distance = sin * diff_length;
 					if distance < point.size {
 						let l = cos * diff_length;
-						if l < best_dist {
+						if 0.0 <= l && l < best_dist {
 							best = Some(NonZeroU32::new(segment).unwrap());
 							best_dist = l;
 						}
