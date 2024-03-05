@@ -838,6 +838,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "data-file"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "tempfile",
+]
+
+[[package]]
 name = "derivative"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1467,6 +1475,7 @@ dependencies = [
  "cfg-if",
  "clap",
  "crossbeam",
+ "data-file",
  "k-nearest",
  "laz",
  "nalgebra",
@@ -2922,6 +2931,7 @@ version = "0.1.0"
 dependencies = [
  "bytemuck",
  "crossbeam",
+ "data-file",
  "egui",
  "egui-wgpu",
  "egui-winit",

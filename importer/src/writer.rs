@@ -1,3 +1,4 @@
+use data_file::DataFile;
 use project::Project;
 use std::path::{Path, PathBuf};
 
@@ -5,11 +6,11 @@ use crate::{point::PointsCollection, Error, Statistics};
 
 pub struct Writer {
 	path: PathBuf,
-	pub points: project::DataFile<project::Point>,
-	pub slice: project::DataFile<u32>,
-	pub curve: project::DataFile<u32>,
-	pub height: project::DataFile<u32>,
-	pub segment: project::DataFile<u32>,
+	pub points: DataFile<project::Point>,
+	pub slice: DataFile<u32>,
+	pub curve: DataFile<u32>,
+	pub height: DataFile<u32>,
+	pub segment: DataFile<u32>,
 }
 
 impl Writer {
@@ -33,19 +34,19 @@ impl Writer {
 		path.push("temp.txt");
 
 		path.set_file_name("points.data");
-		let points = project::DataFile::new(size, &path);
+		let points = DataFile::new(size, &path);
 
 		path.set_file_name("slice.data");
-		let slice = project::DataFile::new(size, &path);
+		let slice = DataFile::new(size, &path);
 
 		path.set_file_name("curve.data");
-		let curve = project::DataFile::new(size, &path);
+		let curve = DataFile::new(size, &path);
 
 		path.set_file_name("height.data");
-		let height = project::DataFile::new(size, &path);
+		let height = DataFile::new(size, &path);
 
 		path.set_file_name("segment.data");
-		let segment = project::DataFile::new(size, &path);
+		let segment = DataFile::new(size, &path);
 
 		Self {
 			points,

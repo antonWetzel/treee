@@ -11,8 +11,9 @@ members = [
 	"triangulation",
 	"viewer",
 	"treee",
+	"data-file",
 ]
-default-members = ["treee", "importer", "viewer"]
+default-members = ["treee"]
 
 resolver = "2"
 
@@ -32,6 +33,7 @@ k-nearest = { path = "./k-nearest" }
 triangulation = { path = "./triangulation" }
 importer = { path = "./importer" }
 viewer = { path = "./viewer" }
+data-file = { path = "./data-file" }
 
 pollster = "0.3"
 rfd = "0.14"

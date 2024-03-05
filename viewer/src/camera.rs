@@ -76,15 +76,12 @@ impl Camera {
 
 	pub fn time(&mut self, render_time: f32) {
 		let fps = 1.0 / render_time;
-		match &mut self.lod {
-			lod::Mode::Auto { threshold, target } => {
-				if fps < *target / 1.25 {
-					*threshold = (*threshold / 1.01).max(0.01);
-				} else if fps > *target * 1.25 {
-					*threshold = (*threshold * 1.01).min(10.0);
-				}
-			},
-			_ => {},
+		if let lod::Mode::Auto { threshold, target } = &mut self.lod {
+			if fps < *target / 1.25 {
+				*threshold = (*threshold / 1.01).max(0.01);
+			} else if fps > *target * 1.25 {
+				*threshold = (*threshold * 1.01).min(10.0);
+			}
 		}
 	}
 
@@ -233,7 +230,7 @@ impl Controller {
 					) * na::Translation3 { vector: -d.coords }
 					* *transform * na::Translation3::new(0.0, 0.0, -offset)
 					* na::Rotation3::from_axis_angle(
-						&&na::Unit::new_unchecked(vector![1.0, 0.0, 0.0]),
+						&na::Unit::new_unchecked(vector![1.0, 0.0, 0.0]),
 						delta.y * -BASE_ROTATE_SPEED,
 					) * na::Translation3::new(0.0, 0.0, offset);
 			},

@@ -11,6 +11,8 @@ workspace = true
 [dependencies]
 k-nearest.workspace = true
 project.workspace = true
+data-file.workspace = true
+
 rand.workspace = true
 serde.workspace = true
 crossbeam.workspace = true

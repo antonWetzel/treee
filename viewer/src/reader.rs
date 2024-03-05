@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use project::DataFile;
+use data_file::DataFile;
 
 pub struct Reader {
 	points: DataFile<project::Point>,

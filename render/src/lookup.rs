@@ -8,7 +8,6 @@ pub struct Lookup {
 
 impl Lookup {
 	pub fn new_png(state: &State, data: &[u8], range: u32) -> Self {
-		let state = state;
 		let texture = Texture::new_1d(state, data);
 		assert!(texture.size.x.is_power_of_two());
 		assert_eq!(texture.size.y, 1);

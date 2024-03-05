@@ -9,8 +9,6 @@ pub struct LinesState {
 
 impl LinesState {
 	pub fn new(state: &State) -> Self {
-		let state = state;
-
 		let shader = state
 			.device
 			.create_shader_module(wgpu::include_wgsl!("lines.wgsl"));

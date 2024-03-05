@@ -205,7 +205,7 @@ pub fn fast_eigenvalues(mat: na::Matrix3<f32>) -> na::Point3<f32> {
 	let q = (mat[(0, 0)] + mat[(1, 1)] + mat[(2, 2)]) / 3.0;
 	let p2 = square(mat[(0, 0)] - q) + square(mat[(1, 1)] - q) + square(mat[(2, 2)] - q) + 2.0 * p1;
 	let p = (p2 / 6.0).sqrt();
-	let mut mat_b = mat.clone();
+	let mut mat_b = mat;
 	for i in 0..3 {
 		mat_b[(i, i)] -= q;
 	}

@@ -13,6 +13,8 @@ render.workspace = true
 input.workspace = true
 project.workspace = true
 triangulation.workspace = true
+data-file.workspace = true
+
 pollster.workspace = true
 rfd.workspace = true
 crossbeam.workspace = true

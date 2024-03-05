@@ -16,7 +16,7 @@ use crate::{
 	Error, EventLoop,
 };
 
-pub struct Game {
+pub struct World {
 	window: render::Window,
 
 	tree: Tree,
@@ -24,7 +24,7 @@ pub struct Game {
 	path: Option<PathBuf>,
 	project_time: std::time::SystemTime,
 
-	pub state: Arc<State>,
+	state: Arc<State>,
 	mouse: input::Mouse,
 	mouse_start: Option<na::Point2<f32>>,
 
@@ -43,7 +43,7 @@ pub struct Game {
 	quit: bool,
 }
 
-impl Game {
+impl World {
 	pub async fn new(event_loop: &EventLoop) -> Result<Self, Error> {
 		let project = Project::empty();
 		let egui = egui::Context::default();
@@ -95,9 +95,7 @@ impl Game {
 			quit: false,
 		})
 	}
-}
 
-impl Game {
 	fn change_project(&mut self) {
 		let Some(path) = rfd::FileDialog::new()
 			.add_filter("Project File", &["json"])
@@ -167,9 +165,7 @@ impl Game {
 			self.tree.segment = Some(Segment::new(&self.state, &mut self.tree.segments, segment));
 		}
 	}
-}
 
-impl Game {
 	fn ui(&mut self, ctx: &egui::Context) {
 		const HEIGHT: f32 = 10.0;
 		const LEFT: f32 = 100.0;
@@ -645,9 +641,7 @@ impl Game {
 				}
 			});
 	}
-}
 
-impl Game {
 	pub fn raw_event(&mut self, event: &winit::event::WindowEvent) -> bool {
 		self.egui_winit
 			.on_window_event(&self.window, event)

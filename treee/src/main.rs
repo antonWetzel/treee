@@ -55,7 +55,7 @@ fn cli() {
 		Command::Importer(command) => importer::run(command).map_err(Error::from),
 		Command::Viewer => viewer::EventLoop::new()
 			.map_err(viewer::Error::RenderError)
-			.and_then(|mut EventLoop| viewer::run(&mut EventLoop))
+			.and_then(|mut event_loop| viewer::run(&mut event_loop))
 			.map_err(Error::Viewer),
 	};
 	if let Err(err) = res {
