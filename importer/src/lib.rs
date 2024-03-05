@@ -10,9 +10,9 @@ mod writer;
 
 use std::{num::NonZeroU32, path::PathBuf};
 
-use nalgebra as na;
 use point::PointsCollection;
 use progress::Progress;
+use project::Property;
 use rand::seq::SliceRandom;
 use rayon::prelude::*;
 use writer::Writer;
@@ -233,15 +233,31 @@ fn import(settings: Settings, input: PathBuf, output: PathBuf) -> Result<(), Err
 
 	let stage = Stage::new("Save Project");
 
-	let properties = [
-		("segment", "Segment", statistics.segments as u32),
-		("height", "Height", u32::MAX),
-		("slice", "Expansion", u32::MAX),
-		("curve", "Curvature", u32::MAX),
+	let properties = vec![
+		Property {
+			storage_name: "segment".into(),
+			display_name: "Segment".into(),
+			max: statistics.segments as u32,
+		},
+		Property {
+			storage_name: "height".into(),
+			display_name: "Height".into(),
+			max: u32::MAX,
+		},
+		Property {
+			storage_name: "slice".into(),
+			display_name: "Expansion".into(),
+			max: u32::MAX,
+		},
+		Property {
+			storage_name: "curve".into(),
+			display_name: "Curvature".into(),
+			max: u32::MAX,
+		},
 	];
 
 	let (tree, project) = tree.flatten(
-		&properties,
+		properties,
 		input.display().to_string(),
 		cache,
 		segments_information,

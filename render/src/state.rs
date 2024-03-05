@@ -1,28 +1,23 @@
-use nalgebra as na;
 use std::sync::Arc;
-use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
 
 use super::*;
 
 pub struct State {
-	pub(crate) device: wgpu::Device,
-	pub(crate) queue: wgpu::Queue,
-	pub(crate) surface_format: wgpu::TextureFormat,
-}
-
-impl Has<Self> for State {
-	fn get(&self) -> &Self {
-		self
-	}
+	pub device: wgpu::Device,
+	pub queue: wgpu::Queue,
+	pub surface_format: wgpu::TextureFormat,
 }
 
 pub type RenderError = winit::error::EventLoopError;
 
 impl State {
-	pub async fn new(title: &str, runner: &Runner, egui: &egui::Context) -> Result<(Self, Window), RenderError> {
+	pub async fn new<Any>(
+		title: &str,
+		event_loop: &winit::event_loop::EventLoop<Any>,
+	) -> Result<(Self, Window), RenderError> {
 		let window = winit::window::WindowBuilder::new()
 			.with_visible(false)
-			.build(&runner.event_loop)
+			.build(event_loop)
 			.unwrap();
 
 		let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -61,7 +56,7 @@ impl State {
 		let window = winit::window::WindowBuilder::new()
 			.with_title(title)
 			.with_min_inner_size(winit::dpi::LogicalSize { width: 10, height: 10 })
-			.build(&runner.event_loop)
+			.build(event_loop)
 			.unwrap();
 		let window = Arc::new(window);
 
@@ -86,86 +81,21 @@ impl State {
 		surface.configure(&device, &config);
 
 		let depth_texture = DepthTexture::new(&device, &config, "depth");
-		let id = egui.viewport_id();
-		let egui_wgpu = egui_wgpu::Renderer::new(&device, config.format, None, 1);
-		let egui_winit = egui_winit::State::new(egui.clone(), id, &window, None, None);
 
-		let window = Window {
-			surface,
-			depth_texture,
-			config,
-
-			egui_wgpu,
-			egui_winit,
-
-			window,
-		};
+		let window = Window::new(window, config, surface, depth_texture);
 
 		Ok((Self { device, queue, surface_format }, window))
 	}
-}
 
-pub struct Runner {
-	pub event_loop: winit::event_loop::EventLoop<()>,
-}
-
-impl Runner {
-	pub fn new() -> Result<Self, RenderError> {
-		Ok(Self {
-			event_loop: winit::event_loop::EventLoop::new()?,
-		})
+	pub fn device(&self) -> &wgpu::Device {
+		&self.device
 	}
 
-	pub fn run<T: Entry>(&mut self, game: &mut T) -> Result<(), RenderError> {
-		self.event_loop
-			.set_control_flow(winit::event_loop::ControlFlow::Poll);
-		self.event_loop.run_on_demand(|event, event_loop| {
-			match event {
-				winit::event::Event::WindowEvent { event, window_id } => {
-					if game.raw_event(&event) {
-						return;
-					}
-					match event {
-						winit::event::WindowEvent::CloseRequested => game.close_window(window_id),
-						winit::event::WindowEvent::Resized(size) => {
-							game.resize_window(window_id, [size.width, size.height].into())
-						},
-						winit::event::WindowEvent::ScaleFactorChanged { .. } => todo!(),
-						winit::event::WindowEvent::KeyboardInput { event, .. } => match event.physical_key {
-							winit::keyboard::PhysicalKey::Code(key) => game.key_changed(window_id, key, event.state),
-							winit::keyboard::PhysicalKey::Unidentified(_) => {},
-						},
-						winit::event::WindowEvent::MouseInput { state: button_state, button, .. } => {
-							game.mouse_button_changed(window_id, (button).into(), button_state)
-						},
-						winit::event::WindowEvent::MouseWheel { delta, .. } => {
-							let delta = match delta {
-								winit::event::MouseScrollDelta::LineDelta(_, y) => -y,
-								winit::event::MouseScrollDelta::PixelDelta(pos) => -pos.y as f32,
-							};
-							game.mouse_wheel(delta)
-						},
-						winit::event::WindowEvent::CursorMoved { position, .. } => {
-							let position = na::vector![position.x as f32, position.y as f32].into();
-							game.mouse_moved(window_id, position)
-						},
-						winit::event::WindowEvent::ModifiersChanged(modifiers) => {
-							game.modifiers_changed(modifiers.state())
-						},
-						winit::event::WindowEvent::RedrawRequested => {
-							game.time();
-							game.render(window_id);
-							game.request_redraw();
-						},
-						_ => {},
-					}
-				},
-				_ => {},
-			}
+	pub fn queue(&self) -> &wgpu::Queue {
+		&self.queue
+	}
 
-			if game.exit() {
-				event_loop.exit();
-			}
-		})
+	pub fn surface_format(&self) -> wgpu::TextureFormat {
+		self.surface_format
 	}
 }

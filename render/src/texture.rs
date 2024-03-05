@@ -1,7 +1,7 @@
 use image::GenericImageView;
 use nalgebra as na;
 
-use crate::{Has, State};
+use crate::State;
 
 pub struct Texture {
 	pub size: na::Point2<u32>,
@@ -11,15 +11,15 @@ pub struct Texture {
 pub type TextureDimension = wgpu::TextureDimension;
 
 impl Texture {
-	pub fn new(state: &impl Has<State>, data: &[u8]) -> Self {
+	pub fn new(state: &State, data: &[u8]) -> Self {
 		Self::new_xd(state, data, wgpu::TextureDimension::D2)
 	}
 
-	pub fn new_1d(state: &impl Has<State>, data: &[u8]) -> Self {
+	pub fn new_1d(state: &State, data: &[u8]) -> Self {
 		Self::new_xd(state, data, wgpu::TextureDimension::D1)
 	}
 
-	fn new_xd(state: &impl Has<State>, data: &[u8], dimension: TextureDimension) -> Self {
+	fn new_xd(state: &State, data: &[u8], dimension: TextureDimension) -> Self {
 		let img = image::load_from_memory(data).unwrap();
 		let dimensions = img.dimensions();
 
@@ -28,7 +28,7 @@ impl Texture {
 			height: dimensions.1,
 			depth_or_array_layers: 1,
 		};
-		let texture = state.get().device.create_texture(&wgpu::TextureDescriptor {
+		let texture = state.device.create_texture(&wgpu::TextureDescriptor {
 			size: texture_size,
 			mip_level_count: 1,
 			sample_count: 1,
@@ -39,7 +39,7 @@ impl Texture {
 			view_formats: &[],
 		});
 
-		state.get().queue.write_texture(
+		state.queue.write_texture(
 			wgpu::ImageCopyTexture {
 				texture: &texture,
 				mip_level: 0,

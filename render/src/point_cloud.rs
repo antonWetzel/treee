@@ -4,7 +4,7 @@ use wgpu::util::DeviceExt;
 
 use crate::{
 	depth_texture::DepthTexture, point_base_description, point_description, point_property_description, Camera3DGPU,
-	Has, Lookup, PointEdge, RenderPass, State,
+	Lookup, PointEdge, RenderPass, State,
 };
 
 pub struct PointCloudState {
@@ -74,9 +74,7 @@ mod vertices {
 use vertices::*;
 
 impl PointCloudState {
-	pub fn new(state: &impl Has<State>) -> Self {
-		let state = state.get();
-
+	pub fn new(state: &State) -> Self {
 		let shader = state
 			.device
 			.create_shader_module(wgpu::include_wgsl!("point_cloud.wgsl"));
@@ -159,35 +157,34 @@ pub trait PointCloudRender {
 	fn render<'a>(&'a self, point_cloud_pass: &mut PointCloudPass<'a>);
 }
 
-pub trait PointCloudExt<'a, V, S> {
+pub trait PointCloudExt<'a, V> {
 	fn render_point_clouds(
 		&mut self,
 		value: &'a V,
-		state: &'a S,
+		state: &'a PointCloudState,
 		camera: &'a Camera3DGPU,
 		lookup: &'a Lookup,
 		environment: &'a PointCloudEnvironment,
 	);
 }
 
-impl<'a, V, S> PointCloudExt<'a, V, S> for RenderPass<'a>
+impl<'a, V> PointCloudExt<'a, V> for RenderPass<'a>
 where
-	S: Has<PointCloudState>,
 	V: PointCloudRender,
 {
 	fn render_point_clouds(
 		&mut self,
 		value: &'a V,
-		state: &'a S,
+		state: &'a PointCloudState,
 		camera: &'a Camera3DGPU,
 		lookup: &'a Lookup,
 		environment: &'a PointCloudEnvironment,
 	) {
-		self.set_pipeline(&state.get().pipeline);
+		self.set_pipeline(&state.pipeline);
 		self.set_bind_group(0, camera.get_bind_group(), &[]);
 		self.set_bind_group(1, &environment.bind_group, &[]);
 		self.set_bind_group(2, lookup.get_bind_group(), &[]);
-		self.set_vertex_buffer(0, state.get().base.slice(..));
+		self.set_vertex_buffer(0, state.base.slice(..));
 		let lines_pass = unsafe { std::mem::transmute::<_, &mut PointCloudPass<'a>>(self) };
 		value.render(lines_pass);
 	}
@@ -200,9 +197,8 @@ pub struct PointCloud {
 }
 
 impl PointCloud {
-	pub fn new(state: &impl Has<State>, vertices: &[Point]) -> Self {
+	pub fn new(state: &State, vertices: &[Point]) -> Self {
 		let buffer = state
-			.get()
 			.device
 			.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 				label: Some("point cloud buffer"),
@@ -243,9 +239,8 @@ pub struct PointCloudProperty {
 }
 
 impl PointCloudProperty {
-	pub fn new(state: &impl Has<State>, data: &[u32]) -> Self {
+	pub fn new(state: &State, data: &[u32]) -> Self {
 		let buffer = state
-			.get()
 			.device
 			.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 				label: Some("point cloud property buffer"),
@@ -256,8 +251,7 @@ impl PointCloudProperty {
 		Self { buffer, length: data.len() as u32 }
 	}
 
-	pub fn new_empty(state: &impl Has<State>) -> Self {
-		let state: &State = state.get();
+	pub fn new_empty(state: &State) -> Self {
 		let buffer = state.device.create_buffer(&wgpu::BufferDescriptor {
 			label: Some("point cloud property buffer"),
 			size: (MAX_LEAF_SIZE * std::mem::size_of::<u32>()) as u64,
@@ -276,7 +270,7 @@ pub struct PointCloudEnvironment {
 }
 
 impl PointCloudEnvironment {
-	pub fn new(state: &impl Has<State>, min: u32, max: u32, scale: f32) -> Self {
+	pub fn new(state: &State, min: u32, max: u32, scale: f32) -> Self {
 		#[repr(C)]
 		#[derive(Debug, Copy, Clone, bytemuck::Zeroable, bytemuck::Pod)]
 		struct Uniform {
@@ -288,7 +282,6 @@ impl PointCloudEnvironment {
 
 		let uniform = Uniform { scale, min, max, pad: [0, 0] };
 		let buffer = state
-			.get()
 			.device
 			.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 				label: Some("point cloud environment buffer"),
@@ -296,23 +289,19 @@ impl PointCloudEnvironment {
 				usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
 			});
 
-		let bind_group = state
-			.get()
-			.device
-			.create_bind_group(&wgpu::BindGroupDescriptor {
-				layout: &Self::get_layout(state),
-				entries: &[wgpu::BindGroupEntry {
-					binding: 0,
-					resource: buffer.as_entire_binding(),
-				}],
-				label: Some("point cloud environment bindgroup"),
-			});
+		let bind_group = state.device.create_bind_group(&wgpu::BindGroupDescriptor {
+			layout: &Self::get_layout(state),
+			entries: &[wgpu::BindGroupEntry {
+				binding: 0,
+				resource: buffer.as_entire_binding(),
+			}],
+			label: Some("point cloud environment bindgroup"),
+		});
 		Self { bind_group, min, max, scale }
 	}
 
-	pub fn get_layout(state: &impl Has<State>) -> wgpu::BindGroupLayout {
+	pub fn get_layout(state: &State) -> wgpu::BindGroupLayout {
 		state
-			.get()
 			.device
 			.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
 				entries: &[wgpu::BindGroupLayoutEntry {

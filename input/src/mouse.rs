@@ -28,8 +28,8 @@ impl From<winit::event::MouseButton> for MouseButton {
 }
 
 pub struct Mouse {
-	pub(crate) pressed: HashSet<MouseButton>,
-	pub(crate) position: na::Point<f32, 2>,
+	pressed: HashSet<MouseButton>,
+	position: na::Point<f32, 2>,
 }
 
 impl Mouse {

@@ -1,7 +1,6 @@
 use std::{
-	collections::HashSet,
 	fs::File,
-	io::{Read, Seek, Write},
+	io::{BufReader, BufWriter, Read, Seek, Write},
 	num::NonZeroU32,
 	path::Path,
 };
@@ -12,18 +11,15 @@ use serde::{Deserialize, Serialize};
 pub const MAX_LEAF_SIZE: usize = 1 << 15;
 
 #[derive(Debug, Deserialize, Serialize)]
+#[serde(untagged)]
 pub enum IndexData {
-	Branch {
-		children: Box<[Option<IndexNode>; 8]>,
-	},
-	Leaf {
-		segments: HashSet<NonZeroU32>,
-	},
+	Branch(Box<[Option<IndexNode>; 8]>),
+	Leaf,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct IndexNode {
-	pub data: IndexData,
+	pub children: IndexData,
 	pub position: na::Point<f32, 3>,
 	pub size: f32,
 	pub index: u32,
@@ -34,16 +30,23 @@ pub struct Project {
 	pub name: String,
 	pub depth: u32,
 	pub root: IndexNode,
-	pub properties: Vec<(String, String, u32)>,
+	pub properties: Vec<Property>,
 
 	pub segment_information: Vec<String>,
 	pub segment_values: Vec<Value>,
 }
 
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct Property {
+	pub storage_name: String,
+	pub display_name: String,
+	pub max: u32,
+}
+
 impl Project {
 	pub fn from_file(path: impl AsRef<Path>) -> Self {
 		let file = std::fs::OpenOptions::new().read(true).open(path).unwrap();
-		bincode::deserialize_from(file).unwrap()
+		serde_json::from_reader(BufReader::new(file)).unwrap()
 	}
 
 	pub fn empty() -> Self {
@@ -51,12 +54,16 @@ impl Project {
 			name: "No Project loaded".into(),
 			depth: 0,
 			root: IndexNode {
-				data: IndexData::Leaf { segments: HashSet::new() },
+				children: IndexData::Leaf,
 				position: na::Point::default(),
 				size: 0.0,
 				index: 0,
 			},
-			properties: vec![(String::from("None"), String::from("None"), 1)],
+			properties: vec![Property {
+				display_name: String::from("None"),
+				storage_name: String::from("none"),
+				max: 1,
+			}],
 			segment_information: Vec::new(),
 			segment_values: Vec::new(),
 		}
@@ -68,7 +75,7 @@ impl Project {
 			.create(true)
 			.open(path)
 			.unwrap();
-		bincode::serialize_into(file, self).unwrap();
+		serde_json::to_writer(BufWriter::new(file), self).unwrap();
 	}
 
 	pub fn segment(&self, index: NonZeroU32) -> &[Value] {

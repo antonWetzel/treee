@@ -19,7 +19,7 @@ impl Writer {
 		}
 		if path.is_dir() {
 			let mut project_path = path.to_path_buf();
-			project_path.push("project.epc");
+			project_path.push("project.json");
 			if path.read_dir().into_iter().flatten().next().is_some() && !project_path.exists() {
 				return Err(Error::OutputFolderIsNotEmpty);
 			}
@@ -66,7 +66,7 @@ impl Writer {
 	}
 
 	pub fn save_project(&mut self, project: &Project) {
-		self.path.set_file_name("project.epc");
+		self.path.set_file_name("project.json");
 		project.save(&self.path);
 	}
 

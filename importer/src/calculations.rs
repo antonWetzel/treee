@@ -1,7 +1,6 @@
-use std::{num::NonZeroU32, sync::Arc};
+use std::num::NonZeroU32;
 
 use nalgebra as na;
-use rayon::vec;
 
 use crate::{point::Point, Settings};
 
@@ -260,5 +259,5 @@ fn test() {
 		}
 		println!("Nalg: {}", start.elapsed().as_secs_f64());
 	}
-	panic!()
+	// panic!()
 }

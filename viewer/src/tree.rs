@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -10,8 +9,8 @@ use crate::state::State;
 use crate::{camera, lod};
 
 use nalgebra as na;
-use project::IndexNode;
 use project::{IndexData, Project};
+use project::{IndexNode, Property};
 use render::{LinesRenderExt, MeshRenderExt, PointCloudExt, Window};
 
 pub const DEFAULT_BACKGROUND: na::Point3<f32> = na::Point3::new(0.1, 0.2, 0.3);
@@ -47,7 +46,7 @@ pub struct Tree {
 	pub eye_dome_active: bool,
 	pub voxels_active: bool,
 
-	pub property: (String, String, u32),
+	pub property: Property,
 
 	pub segments: Reader,
 }
@@ -62,34 +61,27 @@ pub struct Node {
 }
 
 pub enum Data {
-	Branch {
-		children: Box<[Option<Node>; 8]>,
-		segments: HashSet<NonZeroU32>,
-	},
-	Leaf {
-		segments: HashSet<NonZeroU32>,
-	},
+	Branch(Box<[Option<Node>; 8]>),
+	Leaf,
 }
 
 impl Node {
 	pub fn new(node: &IndexNode, state: &State) -> Self {
-		let data = match &node.data {
-			IndexData::Branch { children: index_children } => {
+		let data = match &node.children {
+			IndexData::Branch(index_children) => {
 				let mut children: [_; 8] = Default::default();
-				let mut segments = HashSet::new();
 				for (i, child) in index_children
 					.iter()
 					.enumerate()
 					.filter_map(|(i, child)| child.as_ref().map(|c| (i, c)))
 				{
 					let node = Self::new(child, state);
-					node.get_segments(&mut segments);
 					children[i] = Some(node);
 				}
 
-				Data::Branch { children: Box::new(children), segments }
+				Data::Branch(Box::new(children))
 			},
-			IndexData::Leaf { segments } => Data::Leaf { segments: segments.clone() },
+			IndexData::Leaf => Data::Leaf,
 		};
 
 		let points = [
@@ -116,21 +108,6 @@ impl Node {
 		}
 	}
 
-	fn get_segments(&self, set: &mut HashSet<NonZeroU32>) {
-		match &self.data {
-			Data::Branch { children: _, segments } => {
-				for segment in segments.iter().copied() {
-					set.insert(segment);
-				}
-			},
-			Data::Leaf { segments } => {
-				for &segment in segments {
-					set.insert(segment);
-				}
-			},
-		}
-	}
-
 	pub fn render<'a>(
 		&'a self,
 		point_cloud_pass: &mut render::PointCloudPass<'a>,
@@ -142,7 +119,7 @@ impl Node {
 			return;
 		}
 		match &self.data {
-			Data::Branch { children, segments: _ } => {
+			Data::Branch(children) => {
 				if loaded_manager.exist(self.index)
 					&& (view_checker.should_render(self.corner, self.size, camera)
 						|| !Self::can_render_children(children, loaded_manager, camera))
@@ -155,7 +132,7 @@ impl Node {
 					}
 				}
 			},
-			Data::Leaf { segments: _ } => {
+			Data::Leaf => {
 				loaded_manager.render(self.index, point_cloud_pass);
 			},
 		}
@@ -172,7 +149,7 @@ impl Node {
 			return;
 		}
 		match &self.data {
-			Data::Branch { children, segments: _ } => {
+			Data::Branch(children) => {
 				if loaded_manager.exist(self.index)
 					&& (view_checker.should_render(self.corner, self.size, camera)
 						|| !Self::can_render_children(children, loaded_manager, camera))
@@ -185,7 +162,7 @@ impl Node {
 					}
 				}
 			},
-			Data::Leaf { segments: _ } => {
+			Data::Leaf => {
 				self.lines.render(lines_pass);
 			},
 		}
@@ -214,7 +191,7 @@ impl Node {
 			return;
 		}
 		match &mut self.data {
-			Data::Branch { children, segments: _ } => {
+			Data::Branch(children) => {
 				if view_checker.should_render(self.corner, self.size, camera) {
 					loaded_manager.request(self.index);
 					for child in children.iter_mut().flatten() {
@@ -229,7 +206,7 @@ impl Node {
 					}
 				}
 			},
-			&mut Data::Leaf { segments: _ } => {
+			&mut Data::Leaf => {
 				loaded_manager.request(self.index);
 			},
 		}
@@ -241,12 +218,12 @@ impl Node {
 		}
 		loaded_manager.unload(self.index);
 		match &self.data {
-			Data::Branch { children, segments: _ } => {
+			Data::Branch(children) => {
 				for child in children.iter().flatten() {
 					child.clear(loaded_manager);
 				}
 			},
-			Data::Leaf { segments: _ } => {},
+			Data::Leaf => {},
 		}
 	}
 
@@ -275,7 +252,7 @@ impl Node {
 		reader: &mut Reader,
 	) -> Option<NonZeroU32> {
 		match &self.data {
-			Data::Branch { children, segments: _ } => {
+			Data::Branch(children) => {
 				let mut order = Vec::new();
 				for child in children.iter().flatten() {
 					let Some(dist) = child.raycast_distance(start, direction) else {
@@ -290,7 +267,7 @@ impl Node {
 					.into_iter()
 					.find_map(|(child, _)| child.raycast(start, direction, reader))
 			},
-			Data::Leaf { .. } => {
+			Data::Leaf => {
 				let mut best = None;
 				let mut best_dist = f32::MAX;
 				let data = reader.get_points(self.index);
@@ -324,7 +301,7 @@ impl Tree {
 		state: Arc<State>,
 		project: &Project,
 		path: Option<PathBuf>,
-		property: (String, String, u32),
+		property: Property,
 		window: &Window,
 	) -> Self {
 		let lookup_name = LookupName::Warm;
@@ -334,7 +311,7 @@ impl Tree {
 			camera: camera::Camera::new(&state, window.get_aspect()),
 			root: Node::new(&project.root, &state),
 			lookup_name,
-			lookup: render::Lookup::new_png(&state, lookup_name.data(), property.2),
+			lookup: render::Lookup::new_png(&state, lookup_name.data(), property.max),
 			environment: render::PointCloudEnvironment::new(&state, u32::MIN, u32::MAX, 1.0),
 			segment: None,
 			eye_dome: render::EyeDome::new(&state, window.config(), window.depth_texture(), 0.7),
@@ -345,17 +322,17 @@ impl Tree {
 				.map(|path| {
 					let mut segments = path.clone();
 					segments.push("segments");
-					Reader::new(segments, &property.0)
+					Reader::new(segments, &property.storage_name)
 				})
 				.unwrap_or(Reader::fake()),
 
-			loaded_manager: LoadedManager::new(state, path, &property.0),
+			loaded_manager: LoadedManager::new(state, path, &property.storage_name),
 			property,
 		}
 	}
 
 	pub fn update_lookup(&mut self, state: &State) {
-		self.lookup = render::Lookup::new_png(state, self.lookup_name.data(), self.property.2);
+		self.lookup = render::Lookup::new_png(state, self.lookup_name.data(), self.property.max);
 	}
 
 	pub fn raycast(
@@ -374,6 +351,41 @@ impl Tree {
 			&self.camera,
 			&mut self.loaded_manager,
 		);
+	}
+
+	pub fn render<'a>(&'a self, state: &'a State, render_pass: &mut render::RenderPass<'a>) {
+		if let Some(segment) = &self.segment {
+			match segment.render {
+				MeshRender::Points => render_pass.render_point_clouds(
+					segment,
+					&state.pointcloud,
+					&self.camera.gpu,
+					&self.lookup,
+					&self.environment,
+				),
+				MeshRender::Mesh => render_pass.render_meshes(segment, &state.mesh, &self.camera.gpu, &self.lookup),
+				MeshRender::MeshLines => {
+					render_pass.render_meshes(segment, &state.mesh_line, &self.camera.gpu, &self.lookup)
+				},
+			}
+		} else {
+			render_pass.render_point_clouds(
+				self,
+				&state.pointcloud,
+				&self.camera.gpu,
+				&self.lookup,
+				&self.environment,
+			);
+			if self.voxels_active {
+				render_pass.render_lines(self, &state.lines, &self.camera.gpu);
+			}
+		}
+	}
+
+	pub fn post_process<'a>(&'a self, _state: &'a State, render_pass: &mut render::RenderPass<'a>) {
+		if self.eye_dome_active {
+			render_pass.render(&self.eye_dome, ());
+		}
 	}
 }
 
@@ -396,46 +408,5 @@ impl render::LinesRender for Tree {
 			&self.camera,
 			&self.loaded_manager,
 		);
-	}
-}
-
-impl render::RenderEntry<State> for Tree {
-	fn background(&self) -> na::Point3<f32> {
-		self.background
-	}
-
-	fn render<'a>(&'a mut self, state: &'a State, render_pass: &mut render::RenderPass<'a>) {
-		if let Some(segment) = &self.segment {
-			match segment.render {
-				MeshRender::Points => render_pass.render_point_clouds(
-					segment,
-					state,
-					&self.camera.gpu,
-					&self.lookup,
-					&self.environment,
-				),
-				MeshRender::Mesh => render_pass.render_meshes(segment, state, &self.camera.gpu, &self.lookup),
-				MeshRender::MeshLines => {
-					render_pass.render_meshes(segment, &state.mesh_line, &self.camera.gpu, &self.lookup)
-				},
-			}
-		} else {
-			render_pass.render_point_clouds(
-				self,
-				state,
-				&self.camera.gpu,
-				&self.lookup,
-				&self.environment,
-			);
-			if self.voxels_active {
-				render_pass.render_lines(self, state, &self.camera.gpu);
-			}
-		}
-	}
-
-	fn post_process<'a>(&'a mut self, _state: &'a State, render_pass: &mut render::RenderPass<'a>) {
-		if self.eye_dome_active {
-			render_pass.render(&self.eye_dome, ());
-		}
 	}
 }

@@ -132,7 +132,6 @@ impl Camera {
 	pub fn ray_direction(&self, position: na::Point2<f32>, window_size: na::Point2<f32>) -> na::Vector3<f32> {
 		match self.cam {
 			render::Camera3D::Perspective { .. } => {
-				println!("{} {}", position, window_size);
 				let dist = (window_size.y / 2.0) / (FIELD_OF_VIEW / 2.0).tan();
 				let position = position - window_size / 2.0;
 				(self.transform * vector![position.x, -position.y, -dist]).normalize()
@@ -156,7 +155,7 @@ impl Camera {
 		let Ok(file) = File::create(path) else {
 			return;
 		};
-		bincode::serialize_into(file, &data).unwrap();
+		serde_json::to_writer(file, &data).unwrap();
 	}
 
 	pub fn load(&mut self, state: &State) {
@@ -169,7 +168,7 @@ impl Camera {
 		let Ok(file) = File::open(path) else {
 			return;
 		};
-		let data = bincode::deserialize_from::<_, CameraData>(file).unwrap();
+		let data = serde_json::from_reader::<_, CameraData>(file).unwrap();
 
 		self.transform = data.transform;
 		self.controller = data.controller;

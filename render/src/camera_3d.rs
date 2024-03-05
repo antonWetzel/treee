@@ -2,7 +2,7 @@ use nalgebra as na;
 
 use wgpu::util::DeviceExt;
 
-use crate::{Has, State};
+use crate::State;
 
 #[derive(Clone, Copy)]
 pub enum Camera3D {
@@ -92,13 +92,12 @@ pub struct Camera3DGPU {
 }
 
 impl Camera3DGPU {
-	pub fn new(state: &impl Has<State>, camera: &crate::Camera3D, transform: &na::Affine3<f32>) -> Self {
+	pub fn new(state: &State, camera: &crate::Camera3D, transform: &na::Affine3<f32>) -> Self {
 		let view = transform.inverse().to_homogeneous();
 		let proj = camera.projection();
 
 		let uniform = Uniform { view_proj: proj * view };
 		let buffer = state
-			.get()
 			.device
 			.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 				label: Some("Camera Buffer"),
@@ -106,23 +105,19 @@ impl Camera3DGPU {
 				usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
 			});
 
-		let bind_group = state
-			.get()
-			.device
-			.create_bind_group(&wgpu::BindGroupDescriptor {
-				layout: &Self::get_layout(state),
-				entries: &[wgpu::BindGroupEntry {
-					binding: 0,
-					resource: buffer.as_entire_binding(),
-				}],
-				label: Some("camera_bind_group"),
-			});
+		let bind_group = state.device.create_bind_group(&wgpu::BindGroupDescriptor {
+			layout: &Self::get_layout(state),
+			entries: &[wgpu::BindGroupEntry {
+				binding: 0,
+				resource: buffer.as_entire_binding(),
+			}],
+			label: Some("camera_bind_group"),
+		});
 		Self { bind_group }
 	}
 
-	pub fn get_layout(state: &impl Has<State>) -> wgpu::BindGroupLayout {
+	pub fn get_layout(state: &State) -> wgpu::BindGroupLayout {
 		state
-			.get()
 			.device
 			.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
 				entries: &[wgpu::BindGroupLayoutEntry {

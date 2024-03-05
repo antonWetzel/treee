@@ -1,15 +1,15 @@
 use nalgebra as na;
 use wgpu::{util::DeviceExt, vertex_attr_array};
 
-use crate::{depth_texture::DepthTexture, Camera3DGPU, Has, RenderPass, State};
+use crate::{depth_texture::DepthTexture, Camera3DGPU, RenderPass, State};
 
 pub struct LinesState {
 	pipeline: wgpu::RenderPipeline,
 }
 
 impl LinesState {
-	pub fn new(state: &impl Has<State>) -> Self {
-		let state = state.get();
+	pub fn new(state: &State) -> Self {
+		let state = state;
 
 		let shader = state
 			.device
@@ -76,17 +76,16 @@ pub trait LinesRender {
 	fn render<'a>(&'a self, lines_pass: &mut LinesPass<'a>);
 }
 
-pub trait LinesRenderExt<'a, V, S> {
-	fn render_lines(&mut self, value: &'a V, state: &'a S, camera: &'a Camera3DGPU);
+pub trait LinesRenderExt<'a, V> {
+	fn render_lines(&mut self, value: &'a V, state: &'a LinesState, camera: &'a Camera3DGPU);
 }
 
-impl<'a, V, S> LinesRenderExt<'a, V, S> for RenderPass<'a>
+impl<'a, V> LinesRenderExt<'a, V> for RenderPass<'a>
 where
-	S: Has<LinesState>,
 	V: LinesRender,
 {
-	fn render_lines(&mut self, value: &'a V, state: &'a S, camera: &'a Camera3DGPU) {
-		self.set_pipeline(&state.get().pipeline);
+	fn render_lines(&mut self, value: &'a V, state: &'a LinesState, camera: &'a Camera3DGPU) {
+		self.set_pipeline(&state.pipeline);
 		self.set_bind_group(0, camera.get_bind_group(), &[]);
 		let lines_pass = unsafe { std::mem::transmute::<_, &mut LinesPass<'a>>(self) };
 		value.render(lines_pass);
@@ -101,9 +100,8 @@ pub struct Lines {
 }
 
 impl Lines {
-	pub fn new(state: &impl Has<State>, points: &[na::Point3<f32>], indices: &[u32]) -> Self {
+	pub fn new(state: &State, points: &[na::Point3<f32>], indices: &[u32]) -> Self {
 		let buffer = state
-			.get()
 			.device
 			.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 				label: Some("lines buffer"),
@@ -112,7 +110,6 @@ impl Lines {
 			});
 
 		let indices_buffer = state
-			.get()
 			.device
 			.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 				label: Some("lines indices buffer"),

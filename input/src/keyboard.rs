@@ -2,7 +2,7 @@ use super::State;
 use std::collections::HashSet;
 
 pub struct Keyboard {
-	pub(crate) pressed: HashSet<KeyCode>,
+	pressed: HashSet<KeyCode>,
 	modifiers: Modifiers,
 }
 

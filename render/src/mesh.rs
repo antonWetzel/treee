@@ -1,7 +1,7 @@
 use wgpu::util::DeviceExt;
 
 use crate::{
-	depth_texture::DepthTexture, point_description, point_property_description, Camera3DGPU, Has, Lookup, PointCloud,
+	depth_texture::DepthTexture, point_description, point_property_description, Camera3DGPU, Lookup, PointCloud,
 	PointCloudProperty, RenderPass, State,
 };
 
@@ -9,24 +9,14 @@ pub struct MeshState {
 	pipeline: wgpu::RenderPipeline,
 }
 
-impl Has<Self> for MeshState {
-	fn get(&self) -> &Self {
-		self
-	}
-}
-
 impl MeshState {
-	pub fn new(state: &impl Has<State>) -> Self {
-		let state = state.get();
-
+	pub fn new(state: &State) -> Self {
 		Self {
 			pipeline: Self::create_pipeline(state, wgpu::PolygonMode::Fill, true),
 		}
 	}
 
-	pub fn new_as_lines(state: &impl Has<State>) -> Self {
-		let state = state.get();
-
+	pub fn new_as_lines(state: &State) -> Self {
 		Self {
 			pipeline: Self::create_pipeline(state, wgpu::PolygonMode::Line, false),
 		}
@@ -100,17 +90,16 @@ pub trait MeshRender {
 	fn render<'a>(&'a self, mesh_pass: &mut MeshPass<'a>);
 }
 
-pub trait MeshRenderExt<'a, V, S> {
-	fn render_meshes(&mut self, value: &'a V, state: &'a S, camera: &'a Camera3DGPU, lookup: &'a Lookup);
+pub trait MeshRenderExt<'a, V> {
+	fn render_meshes(&mut self, value: &'a V, state: &'a MeshState, camera: &'a Camera3DGPU, lookup: &'a Lookup);
 }
 
-impl<'a, V, S> MeshRenderExt<'a, V, S> for RenderPass<'a>
+impl<'a, V> MeshRenderExt<'a, V> for RenderPass<'a>
 where
-	S: Has<MeshState>,
 	V: MeshRender,
 {
-	fn render_meshes(&mut self, value: &'a V, state: &'a S, camera: &'a Camera3DGPU, lookup: &'a Lookup) {
-		self.set_pipeline(&state.get().pipeline);
+	fn render_meshes(&mut self, value: &'a V, state: &'a MeshState, camera: &'a Camera3DGPU, lookup: &'a Lookup) {
+		self.set_pipeline(&state.pipeline);
 		self.set_bind_group(0, camera.get_bind_group(), &[]);
 		self.set_bind_group(1, lookup.get_bind_group(), &[]);
 		let lines_pass = unsafe { std::mem::transmute::<_, &mut MeshPass<'a>>(self) };
@@ -125,9 +114,8 @@ pub struct Mesh {
 }
 
 impl Mesh {
-	pub fn new(state: &impl Has<State>, indices: &[u32]) -> Self {
+	pub fn new(state: &State, indices: &[u32]) -> Self {
 		let buffer = state
-			.get()
 			.device
 			.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 				label: Some("mesh buffer"),

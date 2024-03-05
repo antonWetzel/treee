@@ -4,7 +4,7 @@ use std::sync::Mutex;
 
 use crossbeam::atomic::AtomicCell;
 use nalgebra as na;
-use project::{IndexData, IndexNode, Project, MAX_LEAF_SIZE};
+use project::{IndexData, IndexNode, Project, Property, MAX_LEAF_SIZE};
 use rayon::prelude::*;
 
 use crate::cache::{Cache, CacheEntry, CacheIndex};
@@ -113,7 +113,7 @@ impl Node {
 		});
 	}
 
-	fn flatten(self, nodes: &mut Vec<FLatNode>, cache: &mut Cache) -> (IndexNode, u32) {
+	fn flatten(self, nodes: &mut Vec<FlatNode>, cache: &mut Cache) -> (IndexNode, u32) {
 		let (flat_data, index_data, depth) = match self.data {
 			Data::Branch { children } => {
 				let mut indices = [None; 8];
@@ -129,19 +129,19 @@ impl Node {
 				}
 				(
 					FlatData::Branch { children: indices },
-					IndexData::Branch { children: Box::new(index_children) },
+					IndexData::Branch(Box::new(index_children)),
 					max_level + 1,
 				)
 			},
-			Data::Leaf { size, segments, index } => (
+			Data::Leaf { size, segments: _, index } => (
 				FlatData::Leaf { size, data: cache.read(index) },
-				IndexData::Leaf { segments },
+				IndexData::Leaf,
 				1,
 			),
 		};
 
 		let index = nodes.len() as u32;
-		nodes.push(FLatNode {
+		nodes.push(FlatNode {
 			corner: self.corner,
 			size: self.size,
 			data: flat_data,
@@ -149,7 +149,7 @@ impl Node {
 		});
 		(
 			IndexNode {
-				data: index_data,
+				children: index_data,
 				position: self.corner,
 				size: self.size,
 				index,
@@ -174,7 +174,7 @@ impl Tree {
 
 	pub fn flatten(
 		self,
-		calculators: &[(&str, &str, u32)],
+		properties: Vec<Property>,
 		name: String,
 		mut cache: Cache,
 		segment_information: Vec<String>,
@@ -187,10 +187,7 @@ impl Tree {
 			name,
 			depth,
 			root: tree,
-			properties: calculators
-				.iter()
-				.map(|&(name, file, scale)| (String::from(name), String::from(file), scale))
-				.collect(),
+			properties,
 			segment_information,
 			segment_values,
 		};
@@ -211,7 +208,7 @@ pub enum FlatData {
 }
 
 #[derive(Debug)]
-pub struct FLatNode {
+pub struct FlatNode {
 	corner: na::Point3<f32>,
 	size: f32,
 	data: FlatData,
@@ -220,7 +217,7 @@ pub struct FLatNode {
 
 #[derive(Debug)]
 pub struct FlatTree {
-	nodes: Vec<FLatNode>,
+	nodes: Vec<FlatNode>,
 }
 
 impl FlatTree {
@@ -261,7 +258,7 @@ impl FlatTree {
 	}
 }
 
-impl FLatNode {
+impl FlatNode {
 	fn save(self, data: &[AtomicCell<Option<PointsCollection>>], settings: &Settings) -> PointsCollection {
 		match self.data {
 			FlatData::Branch { mut children } => {

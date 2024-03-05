@@ -1,23 +1,36 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{ops::Deref, path::PathBuf, sync::Arc};
 
 use nalgebra as na;
 
 use super::*;
 
 pub type WindowId = winit::window::WindowId;
-pub type EventResponse = egui_winit::EventResponse;
 
 pub struct Window {
-	pub window: Arc<winit::window::Window>,
-	pub(crate) config: wgpu::SurfaceConfiguration,
-	pub(crate) surface: wgpu::Surface<'static>,
-	pub(crate) depth_texture: DepthTexture,
+	window: Arc<winit::window::Window>,
+	config: wgpu::SurfaceConfiguration,
+	surface: wgpu::Surface<'static>,
+	depth_texture: DepthTexture,
+}
 
-	pub egui_winit: egui_winit::State,
-	pub(crate) egui_wgpu: egui_wgpu::Renderer,
+impl Deref for Window {
+	type Target = winit::window::Window;
+
+	fn deref(&self) -> &Self::Target {
+		&self.window
+	}
 }
 
 impl Window {
+	pub fn new(
+		window: Arc<winit::window::Window>,
+		config: wgpu::SurfaceConfiguration,
+		surface: wgpu::Surface<'static>,
+		depth_texture: DepthTexture,
+	) -> Self {
+		Self { window, config, surface, depth_texture }
+	}
+
 	pub fn get_aspect(&self) -> f32 {
 		self.config.width as f32 / self.config.height as f32
 	}
@@ -46,10 +59,6 @@ impl Window {
 		&self.depth_texture
 	}
 
-	pub fn window_event(&mut self, event: &winit::event::WindowEvent) -> EventResponse {
-		self.egui_winit.on_window_event(&self.window, event)
-	}
-
 	pub fn set_window_icon(&self, png: &[u8]) {
 		let img = image::load_from_memory(png).unwrap();
 		let icon = winit::window::Icon::from_rgba(img.to_rgba8().into_vec(), img.width(), img.height()).unwrap();
@@ -65,8 +74,7 @@ impl Window {
 		self.window.set_taskbar_icon(Some(icon));
 	}
 
-	pub fn resized(&mut self, state: &impl Has<State>) {
-		let state = state.get();
+	pub fn resized(&mut self, state: &State) {
 		let size = self.window.inner_size();
 		self.config.width = size.width;
 		self.config.height = size.height;
@@ -74,19 +82,27 @@ impl Window {
 		self.depth_texture = DepthTexture::new(&state.device, &self.config, "depth");
 	}
 
-	pub fn screen_shot<S: Has<State>>(&mut self, state: &S, renderable: &mut impl RenderEntry<S>, path: PathBuf) {
+	pub fn screen_shot<Source>(
+		&mut self,
+		state: &State,
+		source: &mut Source,
+		update: impl for<'b> FnOnce(&'b mut Source, &mut CommandEncoder),
+		render: impl for<'b> FnOnce(&'b mut Source, &mut RenderPass<'b>),
+		post_process: impl for<'b> FnOnce(&'b mut Source, &mut RenderPass<'b>),
+		background: na::Point3<f32>,
+		path: PathBuf,
+	) {
 		fn ceil_to_multiple(value: u32, base: u32) -> u32 {
 			(value + (base - 1)) / base * base
 		}
 
-		let render_state: &State = state.get();
 		let (texture_width, texture_height, format) = {
 			let output = &self.surface.get_current_texture().unwrap().texture;
 
 			(output.size().width, output.size().height, output.format())
 		};
 
-		let mut encoder = render_state
+		let mut encoder = state
 			.device
 			.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("Render Encoder") });
 
@@ -104,23 +120,25 @@ impl Window {
 			label: None,
 			view_formats: &Vec::new(),
 		};
-		let texture = render_state.device.create_texture(&texture_desc);
+		let texture = state.device.create_texture(&texture_desc);
 		let view = texture.create_view(&Default::default());
 
 		self.render_to(
 			state,
-			renderable,
+			source,
+			update,
+			render,
+			post_process,
 			&view,
-			renderable.background(),
+			background,
 			0.0,
-			(&[], &[], &[]),
 		);
 
 		let u32_size = std::mem::size_of::<u32>() as u32;
 		let texture_width = ceil_to_multiple(texture_width, 256 / 4);
 		let buffer_size = (u32_size * texture_width * texture_height) as wgpu::BufferAddress;
 
-		let buffer = render_state.device.create_buffer(&wgpu::BufferDescriptor {
+		let buffer = state.device.create_buffer(&wgpu::BufferDescriptor {
 			size: buffer_size,
 			usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
 			label: None,
@@ -147,7 +165,7 @@ impl Window {
 			},
 			texture.size(),
 		);
-		render_state.queue.submit(Some(encoder.finish()));
+		state.queue.submit(Some(encoder.finish()));
 
 		let buffer_slice = buffer.slice(..);
 
@@ -172,24 +190,24 @@ impl Window {
 		tx.send(buffer).unwrap();
 	}
 
-	fn render_to<S: Has<State>>(
+	fn render_to<Source>(
 		&mut self,
-		state: &S,
-		renderable: &mut impl RenderEntry<S>,
+		state: &State,
+		source: &mut Source,
+		update: impl for<'b> FnOnce(&'b mut Source, &mut CommandEncoder),
+		render: impl for<'b> FnOnce(&'b mut Source, &mut RenderPass<'b>),
+		post_process: impl for<'b> FnOnce(&'b mut Source, &mut RenderPass<'b>),
+
 		view: &wgpu::TextureView,
 		background: na::Point3<f32>,
 		alpha: f32,
-
-		ui: (
-			&[egui::ClippedPrimitive],
-			&[(egui::TextureId, egui::epaint::ImageDelta)],
-			&[egui::TextureId],
-		),
 	) {
-		let render_state = state.get();
-		let mut encoder = render_state
+		let mut encoder = state
 			.device
 			.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("Render Encoder") });
+
+		update(source, &mut encoder);
+
 		let mut render_pass = RenderPass::new(encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
 			label: Some("Render Pass"),
 			color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -217,29 +235,8 @@ impl Window {
 			timestamp_writes: None,
 		}));
 
-		renderable.render(state, &mut render_pass);
+		render(source, &mut render_pass);
 		drop(render_pass);
-
-		let size = self.window.inner_size();
-		let screen = &egui_wgpu::ScreenDescriptor {
-			size_in_pixels: [size.width, size.height],
-			pixels_per_point: 1.0,
-		};
-		for (id, delta) in ui.1 {
-			self.egui_wgpu
-				.update_texture(&render_state.device, &render_state.queue, *id, delta);
-		}
-		for id in ui.2 {
-			self.egui_wgpu.free_texture(id);
-		}
-		let commands = self.egui_wgpu.update_buffers(
-			&render_state.device,
-			&render_state.queue,
-			&mut encoder,
-			ui.0,
-			screen,
-		);
-		render_state.queue.submit(commands);
 
 		let mut render_pass = RenderPass::new(encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
 			label: Some("eye dome"),
@@ -255,43 +252,42 @@ impl Window {
 			occlusion_query_set: None,
 			timestamp_writes: None,
 		}));
-		renderable.post_process(state, &mut render_pass);
-
-		self.egui_wgpu.render(&mut render_pass, ui.0, screen);
+		post_process(source, &mut render_pass);
 
 		drop(render_pass);
 
-		render_state.queue.submit(Some(encoder.finish()));
+		state.queue.submit(Some(encoder.finish()));
 	}
 
-	pub fn render<S: Has<State>>(
+	pub fn render<Source>(
 		&mut self,
-		state: &S,
-		renderable: &mut impl RenderEntry<S>,
-		ui: egui::FullOutput,
-		egui: &egui::Context,
+		state: &State,
+		source: &mut Source,
+		update: impl for<'b> FnOnce(&'b mut Source, &mut CommandEncoder),
+		render: impl for<'b> FnOnce(&'b mut Source, &mut RenderPass<'b>),
+		post_process: impl for<'b> FnOnce(&'b mut Source, &mut RenderPass<'b>),
+		background: na::Point3<f32>,
 	) {
 		let Some(output) = self.surface.get_current_texture().ok() else {
 			return;
 		};
 		let view = output.texture.create_view(&Default::default());
 
-		self.egui_winit
-			.handle_platform_output(&self.window, ui.platform_output);
-		let paint_jobs = egui.tessellate(ui.shapes, ui.pixels_per_point);
-
 		self.render_to(
 			state,
-			renderable,
+			source,
+			update,
+			render,
+			post_process,
 			&view,
-			renderable.background(),
+			background,
 			1.0,
-			(&paint_jobs, &ui.textures_delta.set, &ui.textures_delta.free),
 		);
 		output.present();
 	}
 }
 
+// Window stayed open, but unresponsive. Just hide it.
 impl Drop for Window {
 	fn drop(&mut self) {
 		self.window.set_visible(false);

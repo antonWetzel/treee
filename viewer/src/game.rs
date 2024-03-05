@@ -13,30 +13,12 @@ use crate::{
 	segment::{self, MeshRender, Segment},
 	state::State,
 	tree::{LookupName, Tree},
-	Error,
+	Error, EventLoop,
 };
 
-pub struct World {
-	window: render::Window,
-	game: Game,
-	egui: render::egui::Context,
-}
-
-impl std::ops::Deref for World {
-	type Target = Game;
-
-	fn deref(&self) -> &Self::Target {
-		&self.game
-	}
-}
-
-impl std::ops::DerefMut for World {
-	fn deref_mut(&mut self) -> &mut Self::Target {
-		&mut self.game
-	}
-}
-
 pub struct Game {
+	window: render::Window,
+
 	tree: Tree,
 	project: Project,
 	path: Option<PathBuf>,
@@ -45,6 +27,10 @@ pub struct Game {
 	pub state: Arc<State>,
 	mouse: input::Mouse,
 	mouse_start: Option<na::Point2<f32>>,
+
+	egui: egui::Context,
+	egui_winit: egui_winit::State,
+	egui_wgpu: egui_wgpu::Renderer,
 
 	keyboard: input::Keyboard,
 	time: Time,
@@ -57,12 +43,12 @@ pub struct Game {
 	quit: bool,
 }
 
-impl World {
-	pub async fn new(runner: &render::Runner) -> Result<Self, Error> {
+impl Game {
+	pub async fn new(event_loop: &EventLoop) -> Result<Self, Error> {
 		let project = Project::empty();
-		let egui = render::egui::Context::default();
+		let egui = egui::Context::default();
 
-		let (state, window) = render::State::new(&project.name, &runner, &egui).await?;
+		let (state, window) = render::State::new(&project.name, event_loop).await?;
 		let state = State::new(state);
 		let state = Arc::new(state);
 
@@ -79,46 +65,51 @@ impl World {
 			&window,
 		);
 
+		let id = egui.viewport_id();
+		let egui_wgpu = egui_wgpu::Renderer::new(state.device(), state.surface_format(), None, 1);
+		let egui_winit = egui_winit::State::new(egui.clone(), id, window.deref(), None, None);
+
 		Ok(Self {
 			window,
 			egui,
-			game: Game {
-				paused: false,
+			paused: false,
 
-				tree,
-				project,
-				project_time: std::time::SystemTime::now(),
-				path: None,
+			tree,
+			project,
+			project_time: std::time::SystemTime::now(),
+			path: None,
 
-				state,
-				mouse: input::Mouse::new(),
-				mouse_start: None,
-				keyboard: input::Keyboard::new(),
-				time: Time::new(),
+			state,
+			mouse: input::Mouse::new(),
+			mouse_start: None,
+			keyboard: input::Keyboard::new(),
+			time: Time::new(),
 
-				property_options: false,
-				level_of_detail_options: false,
-				camera_options: false,
-				visual_options: false,
-				quit: false,
-			},
+			egui_wgpu,
+			egui_winit,
+
+			property_options: false,
+			level_of_detail_options: false,
+			camera_options: false,
+			visual_options: false,
+			quit: false,
 		})
 	}
 }
 
 impl Game {
-	fn change_project(&mut self, window: &render::Window) {
+	fn change_project(&mut self) {
 		let Some(path) = rfd::FileDialog::new()
-			.add_filter("Project File", &["epc"])
+			.add_filter("Project File", &["json"])
 			.pick_file()
 		else {
 			return;
 		};
 		self.path = Some(path);
-		self.reload(self.current_poject_time(), window);
+		self.reload(self.current_poject_time());
 	}
 
-	fn check_reload(&mut self, window: &render::Window) {
+	fn check_reload(&mut self) {
 		let project_time = self.current_poject_time();
 		if self.project_time == project_time {
 			return;
@@ -126,7 +117,7 @@ impl Game {
 		if project_time.elapsed().unwrap() < std::time::Duration::from_millis(1000) {
 			return;
 		}
-		self.reload(project_time, window);
+		self.reload(project_time);
 	}
 
 	fn current_poject_time(&self) -> std::time::SystemTime {
@@ -138,7 +129,7 @@ impl Game {
 			.unwrap_or(self.project_time)
 	}
 
-	fn reload(&mut self, project_time: std::time::SystemTime, window: &render::Window) {
+	fn reload(&mut self, project_time: std::time::SystemTime) {
 		self.project_time = project_time;
 		let Some(path) = &self.path else {
 			return;
@@ -149,24 +140,24 @@ impl Game {
 			&self.project,
 			Some(path.parent().unwrap().to_owned()),
 			self.project.properties[0].clone(),
-			window,
+			&self.window,
 		);
-		window.set_title(&self.project.name);
-		window.request_redraw();
+		self.window.set_title(&self.project.name);
+		self.window.request_redraw();
 	}
 
-	fn raycast(&mut self, window: &render::Window) {
+	fn raycast(&mut self) {
 		if self.tree.segment.is_some() {
 			return;
 		}
 		let start = self
 			.tree
 			.camera
-			.ray_origin(self.mouse.position(), window.get_size());
+			.ray_origin(self.mouse.position(), self.window.get_size());
 		let direction = self
 			.tree
 			.camera
-			.ray_direction(self.mouse.position(), window.get_size());
+			.ray_direction(self.mouse.position(), self.window.get_size());
 		let Some(path) = &self.path else {
 			return;
 		};
@@ -174,20 +165,20 @@ impl Game {
 		let mut reader = Reader::new(path, "segment");
 		if let Some(segment) = self.tree.raycast(start, direction, &mut reader) {
 			self.tree.segment = Some(Segment::new(&self.state, &mut self.tree.segments, segment));
-			window.request_redraw();
 		}
 	}
 }
 
 impl Game {
-	fn ui(&mut self, ctx: &render::egui::Context, window: &mut render::Window) {
+	fn ui(&mut self, ctx: &egui::Context) {
 		const HEIGHT: f32 = 10.0;
 		const LEFT: f32 = 100.0;
 		const RIGHT: f32 = 150.0;
 
-		use render::egui::*;
+		use egui::*;
 
 		let full = Layout::top_down_justified(Align::Center);
+
 		SidePanel::left("left")
 			.resizable(false)
 			.default_width(275.0)
@@ -196,7 +187,7 @@ impl Game {
 					.add_sized([ui.available_width(), HEIGHT], Button::new("Load Project"))
 					.clicked()
 				{
-					self.change_project(window);
+					self.change_project();
 				};
 				ui.separator();
 
@@ -214,24 +205,30 @@ impl Game {
 						ui.add_sized([LEFT, HEIGHT], Label::new("Selected"));
 						ComboBox::from_id_source("property_selected")
 							.width(RIGHT)
-							.selected_text(&self.tree.property.1)
+							.selected_text(&self.tree.property.display_name)
 							.show_ui(ui, |ui| {
 								let mut changed = false;
 								for prop in &self.project.properties {
 									changed |= ui
-										.selectable_value(&mut self.tree.property.0, prop.0.clone(), &prop.1)
+										.selectable_value(
+											&mut self.tree.property.storage_name,
+											prop.storage_name.clone(),
+											&prop.display_name,
+										)
 										.changed();
 								}
 								if changed {
 									for prop in &self.project.properties {
-										if prop.0 == self.tree.property.0 {
+										if prop.storage_name == self.tree.property.storage_name {
 											self.tree.property = prop.clone();
 										}
 									}
 									self.tree
 										.loaded_manager
-										.change_property(&self.tree.property.0);
-									self.tree.segments.change_property(&self.tree.property.0);
+										.change_property(&self.tree.property.storage_name);
+									self.tree
+										.segments
+										.change_property(&self.tree.property.storage_name);
 									self.tree.update_lookup(&self.state);
 									if let Some(seg) = &mut self.tree.segment {
 										seg.change_property(&self.state, &mut self.tree.segments);
@@ -369,7 +366,6 @@ impl Game {
 								self.tree.environment.max,
 								self.tree.environment.scale,
 							);
-							window.request_redraw();
 						}
 					});
 
@@ -388,7 +384,6 @@ impl Game {
 								self.tree.environment.max,
 								self.tree.environment.scale,
 							);
-							window.request_redraw();
 						}
 					});
 
@@ -407,7 +402,6 @@ impl Game {
 								self.tree.environment.max,
 								self.tree.environment.scale,
 							);
-							window.request_redraw();
 						}
 					});
 
@@ -436,12 +430,7 @@ impl Game {
 					ui.horizontal(|ui| {
 						ui.add_sized([LEFT, HEIGHT], Label::new("Background"));
 						ui.style_mut().spacing.interact_size.x = ui.available_width();
-						if ui
-							.color_edit_button_rgb(&mut self.tree.background.coords.data.0[0])
-							.changed()
-						{
-							window.request_redraw();
-						}
+						ui.color_edit_button_rgb(&mut self.tree.background.coords.data.0[0]);
 					});
 
 					ui.horizontal(|ui| {
@@ -459,8 +448,16 @@ impl Game {
 							else {
 								return;
 							};
-							window.screen_shot(self.state.deref(), &mut self.tree, path);
-							window.request_redraw()
+							let background = self.tree.background;
+							self.window.screen_shot(
+								&self.state,
+								&mut (self.state.deref(), &self.tree, &mut self.egui_wgpu),
+								|_, _| {},
+								|(state, tree, _), render_pass| tree.render(state, render_pass),
+								|(state, tree, _), render_pass| tree.post_process(state, render_pass),
+								background,
+								path,
+							);
 						}
 					});
 
@@ -643,7 +640,6 @@ impl Game {
 							.clicked()
 						{
 							self.tree.camera.load(&self.state);
-							window.request_redraw();
 						}
 					});
 				}
@@ -651,13 +647,14 @@ impl Game {
 	}
 }
 
-impl render::Entry for World {
-	fn raw_event(&mut self, event: &render::Event) -> bool {
-		let response = self.window.window_event(event);
-		response.consumed
+impl Game {
+	pub fn raw_event(&mut self, event: &winit::event::WindowEvent) -> bool {
+		self.egui_winit
+			.on_window_event(&self.window, event)
+			.consumed
 	}
 
-	fn render(&mut self, _window_id: render::WindowId) {
+	pub fn render(&mut self, _window_id: render::WindowId) {
 		if self.paused {
 			return;
 		}
@@ -665,50 +662,79 @@ impl render::Entry for World {
 			self.tree.update();
 		}
 
-		let raw_input = self.window.egui_winit.take_egui_input(&self.window.window);
-		let full_output = self
+		let raw_input = self.egui_winit.take_egui_input(&self.window);
+
+		let full_output = self.egui.clone().run(raw_input, |ctx| self.ui(ctx));
+
+		self.egui_winit
+			.handle_platform_output(&self.window, full_output.platform_output);
+		let paint_jobs = self
 			.egui
-			.run(raw_input, |ctx| self.game.ui(ctx, &mut self.window));
+			.tessellate(full_output.shapes, full_output.pixels_per_point);
+
+		let size = self.window.inner_size();
+		let screen = &egui_wgpu::ScreenDescriptor {
+			size_in_pixels: [size.width, size.height],
+			pixels_per_point: 1.0,
+		};
+		for (id, delta) in full_output.textures_delta.set {
+			self.egui_wgpu
+				.update_texture(&self.state.device, &self.state.queue, id, &delta);
+		}
+		for id in full_output.textures_delta.free {
+			self.egui_wgpu.free_texture(&id);
+		}
+
+		let background = self.tree.background;
 
 		self.window.render(
-			self.game.state.deref(),
-			&mut self.game.tree,
-			full_output,
-			&self.egui,
+			self.state.deref(),
+			&mut (self.state.deref(), &self.tree, &mut self.egui_wgpu),
+			|(state, _, egui_wgpu), command_encoder| {
+				let commands = egui_wgpu.update_buffers(
+					&state.device,
+					&state.queue,
+					command_encoder,
+					&paint_jobs,
+					screen,
+				);
+				state.queue.submit(commands);
+			},
+			|(state, tree, _), render_pass| tree.render(state, render_pass),
+			|(state, tree, egui_wgpu), render_pass| {
+				tree.post_process(state, render_pass);
+				egui_wgpu.render(render_pass, &paint_jobs, screen);
+			},
+			background,
 		);
 	}
 
-	fn resize_window(&mut self, _window_id: render::WindowId, size: na::Point2<u32>) {
+	pub fn resize_window(&mut self, _window_id: render::WindowId, size: na::Point2<u32>) {
 		self.paused = size.x == 0 || size.y == 0;
 		if self.paused {
 			return;
 		}
-		self.window.resized(self.game.state.deref());
-		self.game
-			.tree
-			.camera
-			.cam
-			.set_aspect(self.window.get_aspect());
+		self.window.resized(self.state.deref());
+		self.tree.camera.cam.set_aspect(self.window.get_aspect());
 		self.tree.camera.gpu = render::Camera3DGPU::new(
 			&self.state,
 			&self.tree.camera.cam,
 			&self.tree.camera.transform,
 		);
-		self.game
-			.tree
+		self.tree
 			.eye_dome
-			.update_depth(&self.game.state, self.window.depth_texture());
+			.update_depth(&self.state, self.window.depth_texture());
 	}
 
-	fn request_redraw(&mut self) {
+	pub fn request_redraw(&mut self) {
 		self.window.request_redraw();
 	}
 
-	fn close_window(&mut self, _window_id: render::WindowId) {
+	pub fn close_window(&mut self, _window_id: render::WindowId) {
 		self.quit = true;
 	}
 
-	fn time(&mut self) {
+	pub fn time(&mut self) {
 		let delta = self.time.elapsed();
 		let mut direction = na::vector![0.0, 0.0];
 		if self.keyboard.pressed(input::KeyCode::KeyD) || self.keyboard.pressed(input::KeyCode::ArrowRight) {
@@ -726,35 +752,35 @@ impl render::Entry for World {
 		let l = direction.norm();
 		if l > 0.0 {
 			direction *= 10.0 * delta.as_secs_f32() / l;
-			self.game.tree.camera.movement(direction, &self.game.state);
+			self.tree.camera.movement(direction, &self.state);
 		}
 
 		if self.tree.loaded_manager.update().not() && self.tree.segment.is_none() {
-			self.game.tree.camera.time(delta.as_secs_f32())
+			self.tree.camera.time(delta.as_secs_f32())
 		}
 
-		if let Some(segment) = &mut self.game.tree.segment {
+		if let Some(segment) = &mut self.tree.segment {
 			if matches!(segment.render, MeshRender::Mesh | MeshRender::MeshLines) {
-				segment.update(&self.game.state);
+				segment.update(&self.state);
 			}
 		}
 
-		self.game.check_reload(&self.window);
+		self.check_reload();
 	}
 
-	fn key_changed(&mut self, _window_id: render::WindowId, key: input::KeyCode, key_state: input::State) {
+	pub fn key_changed(&mut self, _window_id: render::WindowId, key: input::KeyCode, key_state: input::State) {
 		self.keyboard.update(key, key_state);
 	}
 
-	fn modifiers_changed(&mut self, modifiers: input::Modifiers) {
+	pub fn modifiers_changed(&mut self, modifiers: input::Modifiers) {
 		self.keyboard.update_modifiers(modifiers);
 	}
 
-	fn mouse_wheel(&mut self, delta: f32) {
-		self.game.tree.camera.scroll(delta, &self.game.state);
+	pub fn mouse_wheel(&mut self, delta: f32) {
+		self.tree.camera.scroll(delta, &self.state);
 	}
 
-	fn mouse_button_changed(
+	pub fn mouse_button_changed(
 		&mut self,
 		_window_id: render::WindowId,
 		button: input::MouseButton,
@@ -769,7 +795,7 @@ impl render::Entry for World {
 				if let Some(start) = self.mouse_start {
 					let dist = (start - self.mouse.position()).norm();
 					if dist < 2.0 {
-						self.game.raycast(&self.window);
+						self.raycast();
 					}
 				}
 			},
@@ -777,14 +803,14 @@ impl render::Entry for World {
 		}
 	}
 
-	fn mouse_moved(&mut self, _window_id: render::WindowId, position: na::Point2<f32>) {
+	pub fn mouse_moved(&mut self, _window_id: render::WindowId, position: na::Point2<f32>) {
 		let delta = self.mouse.delta(position);
 		if self.mouse.pressed(input::MouseButton::Left) {
-			self.game.tree.camera.rotate(delta, &self.game.state);
+			self.tree.camera.rotate(delta, &self.state);
 		}
 	}
 
-	fn exit(&self) -> bool {
+	pub fn exit(&self) -> bool {
 		self.quit
 	}
 }

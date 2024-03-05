@@ -1,14 +1,14 @@
 use wgpu::util::DeviceExt;
 
-use crate::{Has, State, Texture};
+use crate::{State, Texture};
 
 pub struct Lookup {
 	bind_group: wgpu::BindGroup,
 }
 
 impl Lookup {
-	pub fn new_png(state: &impl Has<State>, data: &[u8], range: u32) -> Self {
-		let state = state.get();
+	pub fn new_png(state: &State, data: &[u8], range: u32) -> Self {
+		let state = state;
 		let texture = Texture::new_1d(state, data);
 		assert!(texture.size.x.is_power_of_two());
 		assert_eq!(texture.size.y, 1);
@@ -49,9 +49,8 @@ impl Lookup {
 		&self.bind_group
 	}
 
-	pub fn get_layout(state: &impl Has<State>) -> wgpu::BindGroupLayout {
+	pub fn get_layout(state: &State) -> wgpu::BindGroupLayout {
 		state
-			.get()
 			.device
 			.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
 				entries: &[

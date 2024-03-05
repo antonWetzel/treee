@@ -1,7 +1,7 @@
 use nalgebra as na;
 use wgpu::util::DeviceExt;
 
-use crate::{depth_texture::DepthTexture, Has, Render, RenderPass, State, Vertex2D};
+use crate::{depth_texture::DepthTexture, Render, RenderPass, State, Vertex2D};
 
 const FULL_SCREEN_VERTICES: [Vertex2D; 3] = [
 	Vertex2D {
@@ -40,13 +40,7 @@ struct EyeDomeUniform {
 }
 
 impl EyeDome {
-	pub fn new(
-		state: &impl Has<State>,
-		config: &wgpu::SurfaceConfiguration,
-		depth: &DepthTexture,
-		strength: f32,
-	) -> Self {
-		let state = state.get();
+	pub fn new(state: &State, config: &wgpu::SurfaceConfiguration, depth: &DepthTexture, strength: f32) -> Self {
 		let depth_layout = state
 			.device
 			.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -160,8 +154,8 @@ impl EyeDome {
 		}
 	}
 
-	pub fn update_depth(&mut self, state: &impl Has<State>, depth: &DepthTexture) {
-		self.depth_bind_group = Self::get_depth_bindgroup(state.get(), &self.depth_layout, depth);
+	pub fn update_depth(&mut self, state: &State, depth: &DepthTexture) {
+		self.depth_bind_group = Self::get_depth_bindgroup(state, &self.depth_layout, depth);
 	}
 
 	fn get_depth_bindgroup(state: &State, layout: &wgpu::BindGroupLayout, depth: &DepthTexture) -> wgpu::BindGroup {
@@ -175,13 +169,9 @@ impl EyeDome {
 		})
 	}
 
-	pub fn update_settings(&mut self, state: &impl Has<State>) {
-		self.settings_bind_group = Self::get_settings_bindgroup(
-			state.get(),
-			&self.settings_layout,
-			self.color,
-			self.strength,
-		);
+	pub fn update_settings(&mut self, state: &State) {
+		self.settings_bind_group =
+			Self::get_settings_bindgroup(state, &self.settings_layout, self.color, self.strength);
 	}
 
 	fn get_settings_bindgroup(

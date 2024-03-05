@@ -15,7 +15,7 @@ fn interactive() {
 	let mut c = InteractiveCommand::command();
 	c.print_help().unwrap();
 
-	let mut runner = Option::<viewer::Runner>::None;
+	let mut event_loop = Option::<viewer::EventLoop>::None;
 	loop {
 		print!("{}", "\n=> ".bold().green());
 		std::io::stdout().flush().unwrap();
@@ -29,12 +29,12 @@ fn interactive() {
 				}
 			},
 			Ok(InteractiveCommand::Viewer) => {
-				let res = match &mut runner {
+				let res = match &mut event_loop {
 					Some(r) => viewer::run(r),
-					None => match viewer::Runner::new() {
+					None => match viewer::EventLoop::new() {
 						Ok(mut r) => {
 							let res = viewer::run(&mut r);
-							runner = Some(r);
+							event_loop = Some(r);
 							res
 						},
 						Err(err) => Err(err).map_err(|err| err.into()),
@@ -53,9 +53,9 @@ fn interactive() {
 fn cli() {
 	let res = match Command::parse() {
 		Command::Importer(command) => importer::run(command).map_err(Error::from),
-		Command::Viewer => viewer::Runner::new()
+		Command::Viewer => viewer::EventLoop::new()
 			.map_err(viewer::Error::RenderError)
-			.and_then(|mut runner| viewer::run(&mut runner))
+			.and_then(|mut EventLoop| viewer::run(&mut EventLoop))
 			.map_err(Error::Viewer),
 	};
 	if let Err(err) = res {
