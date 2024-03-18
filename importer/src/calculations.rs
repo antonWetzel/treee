@@ -50,7 +50,7 @@ pub fn calculate(
 		}
 		let mut max_var = 0.0;
 		for i in 0..variance.len() {
-			variance[i] /= (means[i].1 as f32).sqrt();
+			variance[i] /= means[i].1 as f32;
 			if variance[i] > max_var {
 				max_var = variance[i];
 			}
