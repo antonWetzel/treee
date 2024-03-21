@@ -97,6 +97,16 @@ pub struct Lines {
 	pub instances: u32,
 }
 
+impl LinesRender for Lines {
+	fn render<'a>(&'a self, lines_pass: &mut LinesPass<'a>) {
+		lines_pass.0.set_vertex_buffer(0, self.buffer.slice(..));
+		lines_pass
+			.0
+			.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint32);
+		lines_pass.0.draw_indexed(0..self.instances, 0, 0..1);
+	}
+}
+
 impl Lines {
 	pub fn new(state: &State, points: &[na::Point3<f32>], indices: &[u32]) -> Self {
 		let buffer = state
@@ -120,14 +130,6 @@ impl Lines {
 			indices: indices_buffer,
 			instances: indices.len() as u32,
 		}
-	}
-
-	pub fn render<'a>(&'a self, lines_pass: &mut LinesPass<'a>) {
-		lines_pass.0.set_vertex_buffer(0, self.buffer.slice(..));
-		lines_pass
-			.0
-			.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint32);
-		lines_pass.0.draw_indexed(0..self.instances, 0, 0..1);
 	}
 }
 

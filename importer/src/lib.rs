@@ -66,7 +66,11 @@ pub struct Settings {
 	#[arg(long, default_value_t = 31)]
 	neighbors_count: usize,
 
-	/// Maximum distance in meters for the neighbors search
+	/// Slice width for segment expansion calculation
+	#[arg(long, default_value_t = 0.05)]
+	calculations_slice_width: f32,
+
+	/// Maximum count for neighbors search
 	#[arg(long, default_value_t = 1.0)]
 	neighbors_max_distance: f32,
 
@@ -191,7 +195,13 @@ fn import(settings: Settings, input: PathBuf, output: PathBuf) -> Result<(), Err
 	let mut progress = Progress::new("Calculate", total_points);
 
 	let mut tree = Tree::new(min, diff.x.max(diff.y).max(diff.z));
-	let segments_information = vec![String::from("Trunk"), String::from("Crown")];
+	let segments_information = vec![
+		String::from("Total height"),
+		String::from("Trunk height"),
+		String::from("Crown height"),
+		String::from("Trunk area"),
+		String::from("Crown area"),
+	];
 
 	let (sender, reciever) = crossbeam::channel::bounded(2);
 	let (_, segment_values) = rayon::join(
@@ -217,8 +227,11 @@ fn import(settings: Settings, input: PathBuf, output: PathBuf) -> Result<(), Err
 				let collection = PointsCollection::from_points(&points);
 				segment_writer.save(segment.get() as usize - 1, &collection);
 				let offset = (segment.get() - 1) as usize;
-				segment_values[offset * segments_information.len()] = information.trunk_height;
-				segment_values[offset * segments_information.len() + 1] = information.crown_height;
+				segment_values[offset * segments_information.len() + 0] = information.total_height;
+				segment_values[offset * segments_information.len() + 1] = information.trunk_height;
+				segment_values[offset * segments_information.len() + 2] = information.crown_height;
+				segment_values[offset * segments_information.len() + 3] = information.trunk_area;
+				segment_values[offset * segments_information.len() + 4] = information.crown_area;
 				let l = points.len();
 				for point in points {
 					tree.insert(point, &mut cache);

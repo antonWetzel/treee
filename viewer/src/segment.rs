@@ -34,12 +34,69 @@ pub struct Segment {
 	points: Vec<project::Point>,
 	pub alpha: f32,
 	pub sub_sample_distance: f32,
+
+	pub show_grid: bool,
+	pub grid: render::Lines,
 }
 
 impl Segment {
 	pub fn new(state: &State, reader: &mut Reader, index: NonZeroU32) -> Self {
 		let points = reader.get_points(index.get() as usize - 1);
+
+		let mut min_x = points[0].position.x;
+		let mut max_x = min_x;
+		let mut min_y = points[0].position.y;
+		let mut min_z = points[0].position.z;
+		let mut max_z = min_z;
+
+		for p in points.iter() {
+			if p.position.x < min_x {
+				min_x = p.position.x;
+			} else if p.position.x > max_x {
+				max_x = p.position.x;
+			}
+
+			if p.position.y < min_y {
+				min_y = p.position.y;
+			}
+
+			if p.position.z < min_z {
+				min_z = p.position.z;
+			} else if p.position.z > max_z {
+				max_z = p.position.z;
+			}
+		}
+		let min_x = min_x as isize;
+		let max_x = max_x.ceil() as isize;
+		let min_z = min_z as isize;
+		let max_z = max_z.ceil() as isize;
+
 		let point_cloud = render::PointCloud::new(state, &points);
+
+		let grid = {
+			let amount = (max_x - min_x + 1) as usize * 2 + (max_z - min_z + 1) as usize * 2;
+			let mut points = Vec::with_capacity(amount);
+			let mut indices = Vec::with_capacity(amount);
+			for i in min_x..=max_x {
+				let off = points.len() as u32;
+				points.push(na::Point3::new(i as f32, min_y, min_z as f32));
+				points.push(na::Point3::new(i as f32, min_y, max_z as f32));
+
+				indices.push(off + 0);
+				indices.push(off + 1);
+			}
+
+			for i in min_z..=max_z {
+				let off = points.len() as u32;
+				points.push(na::Point3::new(min_x as f32, min_y, i as f32));
+				points.push(na::Point3::new(max_x as f32, min_y, i as f32));
+
+				indices.push(off + 0);
+				indices.push(off + 1);
+			}
+
+			render::Lines::new(&state, &points, &indices)
+		};
 
 		Self {
 			property: Self::load_property(state, reader, index.get() as usize - 1),
@@ -50,6 +107,9 @@ impl Segment {
 			points,
 			alpha: 0.5,
 			sub_sample_distance: 0.1,
+
+			show_grid: false,
+			grid,
 		}
 	}
 

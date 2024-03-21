@@ -8,7 +8,7 @@
 				"$rustc"
 			],
 			"args": [
-				"--bin=viewer",
+				"--package=viewer",
 			],
 			"group": "build",
 			"label": "cargo debug viewer"
@@ -21,7 +21,7 @@
 			],
 			"args": [
 				"--release",
-				"--bin=viewer",
+				"--package=viewer",
 			],
 			"group": "build",
 			"label": "cargo release viewer"
@@ -33,7 +33,7 @@
 				"$rustc"
 			],
 			"args": [
-				"--bin=importer",
+				"--package=importer",
 			],
 			"group": "build",
 			"label": "cargo debug importer"
@@ -46,7 +46,7 @@
 			],
 			"args": [
 				"--release",
-				"--bin=importer",
+				"--package=importer",
 				// "--features=segmentation-svgs"
 			],
 			"group": "build",

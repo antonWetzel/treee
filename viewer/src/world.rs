@@ -282,6 +282,15 @@ impl World {
 							seg.render = MeshRender::MeshLines;
 						}
 					});
+					ui.horizontal(|ui| {
+						ui.add_sized([LEFT, HEIGHT], Label::new(""));
+						if ui
+							.add_sized([RIGHT, HEIGHT], SelectableLabel::new(seg.show_grid, "Grid"))
+							.clicked()
+						{
+							seg.show_grid = !seg.show_grid;
+						};
+					});
 
 					ui.group(|ui| {
 						ui.horizontal(|ui| {

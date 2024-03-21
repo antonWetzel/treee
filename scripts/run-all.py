@@ -6,10 +6,11 @@ OUTPUT = "D:/projects/treee/cwd/auto/"
 
 TYPES = [
     "ALS",
-    "ULS",
+    # "ULS",
     # "TLS",
 ]
 
+subprocess.run(["cargo", "build", "--release"])
 
 for (directory, folders, files) in os.walk(SOURCE):
     if "single_trees" in directory:
@@ -21,4 +22,5 @@ for (directory, folders, files) in os.walk(SOURCE):
             continue
         path = directory + "/" + file
         print(path)
-        subprocess.run(["treee", "importer", path, "-o=" + OUTPUT + file[:-4]])
+        subprocess.run(["./target/release/treee", "importer", path, "-o=" + OUTPUT + file[:-4]])
+5

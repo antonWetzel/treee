@@ -2,11 +2,14 @@ use std::num::NonZeroU32;
 
 use nalgebra as na;
 
-use crate::{point::Point, Settings};
+use crate::{point::Point, segment::Tree, Settings};
 
 pub struct SegmentInformation {
+	pub total_height: project::Value,
 	pub trunk_height: project::Value,
 	pub crown_height: project::Value,
+	pub trunk_area: project::Value,
+	pub crown_area: project::Value,
 }
 
 pub fn calculate(
@@ -30,47 +33,70 @@ pub fn calculate(
 	};
 	let height = max - min;
 
-	let (slices, slice_width, trunk_crown_sep) = {
-		let slice_width = 0.05;
+	let (slices, slice_width, trunk_crown_sep, area_130, crown_area) = {
+		let slice_width = settings.calculations_slice_width;
 
 		let slices = ((height / slice_width).ceil() as usize) + 1;
-		let mut means = vec![(na::vector![0.0, 0.0], 0); slices];
+		let mut sets = vec![<Option<Tree>>::None; slices];
 		for pos in data.iter().copied() {
 			let idx = ((pos.y - min) / slice_width) as usize;
-			means[idx].0 += na::vector![pos.x, pos.z];
-			means[idx].1 += 1;
-		}
-		for mean in means.iter_mut() {
-			mean.0 /= mean.1 as f32;
-		}
-		let mut variance = vec![0.0f32; slices];
-		for pos in data.iter().copied() {
-			let idx = ((pos.y - min) / slice_width) as usize;
-			variance[idx] += (means[idx].0 - na::vector![pos.x, pos.z]).norm_squared();
-		}
-		let mut max_var = 0.0;
-		for i in 0..variance.len() {
-			variance[i] /= means[i].1 as f32;
-			if variance[i] > max_var {
-				max_var = variance[i];
+			match &mut sets[idx] {
+				Some(tree) => tree.insert(na::vector![pos.x, pos.z].into(), 0.0),
+				x @ None => *x = Some(Tree::new(na::vector![pos.x, pos.z].into(), 0.0)),
 			}
 		}
-		let mut mapped = vec![0; slices];
-		for i in 0..variance.len() {
-			let percent = variance[i] / max_var;
-			mapped[i] = map_to_u32(percent);
-		}
 
-		let min_slice = mapped.len() / 5;
-		let sep = mapped
+		let areas = sets
+			.into_iter()
+			.map(|set| set.map(|set| set.area()).unwrap_or(0.0))
+			.collect::<Vec<_>>();
+		let max_area = areas
+			.iter()
+			.copied()
+			.max_by(|a, b| a.total_cmp(b))
+			.unwrap_or(1.0);
+
+		let min_slice = (2.0 / slice_width) as usize;
+		let crown_sep = areas
 			.iter()
 			.enumerate()
 			.skip(min_slice)
-			.find(|&(_, &v)| v > u32::MAX / 3)
+			.find(|&(_, &v)| v > max_area / 3.0)
+			.map(|(index, _)| index)
+			.unwrap_or(0);
+		let ground_sep = areas
+			.iter()
+			.enumerate()
+			.take(min_slice)
+			.rev()
+			.find(|&(_, &v)| v > max_area / 10.0)
 			.map(|(index, _)| index)
 			.unwrap_or(0);
 
-		(mapped, slice_width, min + slice_width * sep as f32)
+		let area_130 = areas
+			.get(ground_sep + (1.3 / slice_width) as usize) // area at 1.3m
+			.copied()
+			.unwrap_or(0.0);
+
+		let crown_area = areas
+			.iter()
+			.copied()
+			.skip(crown_sep)
+			.max_by(|a, b| a.total_cmp(b))
+			.unwrap_or(0.0);
+
+		let mapped = areas
+			.into_iter()
+			.map(|area| map_to_u32(area / max_area))
+			.collect::<Vec<_>>();
+
+		(
+			mapped,
+			slice_width,
+			min + slice_width * crown_sep as f32,
+			area_130,
+			crown_area,
+		)
 	};
 	let mut neighbors_location = bytemuck::zeroed_vec(settings.neighbors_count);
 
@@ -137,6 +163,7 @@ pub fn calculate(
 	(
 		res,
 		SegmentInformation {
+			total_height: project::Value::Meters(height),
 			trunk_height: project::Value::RelativeHeight {
 				absolute: trunk_heigth,
 				percent: trunk_heigth / height,
@@ -145,6 +172,8 @@ pub fn calculate(
 				absolute: crown_heigth,
 				percent: crown_heigth / height,
 			},
+			crown_area: project::Value::MetersSquared(crown_area),
+			trunk_area: project::Value::MetersSquared(area_130),
 		},
 	)
 }
@@ -235,29 +264,29 @@ pub fn calculate_last_eigenvector(mat: na::Matrix3<f32>, eigen_values: na::Point
 	eigen_vector.normalize()
 }
 
-#[test]
-fn test() {
-	let matrix = na::matrix![
-		3.0, 2.0, 1.0;
-		2.0, 1.0, 4.0;
-		1.0, 4.0, 2.0;
-	];
-	{
-		let start = std::time::Instant::now();
-		for _ in 0..1_000_000 {
-			let values = fast_eigenvalues(matrix);
-			let last = calculate_last_eigenvector(matrix, values);
-			std::hint::black_box((values, last));
-		}
-		println!("Custom: {}", start.elapsed().as_secs_f64());
-	}
-	{
-		let start = std::time::Instant::now();
-		for _ in 0..1_000_000 {
-			let x = na::SymmetricEigen::new(matrix);
-			std::hint::black_box((x.eigenvalues, x.eigenvectors));
-		}
-		println!("Nalg: {}", start.elapsed().as_secs_f64());
-	}
-	// panic!()
-}
+// #[test]
+// fn test() {
+// 	let matrix = na::matrix![
+// 		3.0, 2.0, 1.0;
+// 		2.0, 1.0, 4.0;
+// 		1.0, 4.0, 2.0;
+// 	];
+// 	{
+// 		let start = std::time::Instant::now();
+// 		for _ in 0..1_000_000 {
+// 			let values = fast_eigenvalues(matrix);
+// 			let last = calculate_last_eigenvector(matrix, values);
+// 			std::hint::black_box((values, last));
+// 		}
+// 		println!("Custom: {}", start.elapsed().as_secs_f64());
+// 	}
+// 	{
+// 		let start = std::time::Instant::now();
+// 		for _ in 0..1_000_000 {
+// 			let x = na::SymmetricEigen::new(matrix);
+// 			std::hint::black_box((x.eigenvalues, x.eigenvectors));
+// 		}
+// 		println!("Nalg: {}", start.elapsed().as_secs_f64());
+// 	}
+// 	panic!()
+// }

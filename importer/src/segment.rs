@@ -219,13 +219,13 @@ impl Segmenter {
 	}
 }
 
-#[derive(Debug)]
-struct TreeSet {
+#[derive(Debug, Clone)]
+pub struct TreeSet {
 	trees: Vec<Tree>,
 }
 
-#[derive(Debug)]
-struct Tree {
+#[derive(Debug, Clone)]
+pub struct Tree {
 	points: Vec<na::Point2<f32>>,
 	min: na::Point2<f32>,
 	max: na::Point2<f32>,
@@ -276,7 +276,7 @@ impl Tree {
 		}
 	}
 
-	fn distance(&self, point: na::Point2<f32>, max_distance: f32) -> f32 {
+	pub fn distance(&self, point: na::Point2<f32>, max_distance: f32) -> f32 {
 		if point.x < self.min.x || point.x >= self.max.x || point.y < self.min.y || point.y >= self.max.y {
 			return f32::MAX;
 		}
@@ -296,7 +296,11 @@ impl Tree {
 		best
 	}
 
-	fn contains(&self, point: na::Point2<f32>, max_distance: f32) -> bool {
+	pub fn area(&self) -> f32 {
+		centroid(&self.points).1
+	}
+
+	pub fn contains(&self, point: na::Point2<f32>, max_distance: f32) -> bool {
 		if point.x < self.min.x || point.x >= self.max.x || point.y < self.min.y || point.y >= self.max.y {
 			return false;
 		}
@@ -314,7 +318,7 @@ impl Tree {
 		true
 	}
 
-	fn insert(&mut self, point: na::Point2<f32>, max_distance: f32) {
+	pub fn insert(&mut self, point: na::Point2<f32>, max_distance: f32) {
 		fn outside(a: na::Point2<f32>, b: na::Point2<f32>, point: na::Point2<f32>) -> bool {
 			let dir = b - a;
 			let out = na::vector![dir.y, -dir.x].normalize();
@@ -394,62 +398,73 @@ impl Tree {
 }
 
 #[derive(Clone, Copy)]
-struct Centroid {
+pub struct Centroid {
 	center: na::Point2<f32>,
 }
 
 impl TreeSet {
+	pub fn new_empty() -> Self {
+		Self { trees: Vec::new() }
+	}
+
 	pub fn new(points: &[na::Point3<f32>], max_distance: f32) -> Self {
-		let mut trees = Vec::<Tree>::new();
-		'iter_points: for &point in points {
-			let mut near = Vec::new();
-			let p = na::Point2::new(point.x, point.z);
-			for (i, tree) in trees.iter().enumerate() {
-				let dist = tree.distance(p, max_distance);
-				if dist <= 0.0 {
-					continue 'iter_points;
-				}
-				if dist <= max_distance {
-					near.push(i);
-				}
+		let mut trees = Self::new_empty();
+		for &point in points {
+			trees.add_point(point, max_distance);
+		}
+		trees.filter_trees(max_distance);
+
+		trees
+	}
+
+	pub fn add_point(&mut self, point: na::Point3<f32>, max_distance: f32) {
+		let mut near = Vec::new();
+		let p = na::Point2::new(point.x, point.z);
+		for (i, tree) in self.trees.iter().enumerate() {
+			let dist = tree.distance(p, max_distance);
+			if dist <= 0.0 {
+				return;
 			}
-			match near.len() {
-				// new
-				0 => trees.push(Tree::new(p, max_distance)),
-
-				// insert
-				1 => trees[near[0]].insert(p, max_distance),
-
-				// merge
-				_ => {
-					let target = near[0];
-					for other in near[1..].iter().rev().copied() {
-						let o = trees.remove(other);
-						for p in o.points {
-							trees[target].insert(p, max_distance);
-						}
-					}
-					trees[target].insert(p, max_distance);
-				},
+			if dist <= max_distance {
+				near.push(i);
 			}
 		}
+		match near.len() {
+			// new
+			0 => self.trees.push(Tree::new(p, max_distance)),
 
-		for i in (0..trees.len()).rev() {
-			let tree = &trees[i];
+			// insert
+			1 => self.trees[near[0]].insert(p, max_distance),
+
+			// merge
+			_ => {
+				let target = near[0];
+				for other in near[1..].iter().rev().copied() {
+					let o = self.trees.remove(other);
+					for p in o.points {
+						self.trees[target].insert(p, max_distance);
+					}
+				}
+				self.trees[target].insert(p, max_distance);
+			},
+		}
+	}
+
+	pub fn filter_trees(&mut self, max_distance: f32) {
+		for i in (0..self.trees.len()).rev() {
+			let tree = &self.trees[i];
 			let (center, area) = centroid(&tree.points);
 			if area < (max_distance * max_distance) / 4.0 {
-				trees.remove(i);
+				self.trees.remove(i);
 				continue;
 			}
-			for other in &trees[0..i] {
+			for other in &self.trees[0..i] {
 				if other.contains(center, 0.1) {
-					trees.remove(i);
+					self.trees.remove(i);
 					break;
 				}
 			}
 		}
-
-		Self { trees }
 	}
 
 	pub fn tree_positions(self, prev: Vec<Centroid>, max_distance: f32) -> Vec<Centroid> {

@@ -96,6 +96,8 @@ pub enum Value {
 	Index(NonZeroU32),
 	Percent(f32),
 	RelativeHeight { absolute: f32, percent: f32 },
+	Meters(f32),
+	MetersSquared(f32),
 }
 
 impl std::fmt::Display for Value {
@@ -104,6 +106,8 @@ impl std::fmt::Display for Value {
 			Self::Index(v) => write!(f, "{}", v),
 			Self::Percent(v) => write!(f, "{:.3}%", v * 100.0),
 			Self::RelativeHeight { absolute, percent } => write!(f, "{:.2}m ({:.3}%)", absolute, percent * 100.0),
+			Self::Meters(value) => write!(f, "{:.2}m", value),
+			Self::MetersSquared(value) => write!(f, "{:.2}m²", value),
 		}
 	}
 }

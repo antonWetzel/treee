@@ -11,7 +11,7 @@ use crate::{camera, lod};
 use nalgebra as na;
 use project::{IndexData, Project};
 use project::{IndexNode, Property};
-use render::{LinesRenderExt, MeshRenderExt, PointCloudExt, Window};
+use render::{LinesRender, LinesRenderExt, MeshRenderExt, PointCloudExt, Window};
 
 pub const DEFAULT_BACKGROUND: na::Point3<f32> = na::Point3::new(0.1, 0.2, 0.3);
 
@@ -355,6 +355,9 @@ impl Tree {
 
 	pub fn render<'a>(&'a self, state: &'a State, render_pass: &mut render::RenderPass<'a>) {
 		if let Some(segment) = &self.segment {
+			if segment.show_grid {
+				render_pass.render_lines(&segment.grid, &state.lines, &self.camera.gpu);
+			}
 			match segment.render {
 				MeshRender::Points => render_pass.render_point_clouds(
 					segment,
