@@ -11,6 +11,7 @@ pub struct Writer {
 	pub curve: DataFile<u32>,
 	pub height: DataFile<u32>,
 	pub segment: DataFile<u32>,
+	pub classification: DataFile<u32>,
 }
 
 impl Writer {
@@ -48,12 +49,16 @@ impl Writer {
 		path.set_file_name("segment.data");
 		let segment = DataFile::new(size, &path);
 
+		path.set_file_name("classification.data");
+		let classification = DataFile::new(size, &path);
+
 		Self {
 			points,
 			slice,
 			curve,
 			height,
 			segment,
+			classification,
 			path,
 		}
 	}
@@ -64,6 +69,7 @@ impl Writer {
 		self.height.save(index, &points.height);
 		self.curve.save(index, &points.curve);
 		self.segment.save(index, &points.segment);
+		self.classification.save(index, &points.classification)
 	}
 
 	pub fn save_project(&mut self, project: &Project) {

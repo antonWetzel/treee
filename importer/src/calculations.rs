@@ -33,7 +33,7 @@ pub fn calculate(
 	};
 	let height = max - min;
 
-	let (slices, slice_width, trunk_crown_sep, area_130, crown_area) = {
+	let (slices, slice_width, trunk_crown_sep, area_130, crown_area, ground_sep, crown_sep) = {
 		let slice_width = settings.calculations_slice_width;
 
 		let slices = ((height / slice_width).ceil() as usize) + 1;
@@ -56,7 +56,7 @@ pub fn calculate(
 			.max_by(|a, b| a.total_cmp(b))
 			.unwrap_or(1.0);
 
-		let min_slice = (2.0 / slice_width) as usize;
+		let min_slice = (5.0 / slice_width) as usize;
 		let crown_sep = areas
 			.iter()
 			.enumerate()
@@ -96,6 +96,8 @@ pub fn calculate(
 			min + slice_width * crown_sep as f32,
 			area_130,
 			crown_area,
+			ground_sep,
+			crown_sep,
 		)
 	};
 	let mut neighbors_location = bytemuck::zeroed_vec(settings.neighbors_count);
@@ -143,6 +145,16 @@ pub fn calculate(
 				.map(|entry| entry.distance.sqrt())
 				.sum::<f32>();
 			let size = size / (neighbors.len() - 1) as f32 / 2.0;
+			let idx = ((data[i].y - min) / slice_width) as usize;
+			let classification = if idx == ground_sep + (1.3 / slice_width) as usize {
+				1
+			} else if idx <= ground_sep {
+				0
+			} else if idx <= crown_sep {
+				2
+			} else {
+				3
+			};
 
 			Point {
 				render: project::Point {
@@ -151,7 +163,8 @@ pub fn calculate(
 					size,
 				},
 				segment,
-				slice: slices[((data[i].y - min) / slice_width) as usize],
+				classification,
+				slice: slices[idx],
 				height: ((data[i].y - min) / (max - min) * u32::MAX as f32) as u32,
 				curve: map_to_u32((3.0 * eigen_values.z) / (eigen_values.y + eigen_values.y + eigen_values.z)),
 			}

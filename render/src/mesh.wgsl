@@ -33,7 +33,8 @@ fn vs_main(
 }
 
 struct LookupUniform {
-    scale: u32,
+    mult: u32,
+    shift: u32,
 };
 
 @group(1) @binding(0)
@@ -43,6 +44,6 @@ var<uniform> lookup_uniform: LookupUniform;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let idx = in.value / lookup_uniform.scale;
+    let idx = (in.value * lookup_uniform.mult) >> lookup_uniform.shift;
     return textureLoad(lookup, idx, 0);
 }

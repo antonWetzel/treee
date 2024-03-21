@@ -21,20 +21,13 @@ pub struct Camera {
 
 impl Camera {
 	pub fn new(state: &State, aspect: f32) -> Self {
-		let camera = render::Camera3D::Perspective {
+		let camera = render::Camera3D {
 			aspect,
 			fovy: FIELD_OF_VIEW,
 			near: 0.1,
 			far: 10_000.0,
 		};
 
-		// todo: toggle switch
-		// let camera = render::Camera3D::Orthographic {
-		// 	aspect,
-		// 	height: 1000.0,
-		// 	near: 0.1,
-		// 	far: 10_000.0,
-		// };
 		let controller = Controller::Orbital { offset: 100.0 };
 		let transform = na::Affine3::identity() * na::Translation3::new(0.0, 0.0, 100.0);
 
@@ -45,6 +38,10 @@ impl Camera {
 			controller,
 			lod: lod::Mode::new_auto(),
 		}
+	}
+
+	pub fn update_gpu(&mut self, state: &State) {
+		self.gpu = render::Camera3DGPU::new(state, &self.cam, &self.transform);
 	}
 
 	pub fn movement(&mut self, direction: na::Vector2<f32>, state: &State) {
@@ -63,10 +60,7 @@ impl Camera {
 	}
 
 	pub fn scroll(&mut self, value: f32, state: &State) {
-		match &mut self.cam {
-			render::Camera3D::Perspective { .. } => self.controller.scroll(value, &mut self.transform),
-			render::Camera3D::Orthographic { height, .. } => *height *= 1.0 + value / 10.0,
-		}
+		self.controller.scroll(value, &mut self.transform);
 		self.gpu = render::Camera3DGPU::new(state, &self.cam, &self.transform);
 	}
 
@@ -111,30 +105,14 @@ impl Camera {
 		)
 	}
 
-	pub fn ray_origin(&self, position: na::Point2<f32>, window_size: na::Point2<f32>) -> na::Point3<f32> {
-		match self.cam {
-			render::Camera3D::Perspective { .. } => self.transform * na::Point::origin(),
-			render::Camera3D::Orthographic { aspect, height, .. } => {
-				self.transform * na::Point::origin()
-					+ self.transform
-						* na::vector![
-							((position.x / window_size.x) - 0.5) * (height * aspect),
-							0.0,
-							0.0
-						] - self.transform * na::vector![0.0, ((position.y / window_size.y) - 0.5) * height, 0.0]
-			},
-		}
+	pub fn ray_origin(&self, _position: na::Point2<f32>, _window_size: na::Point2<f32>) -> na::Point3<f32> {
+		self.transform * na::Point::origin()
 	}
 
 	pub fn ray_direction(&self, position: na::Point2<f32>, window_size: na::Point2<f32>) -> na::Vector3<f32> {
-		match self.cam {
-			render::Camera3D::Perspective { .. } => {
-				let dist = (window_size.y / 2.0) / (FIELD_OF_VIEW / 2.0).tan();
-				let position = position - window_size / 2.0;
-				(self.transform * vector![position.x, -position.y, -dist]).normalize()
-			},
-			render::Camera3D::Orthographic { .. } => self.transform * vector![0.0, 0.0, -1.0],
-		}
+		let dist = (window_size.y / 2.0) / (FIELD_OF_VIEW / 2.0).tan();
+		let position = position - window_size / 2.0;
+		(self.transform * vector![position.x, -position.y, -dist]).normalize()
 	}
 
 	pub fn save(&self) {

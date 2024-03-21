@@ -16,6 +16,7 @@ struct Cell {
 	height: u32,
 	curve: u32,
 	segment: u32,
+	classification: u32,
 }
 
 pub fn grid(
@@ -37,6 +38,7 @@ pub fn grid(
 			height: 0,
 			curve: 0,
 			segment: 0,
+			classification: 0,
 		},
 	);
 	let grid_scale = GRID_SIZE as f32 / size;
@@ -62,6 +64,7 @@ pub fn grid(
 			cell.height = points.height[i];
 			cell.curve = points.curve[i];
 			cell.segment = points.segment[i];
+			cell.classification = points.classification[i];
 		}
 	}
 
@@ -80,6 +83,7 @@ pub fn grid(
 			cell.height,
 			cell.curve,
 			cell.segment,
+			cell.classification,
 		);
 	}
 	res

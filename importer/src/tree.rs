@@ -293,6 +293,7 @@ impl FlatNode {
 					height: data.iter().map(|p| p.height).collect::<Vec<_>>(),
 					curve: data.iter().map(|p| p.curve).collect::<Vec<_>>(),
 					segment: data.iter().map(|p| p.segment.get()).collect::<Vec<_>>(),
+					classification: data.iter().map(|p| p.classification).collect::<Vec<_>>(),
 				}
 			},
 		}

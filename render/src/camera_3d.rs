@@ -5,57 +5,21 @@ use wgpu::util::DeviceExt;
 use crate::State;
 
 #[derive(Clone, Copy)]
-pub enum Camera3D {
-	Perspective {
-		aspect: f32,
-		fovy: f32,
-		near: f32,
-		far: f32,
-	},
-	Orthographic {
-		aspect: f32,
-		height: f32,
-		near: f32,
-		far: f32,
-	},
+pub struct Camera3D {
+	pub aspect: f32,
+	pub fovy: f32,
+	pub near: f32,
+	pub far: f32,
 }
 
 impl Camera3D {
 	pub fn projection(&self) -> na::Matrix4<f32> {
-		match *self {
-			Self::Perspective { aspect, fovy, near, far } => {
-				na::Perspective3::new(aspect, fovy, near, far).to_homogeneous()
-			},
-			Self::Orthographic { aspect, height, near, far } => {
-				na::Orthographic3::from_fov(aspect, height, near, far).to_homogeneous()
-			},
-		}
-	}
-
-	pub fn aspect(&self) -> f32 {
-		match *self {
-			Self::Perspective { aspect, .. } => aspect,
-			Self::Orthographic { aspect, .. } => aspect,
-		}
-	}
-
-	pub fn fovy(&self) -> f32 {
-		match *self {
-			Self::Perspective { fovy, .. } => fovy,
-			Self::Orthographic { .. } => unreachable!(),
-		}
-	}
-
-	pub fn set_aspect(&mut self, value: f32) {
-		match self {
-			Self::Perspective { aspect, .. } => *aspect = value,
-			Self::Orthographic { aspect, .. } => *aspect = value,
-		}
+		na::Perspective3::new(self.aspect, self.fovy, self.near, self.far).to_homogeneous()
 	}
 
 	pub fn inside(&self, corner: na::Point<f32, 3>, size: f32, transform: na::Affine3<f32>) -> bool {
-		let y = (self.fovy() / 2.0).tan();
-		let x = y * self.aspect();
+		let y = (self.fovy / 2.0).tan();
+		let x = y * self.aspect;
 
 		let planes = [
 			na::vector![-1.0, 0.0, x],

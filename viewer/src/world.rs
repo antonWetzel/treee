@@ -376,12 +376,12 @@ impl World {
 
 					ui.horizontal(|ui| {
 						ui.add_sized([LEFT, HEIGHT], Label::new("Min"));
-						let mut min = self.tree.environment.min as f32 / u32::MAX as f32;
+						let mut min = self.tree.environment.min as f32 / self.tree.property.max as f32;
 						if ui
 							.add_sized([RIGHT, HEIGHT], Slider::new(&mut min, 0.0..=1.0))
 							.changed()
 						{
-							self.tree.environment.min = (min * u32::MAX as f32) as u32;
+							self.tree.environment.min = (min * self.tree.property.max as f32) as u32;
 							self.tree.environment.max = self.tree.environment.max.max(self.tree.environment.min);
 							self.tree.environment = render::PointCloudEnvironment::new(
 								&self.state,
@@ -394,12 +394,12 @@ impl World {
 
 					ui.horizontal(|ui| {
 						ui.add_sized([LEFT, HEIGHT], Label::new("Max"));
-						let mut max = self.tree.environment.max as f32 / u32::MAX as f32;
+						let mut max = self.tree.environment.max as f32 / self.tree.property.max as f32;
 						if ui
 							.add_sized([RIGHT, HEIGHT], Slider::new(&mut max, 0.0..=1.0))
 							.changed()
 						{
-							self.tree.environment.max = (max * u32::MAX as f32) as u32;
+							self.tree.environment.max = (max * self.tree.property.max as f32) as u32;
 							self.tree.environment.min = self.tree.environment.min.min(self.tree.environment.max);
 							self.tree.environment = render::PointCloudEnvironment::new(
 								&self.state,
@@ -604,6 +604,21 @@ impl World {
 					});
 
 					ui.horizontal(|ui| {
+						ui.add_sized([LEFT, HEIGHT], Label::new("Field of View"));
+						let mut fovy = self.tree.camera.cam.fovy.to_degrees();
+						let changed = ui
+							.add_sized(
+								[RIGHT, HEIGHT],
+								DragValue::new(&mut fovy).clamp_range(10..=130),
+							)
+							.changed();
+						if changed {
+							self.tree.camera.cam.fovy = fovy.to_radians();
+							self.tree.camera.update_gpu(&self.state);
+						}
+					});
+
+					ui.horizontal(|ui| {
 						ui.add_sized(
 							[LEFT, HEIGHT],
 							Label::new(match self.tree.camera.controller {
@@ -718,12 +733,8 @@ impl World {
 			return;
 		}
 		self.window.resized(self.state.deref());
-		self.tree.camera.cam.set_aspect(self.window.get_aspect());
-		self.tree.camera.gpu = render::Camera3DGPU::new(
-			&self.state,
-			&self.tree.camera.cam,
-			&self.tree.camera.transform,
-		);
+		self.tree.camera.cam.aspect = self.window.get_aspect();
+		self.tree.camera.update_gpu(&self.state);
 		self.tree
 			.eye_dome
 			.update_depth(&self.state, self.window.depth_texture());

@@ -267,6 +267,11 @@ fn import(settings: Settings, input: PathBuf, output: PathBuf) -> Result<(), Err
 			display_name: "Curvature".into(),
 			max: u32::MAX,
 		},
+		Property {
+			storage_name: "classification".into(),
+			display_name: "Classification".into(),
+			max: 3,
+		},
 	];
 
 	let (tree, project) = tree.flatten(

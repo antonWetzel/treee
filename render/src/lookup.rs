@@ -16,13 +16,14 @@ impl Lookup {
 
 		let bind_group_layout = Self::get_layout(state);
 
-		let scale = range / texture.size.x + 1;
+		let mult = u32::MAX / range;
+		let shift = texture.size.x.leading_zeros() + 1;
 
 		let buffer = state
 			.device
 			.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 				label: Some("Camera Buffer"),
-				contents: bytemuck::cast_slice(&[scale]),
+				contents: bytemuck::cast_slice(&[mult, shift]),
 				usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
 			});
 

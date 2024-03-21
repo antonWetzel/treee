@@ -8,6 +8,7 @@ pub struct Point {
 	pub slice: u32,
 	pub height: u32,
 	pub curve: u32,
+	pub classification: u32,
 }
 
 pub struct PointsCollection {
@@ -17,6 +18,7 @@ pub struct PointsCollection {
 	pub height: Vec<u32>,
 	pub curve: Vec<u32>,
 	pub segment: Vec<u32>,
+	pub classification: Vec<u32>,
 }
 
 impl PointsCollection {
@@ -28,33 +30,35 @@ impl PointsCollection {
 			height: Vec::new(),
 			curve: Vec::new(),
 			segment: Vec::new(),
+			classification: Vec::new(),
 		}
 	}
 
 	pub fn from_points(points: &[Point]) -> Self {
-		let mut res = Self {
-			render: Vec::with_capacity(points.len()),
-
-			slice: Vec::with_capacity(points.len()),
-			height: Vec::with_capacity(points.len()),
-			curve: Vec::with_capacity(points.len()),
-			segment: Vec::with_capacity(points.len()),
-		};
-		for point in points {
-			res.render.push(point.render);
-			res.slice.push(point.slice);
-			res.height.push(point.height);
-			res.curve.push(point.curve);
-			res.segment.push(point.segment.get());
+		Self {
+			render: points.iter().map(|p| p.render).collect(),
+			slice: points.iter().map(|p| p.slice).collect(),
+			height: points.iter().map(|p| p.height).collect(),
+			curve: points.iter().map(|p| p.curve).collect(),
+			segment: points.iter().map(|p| p.segment.get()).collect(),
+			classification: points.iter().map(|p| p.classification).collect(),
 		}
-		res
 	}
 
-	pub fn add(&mut self, render: project::Point, slice: u32, height: u32, curve: u32, segment: u32) {
+	pub fn add(
+		&mut self,
+		render: project::Point,
+		slice: u32,
+		height: u32,
+		curve: u32,
+		segment: u32,
+		classification: u32,
+	) {
 		self.render.push(render);
 		self.slice.push(slice);
 		self.height.push(height);
 		self.curve.push(curve);
 		self.segment.push(segment);
+		self.classification.push(classification)
 	}
 }
