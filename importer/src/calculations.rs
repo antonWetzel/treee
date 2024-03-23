@@ -12,6 +12,10 @@ pub struct SegmentInformation {
 	pub crown_area: project::Value,
 }
 
+//todo: add geojson to settings
+// - get good defaults
+// - validate calculation
+
 pub fn calculate(
 	data: Vec<na::Point3<f32>>,
 	segment: NonZeroU32,
@@ -48,7 +52,7 @@ pub fn calculate(
 
 		let areas = sets
 			.into_iter()
-			.map(|set| set.map(|set| set.area()).unwrap_or(0.0))
+			.map(|set| set.map(|set| set.statistics().area).unwrap_or(0.0))
 			.collect::<Vec<_>>();
 		let max_area = areas
 			.iter()
@@ -143,7 +147,9 @@ pub fn calculate(
 				.iter()
 				.copied()
 				.map(|entry| entry.distance.sqrt())
-				.sum::<f32>();
+				.sum::<f32>()
+				.max(0.01);
+
 			let size = size / (neighbors.len() - 1) as f32 / 2.0;
 			let idx = ((data[i].y - min) / slice_width) as usize;
 			let classification = if idx == ground_sep + (1.3 / slice_width) as usize {

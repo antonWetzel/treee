@@ -241,6 +241,7 @@ impl World {
 					if ui.toggle_value(&mut seg, "Segment").changed() && seg.not() {
 						self.tree.segment = None;
 					}
+					ui.set_enabled(true);
 				});
 				if let Some(seg) = &mut self.tree.segment {
 					ui.horizontal(|ui| {
@@ -281,6 +282,7 @@ impl World {
 						{
 							seg.render = MeshRender::MeshLines;
 						}
+						ui.set_enabled(true);
 					});
 					ui.horizontal(|ui| {
 						ui.add_sized([LEFT, HEIGHT], Label::new(""));
@@ -560,6 +562,7 @@ impl World {
 								ui.add_sized([LEFT, HEIGHT], Label::new("Precision"));
 								ui.add_sized([RIGHT, HEIGHT], Slider::new(threshold, 0.0..=10.0));
 							});
+							ui.set_enabled(true);
 						},
 						lod::Mode::Normal { threshold } => {
 							ui.horizontal(|ui| {

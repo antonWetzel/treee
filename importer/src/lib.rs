@@ -19,7 +19,11 @@ use writer::Writer;
 
 use tree::Tree;
 
-use crate::{cache::Cache, progress::Stage, segment::Segmenter};
+use crate::{
+	cache::Cache,
+	progress::Stage,
+	segment::{Segment, Segmenter},
+};
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -50,6 +54,10 @@ pub enum Error {
 
 #[derive(clap::Args)]
 pub struct Settings {
+	// Single tree, don't segment data
+	#[arg(long, default_value_t = false)]
+	single_tree: bool,
+
 	/// Minimum size for segments. Segments with less points are removed.
 	#[arg(long, default_value_t = 100)]
 	min_segment_size: usize,
@@ -164,33 +172,41 @@ fn import(settings: Settings, input: PathBuf, output: PathBuf) -> Result<(), Err
 
 	let mut progress = Progress::new("Import", total_points);
 
-	let mut segmenter = Segmenter::new(min, max, &mut cache, &settings);
-
 	let (sender, reciever) = crossbeam::channel::bounded(4);
 
-	rayon::join(
+	let (import_result, segments) = rayon::join(
 		|| {
 			laz.read(|chunk| sender.send(chunk).unwrap())?;
 			drop(sender);
 			Result::<(), Error>::Ok(())
 		},
 		|| {
-			for chunk in reciever {
-				let l = chunk.length();
-				for point in chunk {
-					segmenter.add_point(point, &mut cache);
+			if settings.single_tree {
+				let segment = cache.new_entry();
+				for chunk in reciever {
+					let l = chunk.length();
+					cache.add_chunk(&segment, chunk.read());
+					progress.step_by(l);
 				}
-				progress.step_by(l);
+				vec![Segment::new(cache.read(segment))]
+			} else {
+				let mut segmenter = Segmenter::new(min, max, &mut cache, &settings);
+				for chunk in reciever {
+					let l = chunk.length();
+					for point in chunk {
+						segmenter.add_point(point, &mut cache);
+					}
+					progress.step_by(l);
+				}
+				let mut segments = segmenter.segments(&mut statistics, &mut cache);
+				segments.shuffle(&mut rand::thread_rng());
+				segments
 			}
 		},
-	)
-	.0?;
-
+	);
+	import_result?;
 	statistics.times.import = progress.finish();
-
-	let mut segments = segmenter.segments(&mut statistics, &mut cache);
 	statistics.segments = segments.len();
-	segments.shuffle(&mut rand::thread_rng());
 
 	let mut progress = Progress::new("Calculate", total_points);
 

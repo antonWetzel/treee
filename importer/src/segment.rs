@@ -23,6 +23,10 @@ impl Segment {
 	pub fn length(&self) -> usize {
 		self.data.length()
 	}
+
+	pub fn new(data: CacheEntry<na::Point3<f32>>) -> Self {
+		Self { data }
+	}
 }
 
 pub struct Segmenter {
@@ -231,6 +235,12 @@ pub struct Tree {
 	max: na::Point2<f32>,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TreeStatistics {
+	pub area: f32,
+	pub center: na::Point2<f32>,
+}
+
 impl Tree {
 	pub fn new(p: na::Point2<f32>, max_distance: f32) -> Self {
 		Self {
@@ -296,8 +306,11 @@ impl Tree {
 		best
 	}
 
-	pub fn area(&self) -> f32 {
-		centroid(&self.points).1
+	pub fn statistics(&self) -> TreeStatistics {
+		let (center, area) = centroid(&self.points);
+		// let circle_radius = (area / std::f32::consts::PI).sqrt();
+
+		TreeStatistics { center, area }
 	}
 
 	pub fn contains(&self, point: na::Point2<f32>, max_distance: f32) -> bool {
