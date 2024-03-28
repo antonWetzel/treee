@@ -522,11 +522,11 @@ fn centroid(points: &[na::Point2<f32>]) -> (na::Point2<f32>, f32) {
 		let b = points[i] - a;
 		let c = points[i + 1] - a;
 		let t_center = (b + c) / 3.0;
-		let t_area = (b.x * c.y - b.y * c.x) / 2.0;
+		let t_area = b.x * c.y - b.y * c.x;
 
 		center += t_center * t_area;
 		area += t_area;
 	}
 
-	(a + center / area, area)
+	(a + center / area, area / 2.0)
 }

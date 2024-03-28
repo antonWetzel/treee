@@ -54,7 +54,7 @@ pub enum Error {
 
 #[derive(clap::Args)]
 pub struct Settings {
-	// Single tree, don't segment data
+	// Single tree, don't segment data.
 	#[arg(long, default_value_t = false)]
 	single_tree: bool,
 
@@ -62,27 +62,39 @@ pub struct Settings {
 	#[arg(long, default_value_t = 100)]
 	min_segment_size: usize,
 
-	/// Width of the horizontal slice in meters
+	/// Width of the horizontal slice in meters.
 	#[arg(long, default_value_t = 1.0)]
 	segmenting_slice_width: f32,
 
-	/// Distance to combine segments in meters
+	/// Distance to combine segments in meters.
 	#[arg(long, default_value_t = 1.0)]
 	segmenting_max_distance: f32,
 
-	/// Maximum count for neighbors search
+	/// Height in meters to calculate the trunk diameter.
+	#[arg(long, default_value_t = 1.3)]
+	trunk_diameter_height: f32,
+
+	/// Difference in meters between the trunk diameter and the start diameter of the crown.
+	#[arg(long, default_value_t = 1.0)]
+	crown_diameter_difference: f32,
+
+	/// Total range for included points in the calculation.
+	#[arg(long, default_value_t = 0.2)]
+	trunk_diameter_range: f32,
+
+	/// Maximum count for neighbors search.
 	#[arg(long, default_value_t = 31)]
 	neighbors_count: usize,
 
-	/// Slice width for segment expansion calculation
-	#[arg(long, default_value_t = 0.05)]
+	/// Slice width for segment expansion calculation.
+	#[arg(long, default_value_t = 0.1)]
 	calculations_slice_width: f32,
 
-	/// Maximum count for neighbors search
+	/// Maximum count for neighbors search.
 	#[arg(long, default_value_t = 1.0)]
 	neighbors_max_distance: f32,
 
-	/// Scale for the size of the combined point
+	/// Scale for the size of the combined point.
 	#[arg(long, default_value_t = 0.95)]
 	lod_size_scale: f32,
 }
@@ -188,6 +200,7 @@ fn import(settings: Settings, input: PathBuf, output: PathBuf) -> Result<(), Err
 					cache.add_chunk(&segment, chunk.read());
 					progress.step_by(l);
 				}
+				statistics.times.import = progress.finish();
 				vec![Segment::new(cache.read(segment))]
 			} else {
 				let mut segmenter = Segmenter::new(min, max, &mut cache, &settings);
@@ -198,6 +211,7 @@ fn import(settings: Settings, input: PathBuf, output: PathBuf) -> Result<(), Err
 					}
 					progress.step_by(l);
 				}
+				statistics.times.import = progress.finish();
 				let mut segments = segmenter.segments(&mut statistics, &mut cache);
 				segments.shuffle(&mut rand::thread_rng());
 				segments
@@ -205,7 +219,6 @@ fn import(settings: Settings, input: PathBuf, output: PathBuf) -> Result<(), Err
 		},
 	);
 	import_result?;
-	statistics.times.import = progress.finish();
 	statistics.segments = segments.len();
 
 	let mut progress = Progress::new("Calculate", total_points);
@@ -215,8 +228,8 @@ fn import(settings: Settings, input: PathBuf, output: PathBuf) -> Result<(), Err
 		String::from("Total height"),
 		String::from("Trunk height"),
 		String::from("Crown height"),
-		String::from("Trunk area"),
-		String::from("Crown area"),
+		String::from("Trunk diameter"),
+		String::from("Crown diameter"),
 	];
 
 	let (sender, reciever) = crossbeam::channel::bounded(2);
@@ -246,8 +259,8 @@ fn import(settings: Settings, input: PathBuf, output: PathBuf) -> Result<(), Err
 				segment_values[offset * segments_information.len() + 0] = information.total_height;
 				segment_values[offset * segments_information.len() + 1] = information.trunk_height;
 				segment_values[offset * segments_information.len() + 2] = information.crown_height;
-				segment_values[offset * segments_information.len() + 3] = information.trunk_area;
-				segment_values[offset * segments_information.len() + 4] = information.crown_area;
+				segment_values[offset * segments_information.len() + 3] = information.trunk_diameter;
+				segment_values[offset * segments_information.len() + 4] = information.crown_diameter;
 				let l = points.len();
 				for point in points {
 					tree.insert(point, &mut cache);

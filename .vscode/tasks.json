@@ -2,55 +2,58 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
-			"type": "cargo",
-			"command": "build",
+			"type": "shell",
+			"command": "cargo",
 			"problemMatcher": [
 				"$rustc"
 			],
 			"args": [
-				"--package=viewer",
+				"build",
+				"--package=viewer"
 			],
 			"group": "build",
 			"label": "cargo debug viewer"
 		},
 		{
-			"type": "cargo",
-			"command": "build",
+			"type": "shell",
+			"command": "cargo",
 			"problemMatcher": [
 				"$rustc"
 			],
 			"args": [
+				"build",
 				"--release",
-				"--package=viewer",
+				"--package=viewer"
 			],
 			"group": "build",
 			"label": "cargo release viewer"
 		},
 		{
-			"type": "cargo",
-			"command": "build",
+			"type": "shell",
+			"command": "cargo",
 			"problemMatcher": [
 				"$rustc"
 			],
 			"args": [
-				"--package=importer",
+				"build",
+				"--package=importer"
 			],
 			"group": "build",
 			"label": "cargo debug importer"
 		},
 		{
-			"type": "cargo",
-			"command": "build",
+			"type": "shell",
+			"command": "cargo",
 			"problemMatcher": [
 				"$rustc"
 			],
 			"args": [
+				"build",
 				"--release",
-				"--package=importer",
-				// "--features=segmentation-svgs"
+				"--package=importer"
 			],
 			"group": "build",
 			"label": "cargo release importer"
-		}
+		},
 	]
 }
