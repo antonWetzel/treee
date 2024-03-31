@@ -66,3 +66,4 @@ nalgebra = { version = "0.32.4", features = [
 	"serde-serialize",
 	"bytemuck",
 ] }
+proj4rs = "0.1.2"

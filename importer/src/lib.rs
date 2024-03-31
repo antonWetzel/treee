@@ -8,7 +8,7 @@ mod segment;
 mod tree;
 mod writer;
 
-use std::{num::NonZeroU32, path::PathBuf};
+use std::{num::NonZeroU32, ops::Not, path::PathBuf};
 
 use point::PointsCollection;
 use progress::Progress;
@@ -82,6 +82,14 @@ pub struct Settings {
 	#[arg(long, default_value_t = 0.2)]
 	trunk_diameter_range: f32,
 
+	/// Scale for a slice to be considered ground instead of trunk relative to the smallest area.
+	#[arg(long, default_value_t = 1.5)]
+	ground_min_area_scale: f32,
+
+	/// Maximum height to search for the ground.
+	#[arg(long, default_value_t = 1.0)]
+	ground_max_search_height: f32,
+
 	/// Maximum count for neighbors search.
 	#[arg(long, default_value_t = 31)]
 	neighbors_count: usize,
@@ -97,6 +105,11 @@ pub struct Settings {
 	/// Scale for the size of the combined point.
 	#[arg(long, default_value_t = 0.95)]
 	lod_size_scale: f32,
+
+	/// PROJ location transformation.
+	/// Can be empty for no transformation.
+	#[arg(long, default_value = "+proj=utm +ellps=GRS80 +zone=32")]
+	proj_location: String,
 }
 
 #[derive(clap::Parser)]
@@ -176,6 +189,7 @@ fn import(settings: Settings, input: PathBuf, output: PathBuf) -> Result<(), Err
 	let laz = laz::Laz::new(&input)?;
 	let min = laz.min;
 	let max = laz.max;
+	let world_offset = laz.world_offset;
 	let diff = max - min;
 	let total_points = laz.total;
 	statistics.source_points = total_points;
@@ -230,7 +244,15 @@ fn import(settings: Settings, input: PathBuf, output: PathBuf) -> Result<(), Err
 		String::from("Crown height"),
 		String::from("Trunk diameter"),
 		String::from("Crown diameter"),
+		String::from("Position"),
+		String::from("Elevation"),
 	];
+
+	let projection = settings.proj_location.is_empty().not().then(|| {
+		let from = proj4rs::Proj::from_proj_string(&settings.proj_location).unwrap();
+		let to = proj4rs::Proj::from_proj_string("+proj=latlong +ellps=GRS80").unwrap();
+		(from, to)
+	});
 
 	let (sender, reciever) = crossbeam::channel::bounded(2);
 	let (_, segment_values) = rayon::join(
@@ -240,7 +262,13 @@ fn import(settings: Settings, input: PathBuf, output: PathBuf) -> Result<(), Err
 				.enumerate()
 				.for_each(|(index, segment)| {
 					let index = NonZeroU32::new(index as u32 + 1).unwrap();
-					let (points, information) = calculations::calculate(segment.points(), index, &settings);
+					let (points, information) = calculations::calculate(
+						segment.points(),
+						index,
+						&settings,
+						&projection,
+						world_offset,
+					);
 					sender.send((points, index, information)).unwrap();
 				});
 			drop(sender);
@@ -261,6 +289,8 @@ fn import(settings: Settings, input: PathBuf, output: PathBuf) -> Result<(), Err
 				segment_values[offset * segments_information.len() + 2] = information.crown_height;
 				segment_values[offset * segments_information.len() + 3] = information.trunk_diameter;
 				segment_values[offset * segments_information.len() + 4] = information.crown_diameter;
+				segment_values[offset * segments_information.len() + 5] = information.position;
+				segment_values[offset * segments_information.len() + 6] = information.elevation;
 				let l = points.len();
 				for point in points {
 					tree.insert(point, &mut cache);

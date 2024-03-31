@@ -27,6 +27,7 @@ pub struct Laz {
 
 	pub min: na::Point3<f32>,
 	pub max: na::Point3<f32>,
+	pub world_offset: na::Point3<f64>,
 }
 
 impl Laz {
@@ -71,7 +72,7 @@ impl Laz {
 			let mut start = header.offset_to_point_data as u64;
 			const DEFAULT_CHUNK_SIZE: usize = 50_000;
 			for _ in 0..(total / DEFAULT_CHUNK_SIZE) {
-				chunks.push((start, DEFAULT_CHUNK_SIZE as usize));
+				chunks.push((start, DEFAULT_CHUNK_SIZE));
 				start += (DEFAULT_CHUNK_SIZE * point_length) as u64;
 			}
 			let rem = total % DEFAULT_CHUNK_SIZE;
@@ -93,6 +94,7 @@ impl Laz {
 
 			min: (min - center).map(|x| x as f32).into(),
 			max: (max - center).map(|x| x as f32).into(),
+			world_offset: center,
 		})
 	}
 

@@ -20,6 +20,7 @@ where
 		let file = std::fs::OpenOptions::new()
 			.write(true)
 			.create(true)
+			.truncate(true)
 			.open(path.as_ref())
 			.unwrap();
 		file.set_len((size * 2 * std::mem::size_of::<u64>()) as u64)

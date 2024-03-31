@@ -43,9 +43,9 @@ pub struct Property {
 }
 
 impl Project {
-	pub fn from_file(path: impl AsRef<Path>) -> Self {
-		let file = std::fs::OpenOptions::new().read(true).open(path).unwrap();
-		serde_json::from_reader(BufReader::new(file)).unwrap()
+	pub fn from_file(path: impl AsRef<Path>) -> Option<Self> {
+		let file = std::fs::OpenOptions::new().read(true).open(path).ok()?;
+		serde_json::from_reader(BufReader::new(file)).ok()
 	}
 
 	pub fn empty() -> Self {
@@ -72,6 +72,7 @@ impl Project {
 		let file = std::fs::OpenOptions::new()
 			.write(true)
 			.create(true)
+			.truncate(true)
 			.open(path)
 			.unwrap();
 		serde_json::to_writer(BufWriter::new(file), self).unwrap();
@@ -98,6 +99,8 @@ pub enum Value {
 	RelativeHeight { absolute: f32, percent: f32 },
 	Meters(f32),
 	MetersSquared(f32),
+	AbsolutePosition { x: f64, y: f64 },
+	Coordinates { lat: f64, long: f64 },
 }
 
 impl std::fmt::Display for Value {
@@ -108,6 +111,8 @@ impl std::fmt::Display for Value {
 			Self::RelativeHeight { absolute, percent } => write!(f, "{:.2}m ({:.3}%)", absolute, percent * 100.0),
 			Self::Meters(value) => write!(f, "{:.2}m", value),
 			Self::MetersSquared(value) => write!(f, "{:.2}m²", value),
+			Self::AbsolutePosition { x, y } => write!(f, "({:.3}, {:.3})", x, y),
+			Self::Coordinates { long, lat } => write!(f, "Lat: {:.3}°, Long: {:.3}°", lat, long),
 		}
 	}
 }

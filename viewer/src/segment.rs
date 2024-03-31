@@ -95,7 +95,7 @@ impl Segment {
 				indices.push(off + 1);
 			}
 
-			render::Lines::new(&state, &points, &indices)
+			render::Lines::new(state, &points, &indices)
 		};
 
 		Self {

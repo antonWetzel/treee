@@ -10,6 +10,8 @@ pub struct SegmentInformation {
 	pub crown_height: project::Value,
 	pub trunk_diameter: project::Value,
 	pub crown_diameter: project::Value,
+	pub position: project::Value,
+	pub elevation: project::Value,
 }
 
 //todo: add geojson to settings
@@ -20,6 +22,8 @@ pub fn calculate(
 	data: Vec<na::Point3<f32>>,
 	segment: NonZeroU32,
 	settings: &Settings,
+	projection: &Option<(proj4rs::Proj, proj4rs::Proj)>,
+	world_offset: na::Point3<f64>,
 ) -> (Vec<Point>, SegmentInformation) {
 	let neighbors_tree = NeighborsTree::new(&data);
 
@@ -39,7 +43,7 @@ pub fn calculate(
 
 	let slice_width = settings.calculations_slice_width;
 
-	let slices = ((height / slice_width).ceil() as usize) + 1;
+	let slices = ((height / slice_width) as usize) + 1;
 	let mut sets = vec![<Option<Tree>>::None; slices];
 	for pos in data.iter().copied() {
 		let idx = ((pos.y - min) / slice_width) as usize;
@@ -48,6 +52,55 @@ pub fn calculate(
 			x @ None => *x = Some(Tree::new(na::vector![pos.x, pos.z].into(), 0.0)),
 		}
 	}
+
+	// let mut svg = std::fs::File::create("test.svg").unwrap();
+	// svg.write_all(b"<svg viewbox=\"0 0 200 200\" xmlns=\"http://www.w3.org/2000/svg\">\n")
+	// 	.unwrap();
+	// for (index, set) in sets.iter().enumerate() {
+	// 	if let Some(set) = set {
+	// 		let a = index as f32 / sets.len() as f32;
+	// 		let color = format!("rgb({}, {}, {})", a * 256.0, 0.0, (1.0 - a) * 256.0);
+	// 		svg.write_all(b"  <polygon points=\"").unwrap();
+	// 		let y = (sets.len() - index) as f32 * slice_width * 10.0;
+	// 		for &p in set.points() {
+	// 			svg.write_all(format!("{},{} ", 80.0 + p.x * 10.0, y + p.y * 5.0).as_bytes())
+	// 				.unwrap();
+	// 		}
+	// 		svg.write_all(
+	// 			format!(
+	// 				"\" fill=\"{}\" stroke-width=\"0.2\" stroke=\"black\" />\n",
+	// 				color
+	// 			)
+	// 			.as_bytes(),
+	// 		)
+	// 		.unwrap();
+
+	// 		let area = set.statistics().area;
+
+	// 		svg.write_all(
+	// 			format!(
+	// 				"  <rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"{}\" stroke-width=\"0.1\" stroke=\"black\" />\n",
+	// 				200.0,
+	// 				y,
+	// 				area * 2.0,
+	// 				slice_width * 10.0,
+	// 				color,
+	// 			)
+	// 			.as_bytes(),
+	// 		)
+	// 		.unwrap();
+	// 	}
+	// }
+	// let y = (sets.len() + 1) as f32 * slice_width * 10.0;
+	// svg.write_all(
+	// 	format!(
+	// 		"  <line x1=\"200\" y1=\"0\" x2=\"200\" y2=\"{}\" stroke=\"black\" />\n",
+	// 		y
+	// 	)
+	// 	.as_bytes(),
+	// )
+	// .unwrap();
+	// svg.write_all(b"</svg>\n").unwrap();
 
 	let areas = sets
 		.into_iter()
@@ -70,8 +123,8 @@ pub fn calculate(
 		.iter()
 		.copied()
 		.enumerate()
-		.take((1.0 / slice_width) as usize)
-		.find(|&(_, area)| area > min_area)
+		.take((settings.ground_max_search_height / slice_width) as usize)
+		.find(|&(_, area)| area > min_area * settings.ground_min_area_scale)
 		.map(|(idx, _)| idx);
 	let ground_sep = if let Some(ground) = ground {
 		areas
@@ -79,50 +132,47 @@ pub fn calculate(
 			.enumerate()
 			.take(slices / 2)
 			.skip(ground)
-			.find(|&(_, &v)| v < min_area)
+			.find(|&(_, &v)| v < min_area * settings.ground_min_area_scale)
 			.map(|(index, _)| index)
 			.unwrap_or(0)
 	} else {
 		0
 	};
 
-	let (trunk_diameter, trunk_min, trunk_max) = {
+	let (trunk_diameter, trunk_center, trunk_min, trunk_max) = {
 		let trunk_min =
 			ground_sep as f32 * slice_width + settings.trunk_diameter_height - 0.5 * settings.trunk_diameter_range;
 		let trunk_max = trunk_min + settings.trunk_diameter_range;
-		let slice_130 = data
+		let slice_trunk = data
 			.iter()
 			.filter(|p| (trunk_min..trunk_max).contains(&(p.y - min)))
 			.map(|p| na::Point2::new(p.x, p.y))
 			.collect::<Vec<_>>();
 
 		let mut best_score = f32::MAX;
-		let mut best_diameter = 0.5;
-		if slice_130.is_empty().not() {
+		let mut best_circle = (0.5, na::Point2::new(0.0, 0.0));
+		if slice_trunk.is_empty().not() {
 			for _ in 0..1000 {
-				let x = slice_130[rand::random::<usize>() % slice_130.len()];
-				let y = slice_130[rand::random::<usize>() % slice_130.len()];
-				let z = slice_130[rand::random::<usize>() % slice_130.len()];
+				let x = slice_trunk[rand::random::<usize>() % slice_trunk.len()];
+				let y = slice_trunk[rand::random::<usize>() % slice_trunk.len()];
+				let z = slice_trunk[rand::random::<usize>() % slice_trunk.len()];
 				let Some((center, radius)) = circle(x, y, z) else {
 					continue;
 				};
-				if radius.is_nan() {
-					panic!()
-				}
-
-				let score = slice_130
+				let score = slice_trunk
 					.iter()
 					.map(|p| ((p - center).norm() - radius).abs().min(0.2))
 					.sum::<f32>();
 				if score < best_score {
 					best_score = score;
-					best_diameter = 2.0 * radius;
+					best_circle = (2.0 * radius, center);
 				}
 			}
 		}
 
 		(
-			best_diameter,
+			best_circle.0,
+			best_circle.1,
 			(trunk_min / slice_width) as usize,
 			(trunk_max / slice_width).ceil() as usize,
 		)
@@ -226,8 +276,23 @@ pub fn calculate(
 		.collect::<Vec<Point>>();
 
 	let total_height = height - ground_sep as f32 * slice_width;
-	let trunk_height = total_height - (crown_sep.saturating_sub(ground_sep)) as f32 * slice_width;
+	let trunk_height = (crown_sep.saturating_sub(ground_sep)) as f32 * slice_width;
 	let crown_height = total_height - trunk_height;
+
+	let mut pos = (
+		world_offset.x + trunk_center.x as f64,
+		-(world_offset.z + trunk_center.y as f64),
+	);
+	let position = if let Some((from, to)) = projection {
+		proj4rs::transform::transform(from, to, &mut pos).unwrap();
+		project::Value::Coordinates {
+			long: pos.0.to_degrees(),
+			lat: pos.1.to_degrees(),
+		}
+	} else {
+		project::Value::AbsolutePosition { x: pos.0, y: pos.1 }
+	};
+
 	(
 		res,
 		SegmentInformation {
@@ -242,6 +307,8 @@ pub fn calculate(
 			},
 			trunk_diameter: project::Value::Meters(trunk_diameter),
 			crown_diameter: project::Value::Meters(2.0 * (crown_area / std::f32::consts::PI).sqrt()),
+			position,
+			elevation: project::Value::Meters(world_offset.y as f32 + min + ground_sep as f32 * slice_width),
 		},
 	)
 }

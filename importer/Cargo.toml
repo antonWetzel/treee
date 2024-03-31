@@ -29,6 +29,7 @@ cfg-if.workspace = true
 laz.workspace = true
 static_assertions.workspace = true
 nalgebra.workspace = true
+proj4rs.workspace = true
 
 [features]
 default = []

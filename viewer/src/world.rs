@@ -128,11 +128,14 @@ impl World {
 	}
 
 	fn reload(&mut self, project_time: std::time::SystemTime) {
-		self.project_time = project_time;
 		let Some(path) = &self.path else {
 			return;
 		};
-		self.project = Project::from_file(path);
+		let Some(project) = Project::from_file(path) else {
+			return;
+		};
+		self.project_time = project_time;
+		self.project = project;
 		self.tree = Tree::new(
 			self.state.clone(),
 			&self.project,

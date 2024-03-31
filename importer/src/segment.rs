@@ -102,7 +102,6 @@ impl Segmenter {
 					.into_iter()
 					.enumerate()
 					.par_bridge()
-					// .into_par_iter()
 					.for_each(|(_index, (c_reciever, slice, c_sender))| {
 						cfg_if::cfg_if! {
 							if #[cfg(feature = "segmentation-svgs")] {
