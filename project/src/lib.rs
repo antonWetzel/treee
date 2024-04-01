@@ -99,8 +99,8 @@ pub enum Value {
 	RelativeHeight { absolute: f32, percent: f32 },
 	Meters(f32),
 	MetersSquared(f32),
-	AbsolutePosition { x: f64, y: f64 },
-	Coordinates { lat: f64, long: f64 },
+	AbsolutePosition(f64),
+	Degrees(f64),
 }
 
 impl std::fmt::Display for Value {
@@ -111,8 +111,13 @@ impl std::fmt::Display for Value {
 			Self::RelativeHeight { absolute, percent } => write!(f, "{:.2}m ({:.3}%)", absolute, percent * 100.0),
 			Self::Meters(value) => write!(f, "{:.2}m", value),
 			Self::MetersSquared(value) => write!(f, "{:.2}m²", value),
-			Self::AbsolutePosition { x, y } => write!(f, "({:.3}, {:.3})", x, y),
-			Self::Coordinates { long, lat } => write!(f, "Lat: {:.3}°, Long: {:.3}°", lat, long),
+			Self::AbsolutePosition(value) => write!(f, "{:.5}", value),
+			&Self::Degrees(deg) => {
+				let min = deg.fract() * if deg >= 0.0 { 60.0 } else { -60.0 };
+				let deg = deg.trunc() as isize;
+				let (min, sec) = (min.trunc() as isize, min.fract() * 60.0);
+				write!(f, "{}°{}'{:.2}\"", deg, min, sec)
+			},
 		}
 	}
 }

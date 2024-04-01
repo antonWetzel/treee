@@ -10,7 +10,8 @@ pub struct SegmentInformation {
 	pub crown_height: project::Value,
 	pub trunk_diameter: project::Value,
 	pub crown_diameter: project::Value,
-	pub position: project::Value,
+	pub latitude: project::Value,
+	pub longitude: project::Value,
 	pub elevation: project::Value,
 }
 
@@ -283,14 +284,17 @@ pub fn calculate(
 		world_offset.x + trunk_center.x as f64,
 		-(world_offset.z + trunk_center.y as f64),
 	);
-	let position = if let Some((from, to)) = projection {
+	let (latitude, longitude) = if let Some((from, to)) = projection {
 		proj4rs::transform::transform(from, to, &mut pos).unwrap();
-		project::Value::Coordinates {
-			long: pos.0.to_degrees(),
-			lat: pos.1.to_degrees(),
-		}
+		(
+			project::Value::Degrees(pos.1.to_degrees()),
+			project::Value::Degrees(pos.0.to_degrees()),
+		)
 	} else {
-		project::Value::AbsolutePosition { x: pos.0, y: pos.1 }
+		(
+			project::Value::AbsolutePosition(pos.1),
+			project::Value::Degrees(pos.0),
+		)
 	};
 
 	(
@@ -307,7 +311,8 @@ pub fn calculate(
 			},
 			trunk_diameter: project::Value::Meters(trunk_diameter),
 			crown_diameter: project::Value::Meters(2.0 * (crown_area / std::f32::consts::PI).sqrt()),
-			position,
+			latitude,
+			longitude,
 			elevation: project::Value::Meters(world_offset.y as f32 + min + ground_sep as f32 * slice_width),
 		},
 	)

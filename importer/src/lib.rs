@@ -244,7 +244,8 @@ fn import(settings: Settings, input: PathBuf, output: PathBuf) -> Result<(), Err
 		String::from("Crown height"),
 		String::from("Trunk diameter"),
 		String::from("Crown diameter"),
-		String::from("Position"),
+		String::from("Latitude"),
+		String::from("Longitude"),
 		String::from("Elevation"),
 	];
 
@@ -283,14 +284,15 @@ fn import(settings: Settings, input: PathBuf, output: PathBuf) -> Result<(), Err
 			for (points, segment, information) in reciever {
 				let collection = PointsCollection::from_points(&points);
 				segment_writer.save(segment.get() as usize - 1, &collection);
-				let offset = (segment.get() - 1) as usize;
-				segment_values[offset * segments_information.len() + 0] = information.total_height;
-				segment_values[offset * segments_information.len() + 1] = information.trunk_height;
-				segment_values[offset * segments_information.len() + 2] = information.crown_height;
-				segment_values[offset * segments_information.len() + 3] = information.trunk_diameter;
-				segment_values[offset * segments_information.len() + 4] = information.crown_diameter;
-				segment_values[offset * segments_information.len() + 5] = information.position;
-				segment_values[offset * segments_information.len() + 6] = information.elevation;
+				let offset = (segment.get() - 1) as usize * segments_information.len();
+				segment_values[offset + 0] = information.total_height;
+				segment_values[offset + 1] = information.trunk_height;
+				segment_values[offset + 2] = information.crown_height;
+				segment_values[offset + 3] = information.trunk_diameter;
+				segment_values[offset + 4] = information.crown_diameter;
+				segment_values[offset + 5] = information.latitude;
+				segment_values[offset + 6] = information.longitude;
+				segment_values[offset + 7] = information.elevation;
 				let l = points.len();
 				for point in points {
 					tree.insert(point, &mut cache);
