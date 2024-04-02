@@ -66,6 +66,10 @@ pub struct Settings {
 	#[arg(long, default_value_t = 1.0)]
 	segmenting_slice_width: f32,
 
+	/// Slice width for segment expansion calculation.
+	#[arg(long, default_value_t = 0.1)]
+	calculations_slice_width: f32,
+
 	/// Distance to combine segments in meters.
 	#[arg(long, default_value_t = 1.0)]
 	segmenting_max_distance: f32,
@@ -74,13 +78,13 @@ pub struct Settings {
 	#[arg(long, default_value_t = 1.3)]
 	trunk_diameter_height: f32,
 
-	/// Difference in meters between the trunk diameter and the start diameter of the crown.
-	#[arg(long, default_value_t = 1.0)]
-	crown_diameter_difference: f32,
-
 	/// Total range for included points in the calculation.
 	#[arg(long, default_value_t = 0.2)]
 	trunk_diameter_range: f32,
+
+	/// Difference in meters between the trunk diameter and the start diameter of the crown.
+	#[arg(long, default_value_t = 1.0)]
+	crown_diameter_difference: f32,
 
 	/// Scale for a slice to be considered ground instead of trunk relative to the smallest area.
 	#[arg(long, default_value_t = 1.5)]
@@ -93,10 +97,6 @@ pub struct Settings {
 	/// Maximum count for neighbors search.
 	#[arg(long, default_value_t = 31)]
 	neighbors_count: usize,
-
-	/// Slice width for segment expansion calculation.
-	#[arg(long, default_value_t = 0.1)]
-	calculations_slice_width: f32,
 
 	/// Maximum count for neighbors search.
 	#[arg(long, default_value_t = 1.0)]
