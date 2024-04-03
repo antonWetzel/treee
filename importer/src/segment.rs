@@ -1,7 +1,9 @@
 use nalgebra as na;
+use rand::{seq::SliceRandom, thread_rng};
 use rayon::prelude::*;
 use voronator::delaunator::Point;
 
+use std::collections::VecDeque;
 #[cfg(feature = "segmentation-svgs")]
 use std::io::Write;
 
@@ -119,15 +121,14 @@ impl Segmenter {
 								.unwrap();
 							}
 						}
-						let slice = slice.read();
-						let tree_set = TreeSet::new(&slice, self.max_distance);
+						let mut slice = slice.read();
+						let tree_set = TreeSet::new(&mut slice, self.max_distance);
 
 						#[cfg(feature = "segmentation-svgs")]
 						for tree in &tree_set.trees {
 							tree.save_svg(&mut svg, self.min, true);
 						}
 
-						// println!("pre: {} {:?}", index, std::time::Instant::now());
 						let centroids = c_reciever.recv().unwrap();
 						let centroids = tree_set.tree_positions(centroids, self.max_distance);
 						let points = centroids
@@ -163,10 +164,10 @@ impl Segmenter {
 									.map(|p| na::Point2::new(p.x as f32, p.y as f32))
 									.collect::<Vec<_>>()
 							})
-							.map(|p| Tree::from_points(p, 0.1))
+							.map(|p| Tree::from_points(p))
 							.enumerate()
 							.map(|(index, tree)| (index, tree, Vec::new()))
-							.collect::<Vec<_>>();
+							.collect::<VecDeque<_>>();
 
 						cfg_if::cfg_if! {
 							if #[cfg(feature = "segmentation-svgs")] {
@@ -185,9 +186,10 @@ impl Segmenter {
 							else {
 								continue;
 							};
-							trees[idx].2.push(p);
+							let mut elem = trees.remove(idx).unwrap();
+							elem.2.push(p);
 							// hope next point is in the same segment
-							trees.swap(0, idx);
+							trees.push_front(elem);
 						}
 						sender.send(trees).unwrap();
 					});
@@ -241,19 +243,19 @@ pub struct TreeStatistics {
 }
 
 impl Tree {
-	pub fn new(p: na::Point2<f32>, max_distance: f32) -> Self {
+	pub fn new(p: na::Point2<f32>) -> Self {
 		Self {
 			points: vec![
 				p,
 				na::Point2::new(p.x + 0.1, p.y),
 				na::Point2::new(p.x, p.y + 0.1),
 			],
-			min: p - na::vector![max_distance, max_distance],
-			max: p + na::vector![max_distance + 0.1, max_distance + 0.1],
+			min: p,
+			max: p + na::vector![0.1, 0.1],
 		}
 	}
 
-	pub fn from_points(mut points: Vec<na::Point2<f32>>, max_distance: f32) -> Self {
+	pub fn from_points(mut points: Vec<na::Point2<f32>>) -> Self {
 		match points.len() {
 			0 => {
 				return Self {
@@ -278,15 +280,11 @@ impl Tree {
 			min = min.coords.zip_map(&p.coords, |a, b| a.min(b)).into();
 			max = max.coords.zip_map(&p.coords, |a, b| a.max(b)).into();
 		}
-		Self {
-			points,
-			min: min - na::vector![max_distance, max_distance],
-			max: max + na::vector![max_distance, max_distance],
-		}
+		Self { points, min, max }
 	}
 
 	pub fn distance(&self, point: na::Point2<f32>, max_distance: f32) -> f32 {
-		if point.x < self.min.x || point.x >= self.max.x || point.y < self.min.y || point.y >= self.max.y {
+		if self.outside_bounds(point, max_distance) {
 			return f32::MAX;
 		}
 		let mut best = f32::MIN;
@@ -305,15 +303,20 @@ impl Tree {
 		best
 	}
 
+	pub fn outside_bounds(&self, point: na::Point2<f32>, max_distance: f32) -> bool {
+		point.x + max_distance < self.min.x
+			|| self.max.x + max_distance <= point.x
+			|| point.y + max_distance < self.min.y
+			|| self.max.y + max_distance <= point.y
+	}
+
 	pub fn statistics(&self) -> TreeStatistics {
 		let (center, area) = centroid(&self.points);
-		// let circle_radius = (area / std::f32::consts::PI).sqrt();
-
 		TreeStatistics { center, area }
 	}
 
 	pub fn contains(&self, point: na::Point2<f32>, max_distance: f32) -> bool {
-		if point.x < self.min.x || point.x >= self.max.x || point.y < self.min.y || point.y >= self.max.y {
+		if self.outside_bounds(point, max_distance) {
 			return false;
 		}
 		for i in 0..self.points.len() {
@@ -330,7 +333,7 @@ impl Tree {
 		true
 	}
 
-	pub fn insert(&mut self, point: na::Point2<f32>, max_distance: f32) {
+	pub fn insert(&mut self, point: na::Point2<f32>) {
 		fn outside(a: na::Point2<f32>, b: na::Point2<f32>, point: na::Point2<f32>) -> bool {
 			let dir = b - a;
 			let out = na::vector![dir.y, -dir.x].normalize();
@@ -369,18 +372,12 @@ impl Tree {
 		self.min = self
 			.min
 			.coords
-			.zip_map(
-				&(point - na::vector![max_distance, max_distance]).coords,
-				|a, b| a.min(b),
-			)
+			.zip_map(&point.coords, |a, b| a.min(b))
 			.into();
 		self.max = self
 			.max
 			.coords
-			.zip_map(
-				&(point + na::vector![max_distance, max_distance]).coords,
-				|a, b| a.max(b),
-			)
+			.zip_map(&point.coords, |a, b| a.max(b))
 			.into();
 	}
 
@@ -419,13 +416,14 @@ impl TreeSet {
 		Self { trees: Vec::new() }
 	}
 
-	pub fn new(points: &[na::Point3<f32>], max_distance: f32) -> Self {
+	pub fn new(points: &mut [na::Point3<f32>], max_distance: f32) -> Self {
+		points.shuffle(&mut thread_rng());
+
 		let mut trees = Self::new_empty();
-		for &point in points {
+		for &point in points.iter() {
 			trees.add_point(point, max_distance);
 		}
 		trees.filter_trees(max_distance);
-
 		trees
 	}
 
@@ -443,10 +441,10 @@ impl TreeSet {
 		}
 		match near.len() {
 			// new
-			0 => self.trees.push(Tree::new(p, max_distance)),
+			0 => self.trees.push(Tree::new(p)),
 
 			// insert
-			1 => self.trees[near[0]].insert(p, max_distance),
+			1 => self.trees[near[0]].insert(p),
 
 			// merge
 			_ => {
@@ -454,10 +452,10 @@ impl TreeSet {
 				for other in near[1..].iter().rev().copied() {
 					let o = self.trees.remove(other);
 					for p in o.points {
-						self.trees[target].insert(p, max_distance);
+						self.trees[target].insert(p);
 					}
 				}
-				self.trees[target].insert(p, max_distance);
+				self.trees[target].insert(p);
 			},
 		}
 	}

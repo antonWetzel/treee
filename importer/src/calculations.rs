@@ -1,4 +1,4 @@
-use std::{num::NonZeroU32, ops::Not};
+use std::num::NonZeroU32;
 
 use nalgebra as na;
 
@@ -49,8 +49,8 @@ pub fn calculate(
 	for pos in data.iter().copied() {
 		let idx = ((pos.y - min) / slice_width) as usize;
 		match &mut sets[idx] {
-			Some(tree) => tree.insert(na::vector![pos.x, pos.z].into(), 0.0),
-			x @ None => *x = Some(Tree::new(na::vector![pos.x, pos.z].into(), 0.0)),
+			Some(tree) => tree.insert(na::vector![pos.x, pos.z].into()),
+			x @ None => *x = Some(Tree::new(na::vector![pos.x, pos.z].into())),
 		}
 	}
 
@@ -140,6 +140,8 @@ pub fn calculate(
 		0
 	};
 
+	// eprintln!("{{");
+
 	let (trunk_diameter, trunk_center, trunk_min, trunk_max) = {
 		let trunk_min =
 			ground_sep as f32 * slice_width + settings.trunk_diameter_height - 0.5 * settings.trunk_diameter_range;
@@ -152,7 +154,7 @@ pub fn calculate(
 
 		let mut best_score = f32::MAX;
 		let mut best_circle = (0.5, na::Point2::new(0.0, 0.0));
-		if slice_trunk.is_empty().not() {
+		if slice_trunk.len() >= 8 {
 			for _ in 0..1000 {
 				let x = slice_trunk[rand::random::<usize>() % slice_trunk.len()];
 				let y = slice_trunk[rand::random::<usize>() % slice_trunk.len()];
@@ -171,6 +173,7 @@ pub fn calculate(
 			}
 		}
 
+		// eprintln!("\"DBH_cm\": {},", best_circle.0 * 100.0);
 		(
 			best_circle.0,
 			best_circle.1,
@@ -196,12 +199,11 @@ pub fn calculate(
 		.max_by(|a, b| a.total_cmp(b))
 		.unwrap_or(0.0);
 
-	let mapped = areas
+	let max_diameter = approximate_diameter(max_area);
+	let slices = areas
 		.into_iter()
-		.map(|area| map_to_u32(area / max_area))
+		.map(|area| map_to_u32(approximate_diameter(area) / max_diameter))
 		.collect::<Vec<_>>();
-
-	let slices = mapped;
 
 	let mut neighbors_location = bytemuck::zeroed_vec(settings.neighbors_count);
 
@@ -242,14 +244,19 @@ pub fn calculate(
 			let eigen_values = fast_eigenvalues(variance);
 			let eigen_vectors = calculate_last_eigenvector(variance, eigen_values);
 
-			let size = neighbors[1..]
-				.iter()
-				.copied()
-				.map(|entry| entry.distance.sqrt())
-				.sum::<f32>()
-				.max(0.01);
+			let size = if neighbors.len() > 1 {
+				let size = neighbors[1..]
+					.iter()
+					.copied()
+					.map(|entry| entry.distance.sqrt())
+					.sum::<f32>()
+					.max(0.01);
 
-			let size = size / (neighbors.len() - 1) as f32 / 2.0;
+				size / (neighbors.len() - 1) as f32 / 2.0
+			} else {
+				0.1
+			};
+
 			let idx = ((data[i].y - min) / slice_width) as usize;
 			let classification = if (trunk_min..trunk_max).contains(&idx) {
 				1
@@ -296,6 +303,13 @@ pub fn calculate(
 			project::Value::Degrees(pos.0),
 		)
 	};
+
+	// eprintln!("\"crown_base_height_m\": {},", trunk_height);
+	// eprintln!("\"height_m\": {},", total_height);
+	// let crown_diameter = approximate_diameter(crown_area);
+	// eprintln!("\"mean_crown_diameter_m\": {}", crown_diameter);
+	// eprintln!("}}");
+	// std::process::exit(0);
 
 	(
 		res,
@@ -453,4 +467,8 @@ fn circle(
 		return None;
 	}
 	Some((point_a + to, radius))
+}
+
+fn approximate_diameter(area: f32) -> f32 {
+	2.0 * (area / std::f32::consts::PI).sqrt()
 }

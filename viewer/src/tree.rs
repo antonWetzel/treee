@@ -51,6 +51,7 @@ pub struct Tree {
 	pub segments: Reader,
 }
 
+#[derive(Debug)]
 pub struct Node {
 	data: Data,
 	pub corner: na::Point3<f32>,
@@ -60,6 +61,7 @@ pub struct Node {
 	lines: render::Lines,
 }
 
+#[derive(Debug)]
 pub enum Data {
 	Branch(Box<[Option<Node>; 8]>),
 	Leaf,
@@ -242,7 +244,7 @@ impl Node {
 			}
 		}
 
-		(t_max >= t_min && t_max >= 0.0).then_some(t_min)
+		(t_max >= t_min && t_max >= 0.0).then_some(t_max)
 	}
 
 	pub fn raycast(
@@ -282,13 +284,15 @@ impl Node {
 					let cos = direction.dot(&diff.normalize());
 					let sin = (1.0 - cos * cos).sqrt();
 					let distance = sin * diff_length;
-					if distance < point.size {
-						let l = cos * diff_length;
-						if 0.0 <= l && l < best_dist {
-							best = Some(NonZeroU32::new(segment).unwrap());
-							best_dist = l;
-						}
+					if distance > point.size {
+						continue;
 					}
+					let l = cos * diff_length;
+					if l < 0.0 || best_dist < l {
+						continue;
+					}
+					best = Some(NonZeroU32::new(segment).unwrap());
+					best_dist = l;
 				}
 				best
 			},

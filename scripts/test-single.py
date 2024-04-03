@@ -61,10 +61,12 @@ for (directory, folders, files) in os.walk(SOURCE):
         path = directory + "/" + file
         p = subprocess.run(["./target/release/treee", "importer", path, "-o=" + OUTPUT + "/" + file[:-4], "--single-tree"], capture_output=True)
         res = p.stderr.decode()
-        if res == None or res == "":
+        try:
+            res = json.loads(res)
+        except Exception:
             print(p.stdout.decode())
+            print(res)
             continue
-        res = json.loads(res)
         if target_trunk_diameter != "":
             res_trunk_diameter = res["DBH_cm"]
         else:
@@ -97,4 +99,6 @@ for (directory, folders, files) in os.walk(SOURCE):
         out.write(f"{target_height}\t{before}{res_height}{after}\t")
         out.write(f"{target_crown_diameter}\t{before}{res_crown_diameter}{after}\n")
         counter += 1
-        print(counter, path)
+        if counter % 10 == 0:
+            print(counter)
+            out.flush()
