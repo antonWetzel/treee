@@ -240,11 +240,11 @@ impl World {
 
 				let mut seg = self.tree.segment.is_some();
 				ui.with_layout(full, |ui| {
-					ui.set_enabled(seg);
-					if ui.toggle_value(&mut seg, "Segment").changed() && seg.not() {
-						self.tree.segment = None;
-					}
-					ui.set_enabled(true);
+					ui.add_enabled_ui(seg, |ui| {
+						if ui.toggle_value(&mut seg, "Segment").changed() && seg.not() {
+							self.tree.segment = None;
+						}
+					});
 				});
 				if let Some(seg) = &mut self.tree.segment {
 					ui.horizontal(|ui| {
@@ -263,29 +263,30 @@ impl World {
 						{
 							seg.render = MeshRender::Points;
 						}
-						ui.set_enabled(matches!(
+						let enabled = matches!(
 							seg.mesh,
 							segment::MeshState::Done(..) | segment::MeshState::Progress(..)
-						));
-						if ui
-							.add_sized(
-								[ui.available_width() / 2.0, HEIGHT],
-								SelectableLabel::new(seg.render == MeshRender::Mesh, "Mesh"),
-							)
-							.clicked()
-						{
-							seg.render = MeshRender::Mesh;
-						}
-						if ui
-							.add_sized(
-								[ui.available_width() / 1.0, HEIGHT],
-								SelectableLabel::new(seg.render == MeshRender::MeshLines, "Lines"),
-							)
-							.clicked()
-						{
-							seg.render = MeshRender::MeshLines;
-						}
-						ui.set_enabled(true);
+						);
+						ui.add_enabled_ui(enabled, |ui| {
+							if ui
+								.add_sized(
+									[ui.available_width() / 2.0, HEIGHT],
+									SelectableLabel::new(seg.render == MeshRender::Mesh, "Mesh"),
+								)
+								.clicked()
+							{
+								seg.render = MeshRender::Mesh;
+							}
+							if ui
+								.add_sized(
+									[ui.available_width() / 1.0, HEIGHT],
+									SelectableLabel::new(seg.render == MeshRender::MeshLines, "Lines"),
+								)
+								.clicked()
+							{
+								seg.render = MeshRender::MeshLines;
+							}
+						});
 					});
 					ui.horizontal(|ui| {
 						ui.add_sized([LEFT, HEIGHT], Label::new(""));
@@ -560,12 +561,12 @@ impl World {
 								ui.add_sized([LEFT, HEIGHT], Label::new("Target FPS"));
 								ui.add_sized([RIGHT, HEIGHT], Slider::new(target, 10.0..=120.0));
 							});
-							ui.set_enabled(false);
-							ui.horizontal(|ui| {
-								ui.add_sized([LEFT, HEIGHT], Label::new("Precision"));
-								ui.add_sized([RIGHT, HEIGHT], Slider::new(threshold, 0.0..=10.0));
+							ui.add_enabled_ui(false, |ui| {
+								ui.horizontal(|ui| {
+									ui.add_sized([LEFT, HEIGHT], Label::new("Precision"));
+									ui.add_sized([RIGHT, HEIGHT], Slider::new(threshold, 0.0..=10.0));
+								});
 							});
-							ui.set_enabled(true);
 						},
 						lod::Mode::Normal { threshold } => {
 							ui.horizontal(|ui| {
