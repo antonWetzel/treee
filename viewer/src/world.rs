@@ -697,9 +697,9 @@ impl World {
 			.egui
 			.tessellate(full_output.shapes, full_output.pixels_per_point);
 
-		let size = self.window.inner_size();
+		let config = self.window.config();
 		let screen = &egui_wgpu::ScreenDescriptor {
-			size_in_pixels: [size.width, size.height],
+			size_in_pixels: [config.width, config.height],
 			pixels_per_point: 1.0,
 		};
 		for (id, delta) in full_output.textures_delta.set {
