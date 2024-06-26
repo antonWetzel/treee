@@ -1,4 +1,4 @@
-use std::{ops::Deref, path::PathBuf, sync::Arc};
+use std::{ops::Deref, sync::Arc};
 
 use nalgebra as na;
 
@@ -82,149 +82,69 @@ impl Window {
 		self.depth_texture = DepthTexture::new(&state.device, &self.config, "depth");
 	}
 
-	pub fn screen_shot<Source>(
-		&mut self,
-		state: &State,
-		source: &mut Source,
-		update: impl for<'b> FnOnce(&'b mut Source, &mut CommandEncoder),
-		render: impl for<'b> FnOnce(&'b mut Source, &mut RenderPass<'b>),
-		post_process: impl for<'b> FnOnce(&'b mut Source, &mut RenderPass<'b>),
-		background: na::Point3<f32>,
-		path: PathBuf,
-	) {
-		fn ceil_to_multiple(value: u32, base: u32) -> u32 {
-			(value + (base - 1)) / base * base
-		}
-
-		let (texture_width, texture_height, format) = {
-			let output = &self.surface.get_current_texture().unwrap().texture;
-
-			(output.size().width, output.size().height, output.format())
+	pub fn render(&self, state: &State, render: impl for<'b> FnOnce(&'b mut RenderContext)) {
+		let Some(output) = self.surface.get_current_texture().ok() else {
+			return;
 		};
+		let view = output.texture.create_view(&Default::default());
 
-		let mut encoder = state
+		let encoder = state
 			.device
 			.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("Render Encoder") });
 
-		let texture_desc = wgpu::TextureDescriptor {
-			size: wgpu::Extent3d {
-				width: texture_width,
-				height: texture_height,
-				depth_or_array_layers: 1,
-			},
-			mip_level_count: 1,
-			sample_count: 1,
-			dimension: wgpu::TextureDimension::D2,
-			format,
-			usage: wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::RENDER_ATTACHMENT,
-			label: None,
-			view_formats: &Vec::new(),
+		let mut context = RenderContext {
+			encoder,
+			view,
+			depth_texture: &self.depth_texture.view,
 		};
-		let texture = state.device.create_texture(&texture_desc);
-		let view = texture.create_view(&Default::default());
 
-		self.render_to(
-			state,
-			source,
-			update,
-			render,
-			post_process,
-			&view,
-			background,
-			0.0,
-		);
+		render(&mut context);
 
-		let u32_size = std::mem::size_of::<u32>() as u32;
-		let texture_width = ceil_to_multiple(texture_width, 256 / 4);
-		let buffer_size = (u32_size * texture_width * texture_height) as wgpu::BufferAddress;
-
-		let buffer = state.device.create_buffer(&wgpu::BufferDescriptor {
-			size: buffer_size,
-			usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-			label: None,
-			mapped_at_creation: false,
-		});
-
-		encoder.copy_texture_to_buffer(
-			wgpu::ImageCopyTexture {
-				aspect: wgpu::TextureAspect::All,
-				texture: &texture,
-				mip_level: 0,
-				origin: wgpu::Origin3d::ZERO,
-			},
-			wgpu::ImageCopyBuffer {
-				buffer: &buffer,
-				layout: wgpu::ImageDataLayout {
-					offset: 0,
-					bytes_per_row: Some(ceil_to_multiple(
-						u32_size * texture_width,
-						wgpu::COPY_BYTES_PER_ROW_ALIGNMENT,
-					)),
-					rows_per_image: Some(texture_height),
-				},
-			},
-			texture.size(),
-		);
-		state.queue.submit(Some(encoder.finish()));
-
-		let buffer_slice = buffer.slice(..);
-
-		let (tx, rx) = std::sync::mpsc::channel::<wgpu::Buffer>();
-		buffer_slice.map_async(wgpu::MapMode::Read, move |_result| {
-			let buffer = rx.recv().unwrap();
-			let data = buffer.slice(..).get_mapped_range();
-			let mut image = image::RgbaImage::from_raw(
-				texture_width,
-				texture_height,
-				data.iter().copied().collect(),
-			)
-			.unwrap();
-			drop(data);
-
-			for pixel in image.pixels_mut() {
-				pixel.0.swap(0, 2); // hack because input uses BGRA, not RGBA
-			}
-			image.save(path).unwrap();
-			buffer.unmap();
-		});
-		tx.send(buffer).unwrap();
+		state.queue.submit(Some(context.encoder.finish()));
+		output.present();
 	}
 
-	fn render_to<Source>(
-		&mut self,
-		state: &State,
-		source: &mut Source,
-		update: impl for<'b> FnOnce(&'b mut Source, &mut CommandEncoder),
-		render: impl for<'b> FnOnce(&'b mut Source, &mut RenderPass<'b>),
-		post_process: impl for<'b> FnOnce(&'b mut Source, &mut RenderPass<'b>),
+	pub fn inner(&self) -> &winit::window::Window {
+		&self.window
+	}
+}
 
-		view: &wgpu::TextureView,
-		background: na::Point3<f32>,
-		alpha: f32,
-	) {
-		let mut encoder = state
-			.device
-			.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("Render Encoder") });
+// Window stayed open, but unresponsive. Just hide it.
+impl Drop for Window {
+	fn drop(&mut self) {
+		self.window.set_visible(false);
+	}
+}
 
-		update(source, &mut encoder);
+pub struct RenderContext<'a> {
+	encoder: wgpu::CommandEncoder,
+	view: wgpu::TextureView,
+	depth_texture: &'a wgpu::TextureView,
+}
 
-		let mut render_pass = RenderPass::new(encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+impl<'a> RenderContext<'a> {
+	pub fn encoder(&mut self) -> &mut wgpu::CommandEncoder {
+		&mut self.encoder
+	}
+
+	pub fn render_pass(&mut self, background: na::Point3<f32>) -> RenderPass {
+		let render_pass = RenderPass::new(self.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
 			label: Some("Render Pass"),
 			color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-				view,
+				view: &self.view,
 				resolve_target: None,
 				ops: wgpu::Operations {
 					load: wgpu::LoadOp::Clear(wgpu::Color {
 						r: background.x as f64,
 						g: background.y as f64,
 						b: background.z as f64,
-						a: alpha as f64,
+						a: 1.0,
 					}),
 					store: wgpu::StoreOp::Store,
 				},
 			})],
 			depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-				view: &self.depth_texture.view,
+				view: self.depth_texture,
 				depth_ops: Some(wgpu::Operations {
 					load: wgpu::LoadOp::Clear(1.0),
 					store: wgpu::StoreOp::Store,
@@ -234,14 +154,14 @@ impl Window {
 			occlusion_query_set: None,
 			timestamp_writes: None,
 		}));
+		render_pass
+	}
 
-		render(source, &mut render_pass);
-		drop(render_pass);
-
-		let mut render_pass = RenderPass::new(encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+	pub fn post_process_pass(&mut self) -> RenderPass {
+		let render_pass = RenderPass::new(self.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
 			label: Some("eye dome"),
 			color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-				view,
+				view: &self.view,
 				resolve_target: None,
 				ops: wgpu::Operations {
 					load: wgpu::LoadOp::Load,
@@ -252,44 +172,6 @@ impl Window {
 			occlusion_query_set: None,
 			timestamp_writes: None,
 		}));
-		post_process(source, &mut render_pass);
-
-		drop(render_pass);
-
-		state.queue.submit(Some(encoder.finish()));
-	}
-
-	pub fn render<Source>(
-		&mut self,
-		state: &State,
-		source: &mut Source,
-		update: impl for<'b> FnOnce(&'b mut Source, &mut CommandEncoder),
-		render: impl for<'b> FnOnce(&'b mut Source, &mut RenderPass<'b>),
-		post_process: impl for<'b> FnOnce(&'b mut Source, &mut RenderPass<'b>),
-		background: na::Point3<f32>,
-	) {
-		let Some(output) = self.surface.get_current_texture().ok() else {
-			return;
-		};
-		let view = output.texture.create_view(&Default::default());
-
-		self.render_to(
-			state,
-			source,
-			update,
-			render,
-			post_process,
-			&view,
-			background,
-			1.0,
-		);
-		output.present();
-	}
-}
-
-// Window stayed open, but unresponsive. Just hide it.
-impl Drop for Window {
-	fn drop(&mut self) {
-		self.window.set_visible(false);
+		render_pass
 	}
 }

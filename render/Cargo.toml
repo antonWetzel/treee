@@ -15,7 +15,6 @@ image.workspace = true
 log.workspace = true
 wgpu.workspace = true
 winit.workspace = true
-
 nalgebra.workspace = true
 
 [features]

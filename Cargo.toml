@@ -9,7 +9,7 @@ members = [
 	"render",
 	"treee",
 	"triangulation",
-	"viewer",
+	# "viewer",
 	"treee",
 	"data-file",
 ]
@@ -32,7 +32,7 @@ project = { path = "./project" }
 k-nearest = { path = "./k-nearest" }
 triangulation = { path = "./triangulation" }
 importer = { path = "./importer" }
-viewer = { path = "./viewer" }
+# viewer = { path = "./viewer" }
 data-file = { path = "./data-file" }
 
 pollster = "0.3"
@@ -52,9 +52,6 @@ thiserror = "1.0"
 tempfile = "3.8.1"
 rayon = "1.8.0"
 termsize = "0.1"
-egui-wgpu = { version = "0.26", features = ["winit"] }
-egui = "0.26"
-egui-winit = "0.26"
 clap = { version = "4.4", features = ["derive"] }
 voronator = "0.2.1"
 cfg-if = "1.0.0"
@@ -67,3 +64,6 @@ nalgebra = { version = "0.32.4", features = [
 	"bytemuck",
 ] }
 proj4rs = "0.1.2"
+egui-wgpu = { version = "0.27", features = ["winit"] }
+egui = "0.27"
+egui-winit = "0.27"

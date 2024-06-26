@@ -11,14 +11,15 @@ pub struct State {
 pub type RenderError = winit::error::EventLoopError;
 
 impl State {
-	pub async fn new<Any>(
+	pub async fn new(
 		title: &str,
-		event_loop: &winit::event_loop::EventLoop<Any>,
+		event_loop: &winit::event_loop::EventLoopWindowTarget<()>,
 	) -> Result<(Self, Window), RenderError> {
 		let window = winit::window::WindowBuilder::new()
-			.with_visible(false)
-			.build(event_loop)
-			.unwrap();
+			.with_title(title)
+			.with_min_inner_size(winit::dpi::LogicalSize { width: 10, height: 10 })
+			.build(event_loop)?;
+		let window = Arc::new(window);
 
 		let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
 			backends: wgpu::Backends::PRIMARY,
@@ -27,7 +28,7 @@ impl State {
 			gles_minor_version: wgpu::Gles3MinorVersion::default(),
 		});
 
-		let surface = instance.create_surface(&window).unwrap();
+		let surface = instance.create_surface(window.clone()).unwrap();
 
 		let adapter = instance
 			.request_adapter(&wgpu::RequestAdapterOptions {
@@ -52,13 +53,6 @@ impl State {
 			)
 			.await
 			.unwrap();
-
-		let window = winit::window::WindowBuilder::new()
-			.with_title(title)
-			.with_min_inner_size(winit::dpi::LogicalSize { width: 10, height: 10 })
-			.build(event_loop)
-			.unwrap();
-		let window = Arc::new(window);
 
 		let size = window.inner_size();
 		let surface = instance.create_surface(window.clone()).unwrap();
