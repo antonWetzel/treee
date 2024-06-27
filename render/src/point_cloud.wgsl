@@ -20,7 +20,6 @@ struct VertexInput {
 }
 struct InstanceInput {
     @location(1) position: vec3<f32>,
-    @location(2) size: f32,
 }
 
 struct PropertyInput {
@@ -49,8 +48,8 @@ fn vs_main(
     }
 
     var pos = camera.view * vec4<f32>(instance_in.position, 1.0);
-    pos.x += vertex_in.position.x * instance_in.size * environment.scale;
-    pos.y += vertex_in.position.y * instance_in.size * environment.scale;
+    pos.x += vertex_in.position.x * environment.scale;
+    pos.y += vertex_in.position.y * environment.scale;
 
     out.clip_position = camera.proj * pos;
     out.value = property_in.value;

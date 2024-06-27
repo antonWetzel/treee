@@ -9,7 +9,6 @@ workspace = true
 
 [dependencies]
 input.workspace = true
-project.workspace = true
 bytemuck.workspace = true
 image.workspace = true
 log.workspace = true

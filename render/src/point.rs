@@ -11,7 +11,7 @@ unsafe impl bytemuck::Zeroable for PointEdge {}
 unsafe impl bytemuck::Pod for PointEdge {}
 
 const BASE_ATTRIBUTES: [wgpu::VertexAttribute; 1] = vertex_attr_array![0 => Float32x2];
-const ATTRIBUTES: [wgpu::VertexAttribute; 2] = vertex_attr_array![1 => Float32x3, 2 => Float32];
+const ATTRIBUTES: [wgpu::VertexAttribute; 1] = vertex_attr_array![1 => Float32x3];
 const PROPERTY_ATTRIBUTES: [wgpu::VertexAttribute; 1] = vertex_attr_array![4 => Uint32];
 
 pub fn point_base_description<'a>() -> wgpu::VertexBufferLayout<'a> {
@@ -24,7 +24,7 @@ pub fn point_base_description<'a>() -> wgpu::VertexBufferLayout<'a> {
 
 pub fn point_description<'a>(step_mode: wgpu::VertexStepMode) -> wgpu::VertexBufferLayout<'a> {
 	wgpu::VertexBufferLayout {
-		array_stride: std::mem::size_of::<project::Point>() as wgpu::BufferAddress,
+		array_stride: std::mem::size_of::<na::Vector3<f32>>() as wgpu::BufferAddress,
 		step_mode,
 		attributes: &ATTRIBUTES,
 	}

@@ -10,7 +10,6 @@ workspace = true
 
 [dependencies]
 render.workspace = true
-project.workspace = true
 input.workspace = true
 
 pollster.workspace = true

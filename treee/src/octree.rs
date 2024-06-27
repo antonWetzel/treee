@@ -1,6 +1,5 @@
 use std::{collections::HashMap, ops::Not, sync::Mutex};
 
-use crossbeam::deque::Injector;
 use dashmap::DashMap;
 use nalgebra as na;
 
@@ -9,6 +8,7 @@ use crate::task::Task;
 const MAX_POINTS: usize = 1 << 14;
 
 pub struct Octree {
+	pub generation: usize,
 	corner: na::Point3<f32>,
 	size: f32,
 	nodes: DashMap<usize, Node>,
@@ -17,33 +17,38 @@ pub struct Octree {
 enum Node {
 	Branch {},
 	Leaf {
-		points: Vec<project::Point>,
+		points: Vec<na::Point3<f32>>,
 		property: Vec<u32>,
 		dirty: bool,
 	},
 }
 
 impl Octree {
-	pub fn new(corner: na::Point3<f32>, size: f32) -> Self {
-		Self { corner, size, nodes: DashMap::new() }
+	pub fn new(corner: na::Point3<f32>, size: f32, generation: usize) -> Self {
+		Self {
+			corner,
+			size,
+			nodes: DashMap::new(),
+			generation,
+		}
 	}
 
-	pub fn insert(&self, point: na::Point3<f32>, chunk: usize, injector: &Injector<Task>) {
+	pub fn insert(&self, point: na::Point3<f32>, chunk: usize, sender: &crossbeam::channel::Sender<Task>) {
 		let idx = 0;
 		let corner = self.corner;
 		let size = self.size;
-		let point = project::Point { position: point, size: 0.1 };
-		self.insert_with(point, chunk as u32, corner, size, idx, injector);
+		self.insert_with(point, chunk as u32, corner, size, idx, 0, sender);
 	}
 
 	fn insert_with(
 		&self,
-		point: project::Point,
+		point: na::Point3<f32>,
 		chunk: u32,
 		mut corner: na::Point3<f32>,
 		mut size: f32,
 		mut idx: usize,
-		injector: &Injector<Task>,
+		mut dim: usize,
+		sender: &crossbeam::channel::Sender<Task>,
 	) {
 		loop {
 			let mut entry = self.nodes.entry(idx).or_insert_with(|| Node::Leaf {
@@ -59,7 +64,7 @@ impl Octree {
 				Node::Leaf { points, property, dirty } => {
 					if dirty.not() {
 						*dirty = true;
-						injector.push(Task::Update(idx));
+						sender.send(Task::Update(idx)).unwrap();
 					}
 					if points.len() < MAX_POINTS {
 						points.push(point);
@@ -72,20 +77,20 @@ impl Octree {
 					drop(entry);
 
 					for (point, chunk) in points.into_iter().zip(property) {
-						self.insert_with(point, chunk, corner, size, idx, injector);
+						self.insert_with(point, chunk, corner, size, idx, dim, sender);
 					}
-					self.insert_with(point, chunk, corner, size, idx, injector);
+					self.insert_with(point, chunk, corner, size, idx, dim, sender);
 				},
 			}
-
-			size /= 2.0;
-			idx = idx * 8 + 1;
-			for i in 0..3 {
-				if point.position[i] >= corner[i] + size {
-					idx += 1 << i;
-					corner[i] += size;
-				}
+			if dim == 0 {
+				size /= 2.0;
 			}
+			idx = idx * 2 + 1;
+			if point[dim] >= corner[dim] + size {
+				idx += 1;
+				corner[dim] += size;
+			}
+			dim = (dim + 1) % 3;
 		}
 	}
 
@@ -138,8 +143,8 @@ impl Octree {
 		match node.value_mut() {
 			Node::Branch { .. } => {
 				drop(node);
-				idx = idx * 8 + 1;
-				for i in 0..8 {
+				idx = idx * 2 + 1;
+				for i in 0..2 {
 					self.render_with(point_cloud_pass, point_clouds, idx + i)
 				}
 			},

@@ -37,7 +37,7 @@ pub struct DisplaySettings {
 
 pub struct World {
 	pub state: render::State,
-	pub injector: crossbeam::deque::Injector<Task>,
+	pub task_sender: crossbeam::channel::Sender<Task>,
 	pub sender: crossbeam::channel::Sender<TaskResult>,
 	pub octree: RwLock<Octree>,
 
@@ -50,13 +50,13 @@ impl Program {
 	pub fn new(event_loop: &EventLoop) -> Result<Self, Error> {
 		let (state, window) = render::State::new("Treee", event_loop).block_on()?;
 
-		let injector = crossbeam::deque::Injector::<Task>::new();
+		let (task_sender, task_reciever) = crossbeam::channel::unbounded();
 		let (sender, reciever) = crossbeam::channel::unbounded();
 
 		let point_cloud_state = render::PointCloudState::new(&state);
 		let point_clouds = std::sync::Mutex::new(HashMap::new());
 		let fallback_property = render::PointCloudProperty::new_empty(&state);
-		let point_cloud_environment = render::PointCloudEnvironment::new(&state, 0, u32::MAX, 1.0);
+		let point_cloud_environment = render::PointCloudEnvironment::new(&state, 0, u32::MAX, 0.1);
 		let lookup = render::Lookup::new_png(
 			&state,
 			include_bytes!("../../viewer/assets/grad_warm.png"),
@@ -67,9 +67,9 @@ impl Program {
 
 		let world = World {
 			state,
-			injector,
+			task_sender,
 			sender,
-			octree: RwLock::new(Octree::new(na::point![0.0, 0.0, 0.0], 0.0)),
+			octree: RwLock::new(Octree::new(na::point![0.0, 0.0, 0.0], 0.0, 0)),
 
 			point_cloud_state,
 			point_clouds,
@@ -78,18 +78,10 @@ impl Program {
 		let world = Arc::new(world);
 
 		for _ in 0..num_cpus::get() {
-			let world = std::sync::Arc::downgrade(&world);
+			let world = world.clone();
+			let reciever = task_reciever.clone();
 			std::thread::spawn(move || {
-				while let Some(world) = world.upgrade() {
-					let task = match world.injector.steal() {
-						crossbeam::deque::Steal::Success(task) => task,
-						crossbeam::deque::Steal::Empty => {
-							// std::hint::spin_loop();
-							std::thread::yield_now();
-							continue;
-						},
-						crossbeam::deque::Steal::Retry => continue,
-					};
+				for task in reciever {
 					if let Err(error) = task.run(&world) {
 						world.sender.send(TaskResult::Error(error)).unwrap();
 					}
@@ -135,14 +127,7 @@ impl Program {
 			egui::TopBottomPanel::top("panel")
 				.resizable(false)
 				.show(ctx, |ui| {
-					ui.horizontal(|ui| {
-						crate::ui::ui(
-							ui,
-							&mut self.display_settings,
-							&self.world.injector,
-							&self.world.state,
-						)
-					})
+					ui.horizontal(|ui| crate::ui::ui(ui, &mut self.display_settings, &self.world))
 				});
 		});
 		self.egui_winit

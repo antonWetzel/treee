@@ -2180,7 +2180,6 @@ dependencies = [
  "input",
  "log",
  "nalgebra",
- "project",
  "wgpu",
  "winit",
 ]
@@ -2620,7 +2619,6 @@ dependencies = [
  "nalgebra",
  "num_cpus",
  "pollster",
- "project",
  "render",
  "rfd",
  "static_assertions",

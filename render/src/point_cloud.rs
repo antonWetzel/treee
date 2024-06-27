@@ -1,5 +1,4 @@
 use nalgebra as na;
-use project::{Point, MAX_LEAF_SIZE};
 use wgpu::util::DeviceExt;
 
 use crate::{
@@ -175,7 +174,7 @@ pub struct PointCloud {
 }
 
 impl PointCloud {
-	pub fn new(state: &State, vertices: &[Point]) -> Self {
+	pub fn new(state: &State, vertices: &[na::Point3<f32>]) -> Self {
 		let buffer = state
 			.device
 			.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -232,7 +231,7 @@ impl PointCloudProperty {
 	pub fn new_empty(state: &State) -> Self {
 		let buffer = state.device.create_buffer(&wgpu::BufferDescriptor {
 			label: Some("point cloud property buffer"),
-			size: (MAX_LEAF_SIZE * std::mem::size_of::<u32>()) as u64,
+			size: ((1 << 14) * std::mem::size_of::<u32>()) as u64,
 			usage: wgpu::BufferUsages::VERTEX,
 			mapped_at_creation: false,
 		});

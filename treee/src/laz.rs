@@ -15,6 +15,7 @@ use crate::Error;
 
 #[derive(Debug)]
 pub struct Laz {
+	pub generation: usize,
 	items: Vec<laz::LazItem>,
 	chunks: Vec<(u64, u64, usize)>,
 	point_length: usize,
@@ -30,7 +31,7 @@ pub struct Laz {
 }
 
 impl Laz {
-	pub fn new(path: &Path) -> Result<Self, Error> {
+	pub fn new(path: &Path, generation: usize) -> Result<Self, Error> {
 		let mut file = std::fs::File::open(path)?;
 
 		let header = Header::new(&mut file)?;
@@ -83,6 +84,7 @@ impl Laz {
 		};
 
 		Ok(Self {
+			generation,
 			chunks,
 			items: vlr.map(|vlr| vlr.items().clone()).unwrap_or(Vec::new()),
 			point_length,
