@@ -2,7 +2,6 @@ mod camera;
 mod laz;
 mod octree;
 mod program;
-mod task;
 mod ui;
 
 use nalgebra as na;
@@ -118,7 +117,7 @@ impl App {
 						program
 							.display_settings
 							.camera
-							.rotate(delta, &program.world.state);
+							.rotate(delta, &program.state);
 					}
 				},
 				winit::event::WindowEvent::MouseWheel { delta, .. } => {
@@ -129,7 +128,7 @@ impl App {
 					program
 						.display_settings
 						.camera
-						.scroll(delta, &program.world.state);
+						.scroll(delta, &program.state);
 				},
 				_ => {},
 			}

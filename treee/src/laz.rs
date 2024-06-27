@@ -2,36 +2,35 @@ use laz::{
 	las::file::{read_vlrs_and_get_laszip_vlr, QuickHeader},
 	laszip::ChunkTable,
 	record::{LayeredPointRecordDecompressor, RecordDecompressor, SequentialPointRecordDecompressor},
+	LazVlr,
 };
 use nalgebra as na;
 
+use rayon::prelude::*;
 use std::{
-	fs::File,
-	io::{Cursor, Read, Seek, SeekFrom},
-	path::Path,
+	io::{BufReader, Read, Seek, SeekFrom},
+	path::{Path, PathBuf},
 };
 
 use crate::Error;
 
-#[derive(Debug)]
 pub struct Laz {
-	pub generation: usize,
-	items: Vec<laz::LazItem>,
-	chunks: Vec<(u64, u64, usize)>,
+	vlr: Option<LazVlr>,
+	chunks: Vec<(u64, usize)>,
 	point_length: usize,
 	center: na::Point3<f64>,
 	offset: na::Point3<f64>,
 	scale: na::Point3<f64>,
 
-	file: File,
-	idx: usize,
+	path: PathBuf,
 
 	pub min: na::Point3<f32>,
 	pub max: na::Point3<f32>,
+	pub world_offset: na::Point3<f64>,
 }
 
 impl Laz {
-	pub fn new(path: &Path, generation: usize) -> Result<Self, Error> {
+	pub fn new(path: &Path) -> Result<Self, Error> {
 		let mut file = std::fs::File::open(path)?;
 
 		let header = Header::new(&mut file)?;
@@ -62,7 +61,7 @@ impl Laz {
 
 					let l = (x.point_count as usize).min(remaining);
 					remaining -= l;
-					(s, x.byte_count, l)
+					(s, l)
 				})
 				.collect::<Vec<_>>();
 
@@ -71,104 +70,81 @@ impl Laz {
 			let mut chunks = Vec::new();
 			let mut start = header.offset_to_point_data as u64;
 			const DEFAULT_CHUNK_SIZE: usize = 50_000;
-			let bytes = (DEFAULT_CHUNK_SIZE * point_length) as u64;
 			for _ in 0..(total / DEFAULT_CHUNK_SIZE) {
-				chunks.push((start, bytes, DEFAULT_CHUNK_SIZE));
-				start += bytes;
+				chunks.push((start, DEFAULT_CHUNK_SIZE));
+				start += (DEFAULT_CHUNK_SIZE * point_length) as u64;
 			}
 			let rem = total % DEFAULT_CHUNK_SIZE;
 			if rem != 0 {
-				chunks.push((start, (rem * point_length) as u64, rem));
+				chunks.push((start, rem));
 			}
 			(chunks, None)
 		};
 
 		Ok(Self {
-			generation,
 			chunks,
-			items: vlr.map(|vlr| vlr.items().clone()).unwrap_or(Vec::new()),
+			vlr,
 			point_length,
 			scale,
 			offset,
 			center,
-			file: File::open(path).unwrap(),
+			path: path.to_owned(),
 
 			min: (min - center).map(|x| x as f32).into(),
 			max: (max - center).map(|x| x as f32).into(),
-
-			idx: 0,
+			world_offset: center,
 		})
 	}
 
-	pub fn chunks(&self) -> usize {
-		self.chunks.len()
-	}
+	pub fn read(self, cb: impl Fn(Chunk) + std::marker::Sync) -> Result<(), Error> {
+		self.chunks
+			.into_par_iter()
+			.map_init(
+				|| BufReader::new(std::fs::File::open(&self.path).unwrap()),
+				|file, (s, l)| {
+					file.seek(SeekFrom::Start(s))?;
 
-	pub fn get_chunk(&mut self) -> Option<PreChunk> {
-		let (s, bytes, length) = self.chunks.pop()?;
-		self.file.seek(SeekFrom::Start(s)).unwrap();
-		let mut data = vec![0u8; bytes as usize];
-		self.file.read_exact(&mut data).unwrap();
-		self.idx += 1;
-		Some(PreChunk {
-			data,
-			length,
-			idx: self.idx,
-			items: self.items.clone(),
-			point_length: self.point_length,
-			offset: self.offset,
-			scale: self.scale,
-			center: self.center,
-		})
-	}
-}
+					let mut slice = vec![0; l * self.point_length];
+					if let Some(vlr) = &self.vlr {
+						match vlr.items().first().unwrap().version() {
+							1 | 2 => {
+								let mut decompress: SequentialPointRecordDecompressor<
+									'_,
+									&mut BufReader<std::fs::File>,
+								> = SequentialPointRecordDecompressor::new(file);
+								decompress.set_fields_from(vlr.items())?;
+								decompress.decompress_many(&mut slice).unwrap();
+							},
+							3 | 4 => {
+								let mut decompress = LayeredPointRecordDecompressor::new(file);
+								decompress.set_fields_from(vlr.items())?;
+								decompress.decompress_many(&mut slice).unwrap();
+							},
+							v => unimplemented!("Laz version {}", v),
+						}
+					} else {
+						file.read_exact(&mut slice)?;
+					}
 
-#[derive(Debug)]
-pub struct PreChunk {
-	pub idx: usize,
-	data: Vec<u8>,
-	length: usize,
-	items: Vec<laz::LazItem>,
-	point_length: usize,
-	offset: na::Point3<f64>,
-	scale: na::Point3<f64>,
-	center: na::Point3<f64>,
-}
+					let chunk = Chunk {
+						slice,
+						current: 0,
+						point_length: self.point_length,
 
-impl PreChunk {
-	pub fn decompress(self) -> Chunk {
-		let slice = if let Some(first_item) = self.items.first() {
-			let data = Cursor::new(self.data);
-			let mut slice = vec![0; self.length * self.point_length];
-			match first_item.version() {
-				1 | 2 => {
-					let mut decompress = SequentialPointRecordDecompressor::new(data);
-					decompress.set_fields_from(&self.items).unwrap();
-					decompress.decompress_many(&mut slice).unwrap();
+						offset: self.offset,
+						scale: self.scale,
+						center: self.center,
+					};
+
+					cb(chunk);
+					Ok(())
 				},
-				3 | 4 => {
-					let mut decompress = LayeredPointRecordDecompressor::new(data);
-					decompress.set_fields_from(&self.items).unwrap();
-					decompress.decompress_many(&mut slice).unwrap();
-				},
-				v => unimplemented!("Laz version {}", v),
-			}
-			slice
-		} else {
-			self.data
-		};
-		Chunk {
-			slice: slice,
-			current: 0,
-			point_length: self.point_length,
-			offset: self.offset,
-			scale: self.scale,
-			center: self.center,
-		}
+			)
+			.find_any(|r| r.is_err())
+			.unwrap_or(Ok(()))
 	}
 }
 
-#[derive(Debug)]
 pub struct Chunk {
 	slice: Vec<u8>,
 	current: usize,
@@ -179,6 +155,19 @@ pub struct Chunk {
 }
 
 impl Chunk {
+	pub fn length(&self) -> usize {
+		self.slice.len() / self.point_length
+	}
+
+	pub fn read(mut self) -> Vec<na::Point3<f32>> {
+		let amount = self.slice.len() / self.point_length;
+		let mut res = Vec::with_capacity(amount);
+		for _ in 0..amount {
+			res.push(self.next_point());
+		}
+		res
+	}
+
 	fn next_point(&mut self) -> na::Point3<f32> {
 		let slice = &self.slice[self.current..(self.current + 12)];
 		let x = i32::from_le_bytes(slice[0..4].try_into().unwrap());

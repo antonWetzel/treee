@@ -1,20 +1,16 @@
+use crate::camera::Camera;
+use crate::laz::Laz;
 use crate::octree::Octree;
-use crate::{camera::Camera, task::Task};
 use crate::{Error, EventLoop};
 use nalgebra as na;
 use pollster::FutureExt;
-use std::{
-	collections::HashMap,
-	sync::{Arc, RwLock},
-};
-
-use crate::task::TaskResult;
+use std::path::PathBuf;
+use std::{collections::HashMap, sync::Arc};
 
 pub struct Program {
-	pub world: Arc<World>,
+	pub world: World,
+	pub state: Arc<render::State>,
 	pub window: render::Window,
-	pub reciever: crossbeam::channel::Receiver<TaskResult>,
-
 	pub keyboard: input::Keyboard,
 	pub mouse: input::Mouse,
 	time: Time,
@@ -35,27 +31,73 @@ pub struct DisplaySettings {
 	pub camera: Camera,
 }
 
-pub struct World {
-	pub state: render::State,
-	pub task_sender: crossbeam::channel::Sender<Task>,
-	pub sender: crossbeam::channel::Sender<TaskResult>,
-	pub octree: RwLock<Octree>,
+pub enum World {
+	Empty,
+	Preview(Arc<Preview>),
+}
+
+impl World {
+	pub fn preview(path: PathBuf, state: Arc<render::State>) -> Self {
+		let point_cloud_state = render::PointCloudState::new(&state);
+		let point_clouds = std::sync::Mutex::new(HashMap::new());
+
+		let laz = Laz::new(&path).unwrap();
+
+		let corner = laz.min;
+		let diff = laz.max - laz.min;
+		let size = diff.x.max(diff.y).max(diff.z);
+
+		let preview = Preview {
+			state: state.clone(),
+			octree: Octree::new(corner, size),
+
+			point_cloud_state,
+			point_clouds,
+		};
+		let preview = Arc::new(preview);
+
+		{
+			let (sender, reciever) = crossbeam::channel::unbounded();
+			let preview = preview.clone();
+			std::thread::spawn(move || {
+				laz.read(|chunk| {
+					while reciever.len() > 1000 {
+						let Ok(idx) = reciever.try_recv() else {
+							break;
+						};
+						preview
+							.octree
+							.update(&preview.state, &preview.point_clouds, idx);
+					}
+					preview
+						.octree
+						.insert(chunk.read(), |idx| sender.send(idx).unwrap());
+				})
+				.unwrap();
+				while let Ok(idx) = reciever.recv() {
+					preview
+						.octree
+						.update(&preview.state, &preview.point_clouds, idx);
+				}
+			});
+		}
+
+		Self::Preview(preview)
+	}
+}
+
+pub struct Preview {
+	pub state: Arc<render::State>,
+	pub octree: Octree,
 
 	pub point_cloud_state: render::PointCloudState,
 	pub point_clouds: std::sync::Mutex<HashMap<usize, (render::PointCloud, render::PointCloudProperty)>>,
-	pub fallback_property: render::PointCloudProperty,
 }
 
 impl Program {
 	pub fn new(event_loop: &EventLoop) -> Result<Self, Error> {
 		let (state, window) = render::State::new("Treee", event_loop).block_on()?;
 
-		let (task_sender, task_reciever) = crossbeam::channel::unbounded();
-		let (sender, reciever) = crossbeam::channel::unbounded();
-
-		let point_cloud_state = render::PointCloudState::new(&state);
-		let point_clouds = std::sync::Mutex::new(HashMap::new());
-		let fallback_property = render::PointCloudProperty::new_empty(&state);
 		let point_cloud_environment = render::PointCloudEnvironment::new(&state, 0, u32::MAX, 0.1);
 		let lookup = render::Lookup::new_png(
 			&state,
@@ -65,39 +107,15 @@ impl Program {
 		let camera = Camera::new(&state, window.get_aspect());
 		let eye_dome = render::EyeDome::new(&state, window.config(), window.depth_texture(), 0.7);
 
-		let world = World {
-			state,
-			task_sender,
-			sender,
-			octree: RwLock::new(Octree::new(na::point![0.0, 0.0, 0.0], 0.0, 0)),
-
-			point_cloud_state,
-			point_clouds,
-			fallback_property,
-		};
-		let world = Arc::new(world);
-
-		for _ in 0..num_cpus::get() {
-			let world = world.clone();
-			let reciever = task_reciever.clone();
-			std::thread::spawn(move || {
-				for task in reciever {
-					if let Err(error) = task.run(&world) {
-						world.sender.send(TaskResult::Error(error)).unwrap();
-					}
-				}
-				println!("Worker exit");
-			});
-		}
-
 		let egui = egui::Context::default();
 		let egui_winit = egui_winit::State::new(egui.clone(), egui.viewport_id(), window.inner(), None, None);
-		let egui_wgpu = egui_wgpu::Renderer::new(world.state.device(), world.state.surface_format(), None, 1);
+		let egui_wgpu = egui_wgpu::Renderer::new(state.device(), state.surface_format(), None, 1);
 
 		Ok(Self {
-			world,
+			world: World::Empty,
+			state: Arc::new(state),
 			window,
-			reciever,
+			// reciever,
 			egui,
 			egui_winit,
 			egui_wgpu,
@@ -127,7 +145,18 @@ impl Program {
 			egui::TopBottomPanel::top("panel")
 				.resizable(false)
 				.show(ctx, |ui| {
-					ui.horizontal(|ui| crate::ui::ui(ui, &mut self.display_settings, &self.world))
+					ui.horizontal(|ui| match &self.world {
+						World::Empty => match crate::ui::empty(ui) {
+							crate::ui::EmptyResponse::None => {},
+							crate::ui::EmptyResponse::Load(path) => {
+								self.world = World::preview(path, self.state.clone())
+							},
+						},
+						World::Preview(preview) => match crate::ui::preview(ui, &mut self.display_settings, preview) {
+							crate::ui::PreviewResponse::None => {},
+							crate::ui::PreviewResponse::Close => self.world = World::Empty,
+						},
+					});
 				});
 		});
 		self.egui_winit
@@ -143,45 +172,62 @@ impl Program {
 			pixels_per_point: 1.0,
 		};
 		for (id, delta) in full_output.textures_delta.set {
-			self.egui_wgpu.update_texture(
-				&self.world.state.device,
-				&self.world.state.queue,
-				id,
-				&delta,
-			);
+			self.egui_wgpu
+				.update_texture(&self.state.device, &self.state.queue, id, &delta);
 		}
 		for id in full_output.textures_delta.free {
 			self.egui_wgpu.free_texture(&id);
 		}
-		let octree = self.world.octree.read().unwrap();
-		let point_clouds = self.world.point_clouds.lock().unwrap();
 
-		self.window.render(&self.world.state, |context| {
-			let command_encoder = context.encoder();
-			let commands = self.egui_wgpu.update_buffers(
-				&self.world.state.device,
-				&self.world.state.queue,
-				command_encoder,
-				&paint_jobs,
-				screen,
-			);
-			self.world.state.queue.submit(commands);
+		match &self.world {
+			World::Empty => {
+				self.window.render(&self.state, |context| {
+					let command_encoder = context.encoder();
+					let commands = self.egui_wgpu.update_buffers(
+						&self.state.device,
+						&self.state.queue,
+						command_encoder,
+						&paint_jobs,
+						screen,
+					);
+					self.state.queue.submit(commands);
+					let _ = context.render_pass(self.display_settings.background);
 
-			let mut render_pass = context.render_pass(self.display_settings.background);
-			let point_cloud_pass = self.world.point_cloud_state.render(
-				&mut render_pass,
-				self.display_settings.camera.gpu(),
-				&self.display_settings.lookup,
-				&self.display_settings.point_cloud_environment,
-			);
-			octree.render(point_cloud_pass, &point_clouds);
-			drop(render_pass);
+					let mut render_pass = context.post_process_pass();
+					self.egui_wgpu.render(&mut render_pass, &paint_jobs, screen);
+					drop(render_pass);
+				});
+			},
+			World::Preview(preview) => {
+				let point_clouds = preview.point_clouds.lock().unwrap();
+				self.window.render(&self.state, |context| {
+					let command_encoder = context.encoder();
+					let commands = self.egui_wgpu.update_buffers(
+						&self.state.device,
+						&self.state.queue,
+						command_encoder,
+						&paint_jobs,
+						screen,
+					);
+					self.state.queue.submit(commands);
 
-			let mut render_pass = context.post_process_pass();
-			self.eye_dome.render(&mut render_pass);
-			self.egui_wgpu.render(&mut render_pass, &paint_jobs, screen);
-			drop(render_pass);
-		});
+					let mut render_pass = context.render_pass(self.display_settings.background);
+					let point_cloud_pass = preview.point_cloud_state.render(
+						&mut render_pass,
+						self.display_settings.camera.gpu(),
+						&self.display_settings.lookup,
+						&self.display_settings.point_cloud_environment,
+					);
+					preview.octree.render(point_cloud_pass, &point_clouds);
+					drop(render_pass);
+
+					let mut render_pass = context.post_process_pass();
+					self.eye_dome.render(&mut render_pass);
+					self.egui_wgpu.render(&mut render_pass, &paint_jobs, screen);
+					drop(render_pass);
+				});
+			},
+		}
 	}
 
 	pub fn update(&mut self) -> Result<(), Error> {
@@ -204,14 +250,7 @@ impl Program {
 			direction *= 10.0 * delta / l;
 			self.display_settings
 				.camera
-				.movement(direction, &self.world.state);
-		}
-
-		while let Ok(res) = self.reciever.try_recv() {
-			match res {
-				TaskResult::Error(error) => return Err(error),
-				TaskResult::Lookup(lookup) => self.display_settings.lookup = lookup,
-			}
+				.movement(direction, &self.state);
 		}
 
 		Ok(())
@@ -223,12 +262,12 @@ impl Program {
 			return;
 		}
 		self.paused = false;
-		self.window.resized(&self.world.state);
+		self.window.resized(&self.state);
 		self.display_settings
 			.camera
-			.update_aspect(self.window.get_aspect(), &self.world.state);
+			.update_aspect(self.window.get_aspect(), &self.state);
 		self.eye_dome
-			.update_depth(&self.world.state, self.window.depth_texture());
+			.update_depth(&self.state, self.window.depth_texture());
 	}
 }
 

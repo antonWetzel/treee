@@ -3,12 +3,9 @@ use std::{collections::HashMap, ops::Not, sync::Mutex};
 use dashmap::DashMap;
 use nalgebra as na;
 
-use crate::task::Task;
-
 const MAX_POINTS: usize = 1 << 14;
 
 pub struct Octree {
-	pub generation: usize,
 	corner: na::Point3<f32>,
 	size: f32,
 	nodes: DashMap<usize, Node>,
@@ -24,73 +21,69 @@ enum Node {
 }
 
 impl Octree {
-	pub fn new(corner: na::Point3<f32>, size: f32, generation: usize) -> Self {
-		Self {
-			corner,
-			size,
-			nodes: DashMap::new(),
-			generation,
-		}
+	pub fn new(corner: na::Point3<f32>, size: f32) -> Self {
+		Self { corner, size, nodes: DashMap::new() }
 	}
 
-	pub fn insert(&self, point: na::Point3<f32>, chunk: usize, sender: &crossbeam::channel::Sender<Task>) {
+	pub fn insert(&self, mut points: Vec<na::Point3<f32>>, mut changed: impl FnMut(usize)) {
 		let idx = 0;
 		let corner = self.corner;
 		let size = self.size;
-		self.insert_with(point, chunk as u32, corner, size, idx, 0, sender);
+		self.insert_with(&mut points, corner, size, idx, 0, &mut changed);
 	}
 
 	fn insert_with(
 		&self,
-		point: na::Point3<f32>,
-		chunk: u32,
-		mut corner: na::Point3<f32>,
+		new_points: &mut [na::Point3<f32>],
+		corner: na::Point3<f32>,
 		mut size: f32,
-		mut idx: usize,
-		mut dim: usize,
-		sender: &crossbeam::channel::Sender<Task>,
+		idx: usize,
+		dim: usize,
+		changed: &mut impl FnMut(usize),
 	) {
-		loop {
-			let mut entry = self.nodes.entry(idx).or_insert_with(|| Node::Leaf {
-				points: Vec::new(),
-				property: Vec::new(),
-				dirty: false,
-			});
-			let node = entry.value_mut();
-			match node {
-				Node::Branch {} => {
-					drop(entry);
-				},
-				Node::Leaf { points, property, dirty } => {
+		let mut entry = self.nodes.entry(idx).or_insert_with(|| Node::Leaf {
+			points: Vec::new(),
+			property: Vec::new(),
+			dirty: false,
+		});
+		let node = entry.value_mut();
+		match node {
+			Node::Branch {} => {
+				drop(entry);
+				if dim == 0 {
+					size /= 2.0;
+				}
+				let sep = partition_points(new_points, corner[dim] + size, dim);
+				let (left, right) = new_points.split_at_mut(sep);
+				let mut right_corner = corner;
+				right_corner[dim] += size;
+				let dim = (dim + 1) % 3;
+				if left.is_empty().not() {
+					self.insert_with(left, corner, size, idx * 2 + 1, dim, changed);
+				}
+				if right.is_empty().not() {
+					self.insert_with(right, right_corner, size, idx * 2 + 2, dim, changed);
+				}
+			},
+			Node::Leaf { points, property, dirty } => {
+				if points.len() + new_points.len() < MAX_POINTS {
 					if dirty.not() {
 						*dirty = true;
-						sender.send(Task::Update(idx)).unwrap();
+						changed(idx);
 					}
-					if points.len() < MAX_POINTS {
-						points.push(point);
-						property.push(chunk);
-						break;
+					points.extend_from_slice(new_points);
+					for _ in 0..new_points.len() {
+						property.push(0);
 					}
-					let points = std::mem::take(points);
-					let property = std::mem::take(property);
-					*node = Node::Branch {};
-					drop(entry);
+					return;
+				}
+				let mut points = std::mem::take(points);
+				*node = Node::Branch {};
+				drop(entry);
 
-					for (point, chunk) in points.into_iter().zip(property) {
-						self.insert_with(point, chunk, corner, size, idx, dim, sender);
-					}
-					self.insert_with(point, chunk, corner, size, idx, dim, sender);
-				},
-			}
-			if dim == 0 {
-				size /= 2.0;
-			}
-			idx = idx * 2 + 1;
-			if point[dim] >= corner[dim] + size {
-				idx += 1;
-				corner[dim] += size;
-			}
-			dim = (dim + 1) % 3;
+				self.insert_with(&mut points, corner, size, idx, dim, changed);
+				self.insert_with(new_points, corner, size, idx, dim, changed);
+			},
 		}
 	}
 
@@ -108,9 +101,7 @@ impl Octree {
 				drop(node);
 			},
 			Node::Leaf { points, property, dirty } => {
-				if dirty.not() {
-					return;
-				}
+				assert!(*dirty);
 				*dirty = false;
 				let point_cloud = render::PointCloud::new(state, points);
 				let property = render::PointCloudProperty::new(state, property);
@@ -156,4 +147,22 @@ impl Octree {
 			},
 		}
 	}
+}
+
+fn partition_points(points: &mut [na::Point3<f32>], sep: f32, dim: usize) -> usize {
+	if points.is_empty() {
+		return 0;
+	}
+	let mut start = 0;
+	let mut end = points.len() - 1;
+
+	while start < end {
+		if points[start][dim] >= sep {
+			points.swap(start, end);
+			end -= 1;
+		} else {
+			start += 1;
+		}
+	}
+	start
 }
