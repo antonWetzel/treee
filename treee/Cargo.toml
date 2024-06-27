@@ -9,8 +9,11 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
-pollster.workspace = true
 render.workspace = true
+project.workspace = true
+input.workspace = true
+
+pollster.workspace = true
 winit.workspace = true
 thiserror.workspace = true
 crossbeam.workspace = true
@@ -20,3 +23,8 @@ nalgebra.workspace = true
 egui.workspace = true
 egui-winit.workspace = true
 egui-wgpu.workspace = true
+rfd.workspace = true
+laz.workspace = true
+bytemuck.workspace = true
+static_assertions.workspace = true
+dashmap.workspace = true

@@ -3,7 +3,7 @@
 [workspace]
 members = [
 	"project",
-	"importer",
+	# "importer",
 	"input",
 	"k-nearest",
 	"render",
@@ -31,7 +31,7 @@ input = { path = "./input" }
 project = { path = "./project" }
 k-nearest = { path = "./k-nearest" }
 triangulation = { path = "./triangulation" }
-importer = { path = "./importer" }
+# importer = { path = "./importer" }
 # viewer = { path = "./viewer" }
 data-file = { path = "./data-file" }
 
@@ -67,3 +67,4 @@ proj4rs = "0.1.2"
 egui-wgpu = { version = "0.27", features = ["winit"] }
 egui = "0.27"
 egui-winit = "0.27"
+dashmap = "6.0.1"

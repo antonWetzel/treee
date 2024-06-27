@@ -148,47 +148,25 @@ impl PointCloudState {
 			pipeline,
 		}
 	}
+
+	pub fn render<'a, 'b>(
+		&'a self,
+		render_pass: &'b mut RenderPass<'a>,
+		camera: &'a Camera3DGPU,
+		lookup: &'a Lookup,
+		environment: &'a PointCloudEnvironment,
+	) -> &'b mut PointCloudPass<'a> {
+		render_pass.set_pipeline(&self.pipeline);
+		render_pass.set_bind_group(0, camera.get_bind_group(), &[]);
+		render_pass.set_bind_group(1, &environment.bind_group, &[]);
+		render_pass.set_bind_group(2, lookup.get_bind_group(), &[]);
+		render_pass.set_vertex_buffer(0, self.base.slice(..));
+		unsafe { std::mem::transmute::<_, &mut PointCloudPass<'a>>(render_pass) }
+	}
 }
 
 #[repr(transparent)]
 pub struct PointCloudPass<'a>(wgpu::RenderPass<'a>);
-
-pub trait PointCloudRender {
-	fn render<'a>(&'a self, point_cloud_pass: &mut PointCloudPass<'a>);
-}
-
-pub trait PointCloudExt<'a, V> {
-	fn render_point_clouds(
-		&mut self,
-		value: &'a V,
-		state: &'a PointCloudState,
-		camera: &'a Camera3DGPU,
-		lookup: &'a Lookup,
-		environment: &'a PointCloudEnvironment,
-	);
-}
-
-impl<'a, V> PointCloudExt<'a, V> for RenderPass<'a>
-where
-	V: PointCloudRender,
-{
-	fn render_point_clouds(
-		&mut self,
-		value: &'a V,
-		state: &'a PointCloudState,
-		camera: &'a Camera3DGPU,
-		lookup: &'a Lookup,
-		environment: &'a PointCloudEnvironment,
-	) {
-		self.set_pipeline(&state.pipeline);
-		self.set_bind_group(0, camera.get_bind_group(), &[]);
-		self.set_bind_group(1, &environment.bind_group, &[]);
-		self.set_bind_group(2, lookup.get_bind_group(), &[]);
-		self.set_vertex_buffer(0, state.base.slice(..));
-		let lines_pass = unsafe { std::mem::transmute::<_, &mut PointCloudPass<'a>>(self) };
-		value.render(lines_pass);
-	}
-}
 
 #[derive(Debug)]
 pub struct PointCloud {
@@ -298,6 +276,10 @@ impl PointCloudEnvironment {
 			label: Some("point cloud environment bindgroup"),
 		});
 		Self { bind_group, min, max, scale }
+	}
+
+	pub fn update(&mut self, state: &State) {
+		*self = Self::new(state, self.min, self.max, self.scale);
 	}
 
 	pub fn get_layout(state: &State) -> wgpu::BindGroupLayout {

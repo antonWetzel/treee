@@ -88,7 +88,6 @@ impl Project {
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Point {
 	pub position: na::Point<f32, 3>,
-	pub normal: na::SVector<f32, 3>,
 	pub size: f32,
 }
 

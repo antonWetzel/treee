@@ -60,7 +60,7 @@ impl Camera3DGPU {
 		let view = transform.inverse().to_homogeneous();
 		let proj = camera.projection();
 
-		let uniform = Uniform { view_proj: proj * view };
+		let uniform = Uniform { view, proj };
 		let buffer = state
 			.device
 			.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -106,7 +106,8 @@ impl Camera3DGPU {
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 struct Uniform {
-	pub view_proj: na::Matrix4<f32>,
+	pub view: na::Matrix4<f32>,
+	pub proj: na::Matrix4<f32>,
 }
 
 unsafe impl bytemuck::Zeroable for Uniform {}

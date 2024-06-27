@@ -2,6 +2,7 @@ use wgpu::util::DeviceExt;
 
 use crate::{State, Texture};
 
+#[derive(Debug)]
 pub struct Lookup {
 	bind_group: wgpu::BindGroup,
 }

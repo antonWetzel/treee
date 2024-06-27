@@ -1,5 +1,6 @@
 struct CameraUniform {
-    view_proj: mat4x4<f32>,
+    view: mat4x4<f32>,
+    proj: mat4x4<f32>,
 };
 
 struct Environment {
@@ -19,8 +20,7 @@ struct VertexInput {
 }
 struct InstanceInput {
     @location(1) position: vec3<f32>,
-    @location(2) normal: vec3<f32>,
-    @location(3) size: f32,
+    @location(2) size: f32,
 }
 
 struct PropertyInput {
@@ -48,15 +48,11 @@ fn vs_main(
         return out;
     }
 
-    let a = normalize(cross(instance_in.normal, vec3<f32>(instance_in.normal.y, instance_in.normal.z, -instance_in.normal.x)));
-    let b = cross(instance_in.normal, a);
+    var pos = camera.view * vec4<f32>(instance_in.position, 1.0);
+    pos.x += vertex_in.position.x * instance_in.size * environment.scale;
+    pos.y += vertex_in.position.y * instance_in.size * environment.scale;
 
-    out.clip_position = camera.view_proj * vec4<f32>(
-        instance_in.position +
-            vertex_in.position.x * instance_in.size * environment.scale * a +
-            vertex_in.position.y * instance_in.size * environment.scale * b,
-        1.0,
-    );
+    out.clip_position = camera.proj * pos;
     out.value = property_in.value;
     out.pos = vertex_in.position;
     return out;

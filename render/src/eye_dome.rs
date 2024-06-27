@@ -1,7 +1,7 @@
 use nalgebra as na;
 use wgpu::util::DeviceExt;
 
-use crate::{depth_texture::DepthTexture, Render, RenderPass, State, Vertex2D};
+use crate::{depth_texture::DepthTexture, RenderPass, State, Vertex2D};
 
 const FULL_SCREEN_VERTICES: [Vertex2D; 3] = [
 	Vertex2D {
@@ -202,10 +202,8 @@ impl EyeDome {
 			label: Some("eye dome bind group"),
 		})
 	}
-}
 
-impl<'a> Render<'a, ()> for EyeDome {
-	fn render(&'a self, render_pass: &mut RenderPass<'a>, _data: ()) {
+	pub fn render<'a>(&'a self, render_pass: &mut RenderPass<'a>) {
 		render_pass.set_pipeline(&self.render_pipeline);
 		render_pass.set_bind_group(0, &self.depth_bind_group, &[]);
 		render_pass.set_bind_group(1, &self.settings_bind_group, &[]);

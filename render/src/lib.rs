@@ -46,14 +46,6 @@ impl<'a> RenderPass<'a> {
 	pub fn new(render_pass: wgpu::RenderPass<'a>) -> Self {
 		Self(render_pass)
 	}
-
-	pub fn render<Data, R: Render<'a, Data>>(&mut self, value: &'a R, data: Data) {
-		value.render(self, data);
-	}
-}
-
-pub trait Render<'a, Data> {
-	fn render(&'a self, render_pass: &mut RenderPass<'a>, data: Data);
 }
 
 pub type CommandEncoder = wgpu::CommandEncoder;
