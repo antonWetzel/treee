@@ -10,7 +10,7 @@ pub struct LoadedManager {
 	available: HashMap<usize, render::PointCloud>,
 	requested: HashSet<usize>,
 	sender: crossbeam::channel::Sender<WorkerTask>,
-	reciever: crossbeam::channel::Receiver<Response>,
+	receiver: crossbeam::channel::Receiver<Response>,
 
 	update_senders: Vec<crossbeam::channel::Sender<WorkerUpdate>>,
 
@@ -43,7 +43,7 @@ impl LoadedManager {
 
 		let mut update_senders = Vec::new();
 		for _ in 0..2 {
-			let (update_sender, update_reciever) = crossbeam::channel::bounded(2);
+			let (update_sender, update_receiver) = crossbeam::channel::bounded(2);
 			update_senders.push(update_sender);
 			let index_rx = index_rx.clone();
 			let pc_tx = pc_tx.clone();
@@ -56,7 +56,7 @@ impl LoadedManager {
 			let state = state.clone();
 
 			std::thread::spawn(move || loop {
-				for update in update_reciever.try_iter() {
+				for update in update_receiver.try_iter() {
 					match update {
 						WorkerUpdate::ChangeProperty(property, index) => {
 							reader.change_property(&property);
@@ -96,7 +96,7 @@ impl LoadedManager {
 			available: HashMap::new(),
 			requested: HashSet::new(),
 			sender: index_tx,
-			reciever: pc_rx,
+			receiver: pc_rx,
 			update_senders,
 
 			property_index: 0,
@@ -158,10 +158,10 @@ impl LoadedManager {
 	}
 
 	pub fn update(&mut self) -> bool {
-		if self.reciever.is_empty() {
+		if self.receiver.is_empty() {
 			return false;
 		}
-		for response in self.reciever.try_iter() {
+		for response in self.receiver.try_iter() {
 			match response {
 				Response::PointCloud(index, data) => {
 					if self.requested.contains(&index) {

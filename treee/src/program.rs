@@ -1,14 +1,22 @@
 use crate::camera::Camera;
-use crate::laz::Laz;
-use crate::octree::Octree;
+use crate::empty::{Empty, EmptyResponse};
+use crate::interactive::{Interactive, InteractiveResponse};
+use crate::loading::{Loading, LoadingResponse};
+use crate::segmenting::{Segmenting, SegmentingResponse, DEFAULT_MAX_DISTANCE};
 use crate::{Error, EventLoop};
 use nalgebra as na;
 use pollster::FutureExt;
-use std::path::PathBuf;
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
+
+pub enum Event {
+	Done,
+	Lookup(render::Lookup),
+}
 
 pub struct Program {
 	pub world: World,
+	pub receiver: crossbeam::channel::Receiver<Event>,
+
 	pub state: Arc<render::State>,
 	pub window: render::Window,
 	pub keyboard: input::Keyboard,
@@ -19,7 +27,9 @@ pub struct Program {
 	pub egui: egui::Context,
 	pub egui_winit: egui_winit::State,
 	pub egui_wgpu: egui_wgpu::Renderer,
+
 	pub eye_dome: render::EyeDome,
+	pub point_cloud_state: render::PointCloudState,
 
 	pub display_settings: DisplaySettings,
 }
@@ -32,66 +42,10 @@ pub struct DisplaySettings {
 }
 
 pub enum World {
-	Empty,
-	Preview(Arc<Preview>),
-}
-
-impl World {
-	pub fn preview(path: PathBuf, state: Arc<render::State>) -> Self {
-		let point_cloud_state = render::PointCloudState::new(&state);
-		let point_clouds = std::sync::Mutex::new(HashMap::new());
-
-		let laz = Laz::new(&path).unwrap();
-
-		let corner = laz.min;
-		let diff = laz.max - laz.min;
-		let size = diff.x.max(diff.y).max(diff.z);
-
-		let preview = Preview {
-			state: state.clone(),
-			octree: Octree::new(corner, size),
-
-			point_cloud_state,
-			point_clouds,
-		};
-		let preview = Arc::new(preview);
-
-		{
-			let (sender, reciever) = crossbeam::channel::unbounded();
-			let preview = preview.clone();
-			std::thread::spawn(move || {
-				laz.read(|chunk| {
-					while reciever.len() > 1000 {
-						let Ok(idx) = reciever.try_recv() else {
-							break;
-						};
-						preview
-							.octree
-							.update(&preview.state, &preview.point_clouds, idx);
-					}
-					preview
-						.octree
-						.insert(chunk.read(), |idx| sender.send(idx).unwrap());
-				})
-				.unwrap();
-				while let Ok(idx) = reciever.recv() {
-					preview
-						.octree
-						.update(&preview.state, &preview.point_clouds, idx);
-				}
-			});
-		}
-
-		Self::Preview(preview)
-	}
-}
-
-pub struct Preview {
-	pub state: Arc<render::State>,
-	pub octree: Octree,
-
-	pub point_cloud_state: render::PointCloudState,
-	pub point_clouds: std::sync::Mutex<HashMap<usize, (render::PointCloud, render::PointCloudProperty)>>,
+	Empty(Empty),
+	Loading(Arc<Loading>),
+	Segmenting(Segmenting),
+	Interactive(Arc<Interactive>),
 }
 
 impl Program {
@@ -99,6 +53,7 @@ impl Program {
 		let (state, window) = render::State::new("Treee", event_loop).block_on()?;
 
 		let point_cloud_environment = render::PointCloudEnvironment::new(&state, 0, u32::MAX, 0.1);
+		let point_cloud_state = render::PointCloudState::new(&state);
 		let lookup = render::Lookup::new_png(
 			&state,
 			include_bytes!("../../viewer/assets/grad_warm.png"),
@@ -111,11 +66,13 @@ impl Program {
 		let egui_winit = egui_winit::State::new(egui.clone(), egui.viewport_id(), window.inner(), None, None);
 		let egui_wgpu = egui_wgpu::Renderer::new(state.device(), state.surface_format(), None, 1);
 
+		let (empty, receiver) = Empty::new();
 		Ok(Self {
-			world: World::Empty,
+			world: World::Empty(empty),
+			receiver,
+
 			state: Arc::new(state),
 			window,
-			// reciever,
 			egui,
 			egui_winit,
 			egui_wgpu,
@@ -126,6 +83,7 @@ impl Program {
 			time: Time::new(),
 
 			eye_dome,
+			point_cloud_state,
 
 			display_settings: DisplaySettings {
 				background: na::point![0.1, 0.2, 0.3],
@@ -145,16 +103,33 @@ impl Program {
 			egui::TopBottomPanel::top("panel")
 				.resizable(false)
 				.show(ctx, |ui| {
-					ui.horizontal(|ui| match &self.world {
-						World::Empty => match crate::ui::empty(ui) {
-							crate::ui::EmptyResponse::None => {},
-							crate::ui::EmptyResponse::Load(path) => {
-								self.world = World::preview(path, self.state.clone())
+					ui.horizontal(|ui| match &mut self.world {
+						World::Empty(empty) => match empty.ui(ui) {
+							EmptyResponse::None => {},
+							EmptyResponse::Load(path) => {
+								let (loading, receiver) = Loading::new(path, self.state.clone());
+								self.world = World::Loading(loading);
+								self.receiver = receiver;
 							},
 						},
-						World::Preview(preview) => match crate::ui::preview(ui, &mut self.display_settings, preview) {
-							crate::ui::PreviewResponse::None => {},
-							crate::ui::PreviewResponse::Close => self.world = World::Empty,
+						World::Loading(loading) => match loading.ui(ui, &mut self.display_settings) {
+							LoadingResponse::None => {},
+							LoadingResponse::Close => {
+								let (empty, receiver) = Empty::new();
+								self.world = World::Empty(empty);
+								self.receiver = receiver;
+							},
+						},
+						World::Segmenting(segmenting) => match segmenting.ui(ui) {
+							SegmentingResponse::None => {},
+							SegmentingResponse::Done(segments) => {
+								let (interative, receiver) = Interactive::new();
+								self.world = World::Interactive(interative);
+								self.receiver = receiver;
+							},
+						},
+						World::Interactive(interactive) => match interactive.ui(ui) {
+							InteractiveResponse::None => {},
 						},
 					});
 				});
@@ -180,7 +155,7 @@ impl Program {
 		}
 
 		match &self.world {
-			World::Empty => {
+			World::Empty(_empty) => {
 				self.window.render(&self.state, |context| {
 					let command_encoder = context.encoder();
 					let commands = self.egui_wgpu.update_buffers(
@@ -198,8 +173,8 @@ impl Program {
 					drop(render_pass);
 				});
 			},
-			World::Preview(preview) => {
-				let point_clouds = preview.point_clouds.lock().unwrap();
+			World::Loading(loading) => {
+				let point_clouds = loading.point_clouds.lock().unwrap();
 				self.window.render(&self.state, |context| {
 					let command_encoder = context.encoder();
 					let commands = self.egui_wgpu.update_buffers(
@@ -212,13 +187,77 @@ impl Program {
 					self.state.queue.submit(commands);
 
 					let mut render_pass = context.render_pass(self.display_settings.background);
-					let point_cloud_pass = preview.point_cloud_state.render(
+					let point_cloud_pass = self.point_cloud_state.render(
 						&mut render_pass,
 						self.display_settings.camera.gpu(),
 						&self.display_settings.lookup,
 						&self.display_settings.point_cloud_environment,
 					);
-					preview.octree.render(point_cloud_pass, &point_clouds);
+					loading
+						.octree
+						.render(point_cloud_pass, &point_clouds, &loading.property);
+					drop(render_pass);
+
+					let mut render_pass = context.post_process_pass();
+					self.eye_dome.render(&mut render_pass);
+					self.egui_wgpu.render(&mut render_pass, &paint_jobs, screen);
+					drop(render_pass);
+				});
+			},
+			World::Segmenting(segmenting) => {
+				let point_clouds = segmenting.shared.point_clouds.lock().unwrap();
+				self.window.render(&self.state, |context| {
+					let command_encoder = context.encoder();
+					let commands = self.egui_wgpu.update_buffers(
+						&self.state.device,
+						&self.state.queue,
+						command_encoder,
+						&paint_jobs,
+						screen,
+					);
+					self.state.queue.submit(commands);
+
+					let mut render_pass = context.render_pass(self.display_settings.background);
+					let point_cloud_pass = self.point_cloud_state.render(
+						&mut render_pass,
+						self.display_settings.camera.gpu(),
+						&self.display_settings.lookup,
+						&self.display_settings.point_cloud_environment,
+					);
+					for (point_cloud, property) in point_clouds.iter() {
+						point_cloud.render(point_cloud_pass, property);
+					}
+					drop(render_pass);
+
+					let mut render_pass = context.post_process_pass();
+					self.eye_dome.render(&mut render_pass);
+					self.egui_wgpu.render(&mut render_pass, &paint_jobs, screen);
+					drop(render_pass);
+				});
+			},
+			World::Interactive(interactive) => {
+				// let point_clouds = interactive.point_clouds.lock().unwrap();
+				self.window.render(&self.state, |context| {
+					let command_encoder = context.encoder();
+					let commands = self.egui_wgpu.update_buffers(
+						&self.state.device,
+						&self.state.queue,
+						command_encoder,
+						&paint_jobs,
+						screen,
+					);
+					self.state.queue.submit(commands);
+
+					let mut render_pass = context.render_pass(self.display_settings.background);
+					// let point_cloud_pass = self.point_cloud_state.render(
+					// 	&mut render_pass,
+					// 	self.display_settings.camera.gpu(),
+					// 	&self.display_settings.lookup,
+					// 	&self.display_settings.point_cloud_environment,
+					// );
+					// for (point_cloud, property) in point_clouds.iter() {
+					// 	point_cloud.render(point_cloud_pass, property);
+					// }
 					drop(render_pass);
 
 					let mut render_pass = context.post_process_pass();
@@ -251,6 +290,24 @@ impl Program {
 			self.display_settings
 				.camera
 				.movement(direction, &self.state);
+		}
+
+		while let Ok(event) = self.receiver.try_recv() {
+			match event {
+				Event::Lookup(lookup) => self.display_settings.lookup = lookup,
+				Event::Done => {
+					match std::mem::replace(&mut self.world, World::Empty(Empty::new().0)) {
+						World::Loading(loading) => {
+							let loading = Arc::try_unwrap(loading).unwrap();
+							let (segmenting, receiver) =
+								Segmenting::new(loading.octree, self.state.clone(), DEFAULT_MAX_DISTANCE);
+							self.world = World::Segmenting(segmenting);
+							self.receiver = receiver;
+						},
+						world @ _ => self.world = world,
+					};
+				},
+			}
 		}
 
 		Ok(())

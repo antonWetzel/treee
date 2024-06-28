@@ -1,28 +1,52 @@
-use std::{collections::HashMap, ops::Not, sync::Mutex};
+use std::{
+	collections::HashMap,
+	ops::{Not, Range},
+	sync::Mutex,
+};
 
 use dashmap::DashMap;
 use nalgebra as na;
 
-const MAX_POINTS: usize = 1 << 14;
+pub const MAX_POINTS: usize = 1 << 16;
 
+#[derive(Debug)]
 pub struct Octree {
 	corner: na::Point3<f32>,
 	size: f32,
 	nodes: DashMap<usize, Node>,
+
+	pub points_min: na::Point3<f32>,
+	pub points_max: na::Point3<f32>,
 }
 
+#[derive(Debug)]
 enum Node {
 	Branch {},
 	Leaf {
 		points: Vec<na::Point3<f32>>,
-		property: Vec<u32>,
 		dirty: bool,
 	},
 }
 
 impl Octree {
-	pub fn new(corner: na::Point3<f32>, size: f32) -> Self {
-		Self { corner, size, nodes: DashMap::new() }
+	pub fn new(min: na::Point3<f32>, max: na::Point3<f32>) -> Self {
+		let diff = max - min;
+		let size = diff.x.max(diff.y).max(diff.z);
+		Self {
+			corner: min,
+			size,
+			nodes: DashMap::new(),
+			points_min: min,
+			points_max: max,
+		}
+	}
+
+	pub fn corner(&self) -> na::Point3<f32> {
+		self.corner
+	}
+
+	pub fn size(&self) -> f32 {
+		self.size
 	}
 
 	pub fn insert(&self, mut points: Vec<na::Point3<f32>>, mut changed: impl FnMut(usize)) {
@@ -41,11 +65,10 @@ impl Octree {
 		dim: usize,
 		changed: &mut impl FnMut(usize),
 	) {
-		let mut entry = self.nodes.entry(idx).or_insert_with(|| Node::Leaf {
-			points: Vec::new(),
-			property: Vec::new(),
-			dirty: false,
-		});
+		let mut entry = self
+			.nodes
+			.entry(idx)
+			.or_insert_with(|| Node::Leaf { points: Vec::new(), dirty: false });
 		let node = entry.value_mut();
 		match node {
 			Node::Branch {} => {
@@ -65,20 +88,18 @@ impl Octree {
 					self.insert_with(right, right_corner, size, idx * 2 + 2, dim, changed);
 				}
 			},
-			Node::Leaf { points, property, dirty } => {
+			Node::Leaf { points, dirty } => {
 				if points.len() + new_points.len() < MAX_POINTS {
 					if dirty.not() {
 						*dirty = true;
 						changed(idx);
 					}
 					points.extend_from_slice(new_points);
-					for _ in 0..new_points.len() {
-						property.push(0);
-					}
 					return;
 				}
 				let mut points = std::mem::take(points);
 				*node = Node::Branch {};
+				changed(idx);
 				drop(entry);
 
 				self.insert_with(&mut points, corner, size, idx, dim, changed);
@@ -87,29 +108,21 @@ impl Octree {
 		}
 	}
 
-	pub fn update(
-		&self,
-		state: &render::State,
-		point_clouds: &Mutex<HashMap<usize, (render::PointCloud, render::PointCloudProperty)>>,
-		idx: usize,
-	) {
+	pub fn update(&self, state: &render::State, point_clouds: &Mutex<HashMap<usize, render::PointCloud>>, idx: usize) {
 		let Some(mut node) = self.nodes.get_mut(&idx) else {
 			return;
 		};
 		match node.value_mut() {
 			Node::Branch {} => {
 				drop(node);
+				point_clouds.lock().unwrap().remove(&idx);
 			},
-			Node::Leaf { points, property, dirty } => {
+			Node::Leaf { points, dirty } => {
 				assert!(*dirty);
 				*dirty = false;
 				let point_cloud = render::PointCloud::new(state, points);
-				let property = render::PointCloudProperty::new(state, property);
 				drop(node);
-				point_clouds
-					.lock()
-					.unwrap()
-					.insert(idx, (point_cloud, property));
+				point_clouds.lock().unwrap().insert(idx, point_cloud);
 			},
 		}
 	}
@@ -117,31 +130,83 @@ impl Octree {
 	pub fn render<'a>(
 		&self,
 		point_cloud_pass: &mut render::PointCloudPass<'a>,
-		point_clouds: &'a HashMap<usize, (render::PointCloud, render::PointCloudProperty)>,
+		point_clouds: &'a HashMap<usize, render::PointCloud>,
+		property: &'a render::PointCloudProperty,
 	) {
-		self.render_with(point_cloud_pass, point_clouds, 0);
+		self.render_with(point_cloud_pass, point_clouds, property, 0);
 	}
 
 	fn render_with<'a>(
 		&self,
 		point_cloud_pass: &mut render::PointCloudPass<'a>,
-		point_clouds: &'a HashMap<usize, (render::PointCloud, render::PointCloudProperty)>,
+		point_clouds: &'a HashMap<usize, render::PointCloud>,
+		property: &'a render::PointCloudProperty,
 		mut idx: usize,
 	) {
-		let Some(mut node) = self.nodes.get_mut(&idx) else {
+		let Some(node) = self.nodes.get(&idx) else {
 			return;
 		};
-		match node.value_mut() {
+		match node.value() {
 			Node::Branch { .. } => {
 				drop(node);
 				idx = idx * 2 + 1;
 				for i in 0..2 {
-					self.render_with(point_cloud_pass, point_clouds, idx + i)
+					self.render_with(point_cloud_pass, point_clouds, property, idx + i)
 				}
 			},
 			Node::Leaf { .. } => {
-				if let Some((point_cloud, property)) = point_clouds.get(&idx) {
+				if let Some(point_cloud) = point_clouds.get(&idx) {
 					point_cloud.render(point_cloud_pass, property);
+				}
+				drop(node);
+			},
+		}
+	}
+
+	pub fn get_range(&self, range: Range<f32>) -> Vec<na::Point3<f32>> {
+		let mut points = Vec::new();
+		self.get_range_with(range, &mut points, self.corner.y, self.size, 0, 0);
+		points
+	}
+
+	fn get_range_with(
+		&self,
+		range: Range<f32>,
+		res: &mut Vec<na::Point3<f32>>,
+		corner_height: f32,
+		mut size: f32,
+		idx: usize,
+		dim: usize,
+	) {
+		let Some(node) = self.nodes.get(&idx) else {
+			return;
+		};
+		match node.value() {
+			Node::Branch { .. } => {
+				drop(node);
+				if dim == 0 {
+					size /= 2.0;
+				}
+				let dim = (dim + 1) % 3;
+				let idx = idx * 2;
+				if dim == 2 {
+					let sep = corner_height + size;
+					if range.start <= sep {
+						self.get_range_with(range.clone(), res, corner_height, size, idx + 1, dim);
+					}
+					if sep <= range.end {
+						self.get_range_with(range, res, sep, size, idx + 2, dim);
+					}
+				} else {
+					self.get_range_with(range.clone(), res, corner_height, size, idx + 1, dim);
+					self.get_range_with(range, res, corner_height, size, idx + 2, dim);
+				}
+			},
+			Node::Leaf { points, .. } => {
+				for &point in points.iter() {
+					if range.contains(&point.y) {
+						res.push(point);
+					}
 				}
 				drop(node);
 			},

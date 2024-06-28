@@ -6,6 +6,7 @@ use crate::{
 	Lookup, PointEdge, RenderPass, State,
 };
 
+#[derive(Debug)]
 pub struct PointCloudState {
 	base: wgpu::Buffer,
 	pipeline: wgpu::RenderPipeline,
@@ -210,6 +211,7 @@ impl PointCloud {
 	}
 }
 
+#[derive(Debug)]
 pub struct PointCloudProperty {
 	pub buffer: wgpu::Buffer,
 	pub length: u32,
@@ -228,10 +230,10 @@ impl PointCloudProperty {
 		Self { buffer, length: data.len() as u32 }
 	}
 
-	pub fn new_empty(state: &State) -> Self {
+	pub fn new_empty(state: &State, size: usize) -> Self {
 		let buffer = state.device.create_buffer(&wgpu::BufferDescriptor {
 			label: Some("point cloud property buffer"),
-			size: ((1 << 14) * std::mem::size_of::<u32>()) as u64,
+			size: (size * std::mem::size_of::<u32>()) as u64,
 			usage: wgpu::BufferUsages::VERTEX,
 			mapped_at_creation: false,
 		});

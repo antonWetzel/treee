@@ -198,7 +198,7 @@ fn import(settings: Settings, input: PathBuf, output: PathBuf) -> Result<(), Err
 
 	let mut progress = Progress::new("Import", total_points);
 
-	let (sender, reciever) = crossbeam::channel::bounded(4);
+	let (sender, receiver) = crossbeam::channel::bounded(4);
 
 	let (import_result, segments) = rayon::join(
 		|| {
@@ -209,7 +209,7 @@ fn import(settings: Settings, input: PathBuf, output: PathBuf) -> Result<(), Err
 		|| {
 			if settings.single_tree {
 				let segment = cache.new_entry();
-				for chunk in reciever {
+				for chunk in receiver {
 					let l = chunk.length();
 					cache.add_chunk(&segment, chunk.read());
 					progress.step_by(l);
@@ -218,7 +218,7 @@ fn import(settings: Settings, input: PathBuf, output: PathBuf) -> Result<(), Err
 				vec![Segment::new(cache.read(segment))]
 			} else {
 				let mut segmenter = Segmenter::new(min, max, &mut cache, &settings);
-				for chunk in reciever {
+				for chunk in receiver {
 					let l = chunk.length();
 					for point in chunk {
 						segmenter.add_point(point, &mut cache);
@@ -255,7 +255,7 @@ fn import(settings: Settings, input: PathBuf, output: PathBuf) -> Result<(), Err
 		(from, to)
 	});
 
-	let (sender, reciever) = crossbeam::channel::bounded(2);
+	let (sender, receiver) = crossbeam::channel::bounded(2);
 	let (_, segment_values) = rayon::join(
 		|| {
 			segments
@@ -281,7 +281,7 @@ fn import(settings: Settings, input: PathBuf, output: PathBuf) -> Result<(), Err
 			let mut segment_writer = Writer::new(path, statistics.segments);
 			let mut segment_values =
 				vec![project::Value::Percent(0.0); statistics.segments * segments_information.len()];
-			for (points, segment, information) in reciever {
+			for (points, segment, information) in receiver {
 				let collection = PointsCollection::from_points(&points);
 				segment_writer.save(segment.get() as usize - 1, &collection);
 				let offset = (segment.get() - 1) as usize * segments_information.len();

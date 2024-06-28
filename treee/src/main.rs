@@ -1,8 +1,11 @@
 mod camera;
+mod empty;
+mod interactive;
 mod laz;
+mod loading;
 mod octree;
 mod program;
-mod ui;
+mod segmenting;
 
 use nalgebra as na;
 use program::Program;

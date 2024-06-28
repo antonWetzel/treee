@@ -98,7 +98,8 @@ impl Laz {
 
 	pub fn read(self, cb: impl Fn(Chunk) + std::marker::Sync) -> Result<(), Error> {
 		self.chunks
-			.into_par_iter()
+			.into_iter()
+			.par_bridge()
 			.map_init(
 				|| BufReader::new(std::fs::File::open(&self.path).unwrap()),
 				|file, (s, l)| {

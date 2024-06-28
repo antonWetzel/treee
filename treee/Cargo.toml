@@ -28,3 +28,5 @@ bytemuck.workspace = true
 static_assertions.workspace = true
 dashmap.workspace = true
 rayon.workspace = true
+rand.workspace = true
+voronator.workspace = true

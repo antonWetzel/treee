@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use super::*;
 
+#[derive(Debug)]
 pub struct State {
 	pub device: wgpu::Device,
 	pub queue: wgpu::Queue,
@@ -43,10 +44,7 @@ impl State {
 			.request_device(
 				&wgpu::DeviceDescriptor {
 					required_features: wgpu::Features::POLYGON_MODE_LINE,
-					required_limits: wgpu::Limits {
-						// max_buffer_size: u64::MAX,
-						..Default::default()
-					},
+					required_limits: wgpu::Limits::default(),
 					label: None,
 				},
 				None,

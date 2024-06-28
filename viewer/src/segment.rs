@@ -130,10 +130,10 @@ impl Segment {
 		let mut update = false;
 		match &mut self.mesh {
 			MeshState::None | MeshState::Done(_) => {},
-			MeshState::Progress(res, _, reciever) => {
+			MeshState::Progress(res, _, receiver) => {
 				let before = res.len() / 1000;
 				loop {
-					match reciever.try_recv() {
+					match receiver.try_recv() {
 						Ok(None) => {},
 						Ok(Some(triangle)) => {
 							res.push(triangle.x as u32);
@@ -163,14 +163,14 @@ impl Segment {
 	}
 
 	pub fn triangulate(&mut self, state: &State) {
-		let (sender, reciever) = std::sync::mpsc::channel();
+		let (sender, receiver) = std::sync::mpsc::channel();
 		let points = self.points.iter().map(|p| p.position).collect::<Vec<_>>();
 		let alpha = self.alpha;
 		let sub_sample_distance = self.sub_sample_distance;
 		std::thread::spawn(move || {
 			_ = triangulation::triangulate(&points, alpha, sub_sample_distance, sender);
 		});
-		self.mesh = MeshState::Progress(Vec::new(), render::Mesh::new(state, &[]), reciever);
+		self.mesh = MeshState::Progress(Vec::new(), render::Mesh::new(state, &[]), receiver);
 	}
 
 	pub fn save(&self) {

@@ -1,227 +1,201 @@
+use crossbeam::atomic::AtomicCell;
+use dashmap::DashMap;
 use nalgebra as na;
 use rand::{seq::SliceRandom, thread_rng};
-use rayon::prelude::*;
+use rayon::iter::{ParallelBridge, ParallelIterator};
+use std::{
+	collections::VecDeque,
+	ops::{DerefMut, Not},
+	sync::{Arc, Mutex, RwLock},
+};
 use voronator::delaunator::Point;
 
-use std::collections::VecDeque;
-#[cfg(feature = "segmentation-svgs")]
-use std::io::Write;
+use crate::{octree::Octree, program::Event};
 
-use crate::{
-	cache::{Cache, CacheEntry, CacheIndex},
-	progress::Progress,
-	Settings, Statistics,
-};
+pub const DEFAULT_MAX_DISTANCE: f32 = 0.75;
 
-pub struct Segment {
-	data: CacheEntry<na::Point3<f32>>,
+pub struct Segmenting {
+	pub shared: Arc<Shared>,
+	pub distance: f32,
+	pub restart: crossbeam::channel::Sender<f32>,
 }
 
-impl Segment {
-	pub fn points(self) -> Vec<na::Point3<f32>> {
-		self.data.read()
-	}
-
-	pub fn length(&self) -> usize {
-		self.data.length()
-	}
-
-	pub fn new(data: CacheEntry<na::Point3<f32>>) -> Self {
-		Self { data }
-	}
+pub struct Shared {
+	pub state: Arc<render::State>,
+	pub point_clouds: Mutex<Vec<(render::PointCloud, render::PointCloudProperty)>>,
+	pub done: AtomicCell<Option<DashMap<usize, Vec<na::Point3<f32>>>>>,
 }
 
-pub struct Segmenter {
-	slices: Vec<CacheIndex<na::Point3<f32>>>,
-	min: na::Point3<f32>,
-	max: na::Point3<f32>,
-	slice_height: f32,
-	max_distance: f32,
-	min_segment_size: usize,
-}
+impl Segmenting {
+	pub fn new(
+		octree: Octree,
+		state: Arc<render::State>,
+		max_distance: f32,
+	) -> (Self, crossbeam::channel::Receiver<Event>) {
+		let (sender, receiver) = crossbeam::channel::unbounded();
 
-impl Segmenter {
-	pub fn new(min: na::Point3<f32>, max: na::Point3<f32>, cache: &mut Cache, settings: &Settings) -> Self {
-		let slice_count = ((max.y - min.y) / settings.segmenting_slice_width) as usize + 1;
-		let slices = (0..slice_count).map(|_| cache.new_entry()).collect();
-		Self {
-			slices,
-			min,
-			max,
-			slice_height: settings.segmenting_slice_width,
-			max_distance: settings.segmenting_max_distance,
-			min_segment_size: settings.min_segment_size,
-		}
-	}
+		let (restart_sender, restart_reciever) = crossbeam::channel::unbounded();
+		restart_sender.send(max_distance).unwrap();
 
-	pub fn add_point(&mut self, point: na::Point3<f32>, cache: &mut Cache) {
-		let slice = ((self.max.y - point.y) / self.slice_height) as usize;
-		cache.add_value(&self.slices[slice], point);
-	}
+		let shared = Arc::new(Shared {
+			state,
+			point_clouds: Mutex::new(Vec::new()),
+			done: AtomicCell::new(None),
+		});
 
-	pub fn segments(self, statistics: &mut Statistics, cache: &mut Cache) -> Vec<Segment> {
-		let total = self
-			.slices
-			.iter()
-			.map(|slice| cache.size(slice))
-			.sum::<usize>();
-		let mut progress = Progress::new("Segmenting", total);
-
-		let min = Point {
-			x: self.min.x as f64,
-			y: self.min.z as f64,
-		};
-		let max = Point {
-			x: self.max.x as f64,
-			y: self.max.z as f64,
-		};
-
-		cfg_if::cfg_if! {
-			if #[cfg(feature = "segmentation-svgs")] {
-				let size = self.max - self.min;
-				_ = std::fs::remove_dir_all("./svg");
-				std::fs::create_dir_all("./svg").unwrap();
-			}
-		}
-
-		let (sender, receiver) = crossbeam::channel::bounded(rayon::current_num_threads());
-
-		let (slices, c_receiver) = {
-			let (sender, mut receiver) = crossbeam::channel::bounded(1);
-			let mut slices = Vec::with_capacity(self.slices.len());
-			for slice in self.slices {
-				let (next_sender, next_receiver) = crossbeam::channel::bounded(1);
-				slices.push((receiver, cache.read(slice), next_sender));
-				receiver = next_receiver;
-			}
-			sender.send(Vec::new()).unwrap();
-			(slices, receiver)
-		};
-
-		let (_, segments) = rayon::join(
-			move || {
-				slices
-					.into_iter()
-					.enumerate()
-					.par_bridge()
-					.for_each(|(_index, (c_receiver, slice, c_sender))| {
-						cfg_if::cfg_if! {
-							if #[cfg(feature = "segmentation-svgs")] {
-								let mut svg = std::fs::File::create(format!("./svg/test_{}.svg", _index)).unwrap();
-								svg.write_all(
-									format!(
-										"<svg viewbox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\" width=\"{}\" height=\"{}\" >\n",
-										size.x * 10.0,
-										size.z * 10.0,
-										size.x * 10.0,
-										size.z * 10.0
-									)
-									.as_bytes(),
-								)
-								.unwrap();
-							}
-						}
-						let mut slice = slice.read();
-						let tree_set = TreeSet::new(&mut slice, self.max_distance);
-
-						#[cfg(feature = "segmentation-svgs")]
-						for tree in &tree_set.trees {
-							tree.save_svg(&mut svg, self.min, true);
-						}
-
-						let centroids = c_receiver.recv().unwrap();
-						let centroids = tree_set.tree_positions(centroids, self.max_distance);
-						let points = centroids
-							.iter()
-							.map(|centroid| Point {
-								x: centroid.center.x as f64,
-								y: centroid.center.y as f64,
-							})
-							.collect::<Vec<_>>();
-
-						#[cfg(feature = "segmentation-svgs")]
-						for centroid in &centroids {
-							svg.write_all(
-								format!(
-									"  <circle cx=\"{}\" cy=\"{}\" r=\"10\" />\n",
-									(centroid.center.x - self.min.x) * 10.0,
-									(centroid.center.y - self.min.z) * 10.0
-								)
-								.as_bytes(),
-							)
-							.unwrap();
-						}
-						c_sender.send(centroids).unwrap();
-
-						let vor = voronator::VoronoiDiagram::new(&min, &max, &points).unwrap();
-
-						let mut trees = vor
-							.cells()
-							.iter()
-							.map(|cell| cell.points())
-							.map(|p| {
-								p.iter()
-									.map(|p| na::Point2::new(p.x as f32, p.y as f32))
-									.collect::<Vec<_>>()
-							})
-							.map(|p| Tree::from_points(p))
-							.enumerate()
-							.map(|(index, tree)| (index, tree, Vec::new()))
-							.collect::<VecDeque<_>>();
-
-						cfg_if::cfg_if! {
-							if #[cfg(feature = "segmentation-svgs")] {
-								for (_, tree, _) in &trees {
-									tree.save_svg(&mut svg, self.min, false);
-								}
-								svg.write_all(b"</svg>").unwrap();
-							}
-						}
-
-						for p in slice {
-							let Some((idx, _)) = trees
-								.iter_mut()
-								.enumerate()
-								.find(|(_, (_, tree, _))| tree.contains(na::Point2::new(p.x, p.z), 0.1))
-							else {
-								continue;
-							};
-							let mut elem = trees.remove(idx).unwrap();
-							elem.2.push(p);
-							// hope next point is in the same segment
-							trees.push_front(elem);
-						}
-						sender.send(trees).unwrap();
-					});
-				drop(sender);
-			},
-			|| {
-				let mut segments = Vec::new();
-				for trees in receiver {
-					for (id, _, points) in trees {
-						let l = points.len();
-						if id >= segments.len() {
-							segments.resize_with(id + 1, || cache.new_entry());
-						}
-						cache.add_chunk(&segments[id], points);
-						progress.step_by(l);
-					}
+		{
+			let shared = shared.clone();
+			std::thread::spawn(move || {
+				while let Ok(distance) = restart_reciever.recv() {
+					segmentation(distance, &octree, &shared, &sender, &restart_reciever);
 				}
-				drop(c_receiver);
-				segments
+			});
+		}
+
+		(
+			Self {
+				shared,
+				distance: max_distance,
+				restart: restart_sender,
 			},
-		);
-
-		statistics.times.segment = progress.finish();
-
-		let mut segments = segments
-			.into_iter()
-			.map(|entry| Segment { data: cache.read(entry) })
-			.filter(|entry| entry.length() >= self.min_segment_size)
-			.collect::<Vec<_>>();
-		segments.sort_by(|a, b| b.data.active().cmp(&a.data.active()));
-		segments
+			receiver,
+		)
 	}
+
+	pub fn ui(&mut self, ui: &mut egui::Ui) -> SegmentingResponse {
+		let mut response = SegmentingResponse::None;
+
+		if ui
+			.add(egui::Slider::new(&mut self.distance, 0.1..=2.0))
+			.changed()
+		{
+			self.restart.send(self.distance).unwrap();
+		};
+
+		if let Some(segments) = self.shared.done.take() {
+			if ui.button("Continue").clicked() {
+				response = SegmentingResponse::Done(segments);
+			} else {
+				self.shared.done.store(Some(segments));
+			}
+		}
+
+		response
+	}
+}
+
+fn segmentation(
+	max_distance: f32,
+	octree: &Octree,
+	segmenting: &Shared,
+	sender: &crossbeam::channel::Sender<Event>,
+	reciever: &crossbeam::channel::Receiver<f32>,
+) {
+	segmenting.point_clouds.lock().unwrap().clear();
+	let min = octree.points_min.y - 1.0;
+	let size = octree.points_max.y + 2.0 - min;
+	let layers = size.ceil() as usize;
+	let lookup = render::Lookup::new_png(
+		&segmenting.state,
+		include_bytes!("../../viewer/assets/grad_turbo.png"),
+		(layers + 1) as u32,
+	);
+	sender.send(Event::Lookup(lookup)).unwrap();
+
+	let slices = {
+		let (sender, mut receiver) = crossbeam::channel::bounded(1);
+		let mut slices = Vec::with_capacity(layers);
+		for i in (0..layers).rev() {
+			let (next_sender, next_receiver) = crossbeam::channel::bounded(1);
+			let range = (min + i as f32)..(min + (i + 1) as f32);
+			slices.push((receiver, range, next_sender));
+			receiver = next_receiver;
+		}
+		sender.send(Vec::new()).unwrap();
+		slices
+	};
+
+	let min = Point {
+		x: octree.points_min.x as f64,
+		y: octree.points_min.z as f64,
+	};
+	let max = Point {
+		x: octree.points_max.x as f64,
+		y: octree.points_max.z as f64,
+	};
+
+	let segments = DashMap::<usize, Vec<na::Point3<f32>>>::new();
+
+	let cancel = slices
+		.into_iter()
+		.par_bridge()
+		.any(|(c_receiver, range, c_sender)| {
+			if reciever.is_empty().not() {
+				return true;
+			}
+
+			let mut slice = octree.get_range(range);
+			let tree_set = TreeSet::new(&mut slice, max_distance);
+
+			let centroids = c_receiver.recv().unwrap();
+			let centroids = tree_set.tree_positions(centroids, max_distance);
+			let points = centroids
+				.iter()
+				.map(|centroid| Point {
+					x: centroid.center.x as f64,
+					y: centroid.center.y as f64,
+				})
+				.collect::<Vec<_>>();
+			_ = c_sender.send(centroids);
+
+			let vor = voronator::VoronoiDiagram::new(&min, &max, &points).unwrap();
+			let mut trees = vor
+				.cells()
+				.iter()
+				.map(|cell| cell.points())
+				.map(|p| {
+					p.iter()
+						.map(|p| na::Point2::new(p.x as f32, p.y as f32))
+						.collect::<Vec<_>>()
+				})
+				.map(Tree::from_points)
+				.enumerate()
+				.collect::<VecDeque<_>>();
+
+			let mut property = Vec::with_capacity(slice.len());
+			for &p in slice.iter() {
+				let Some((idx, _)) = trees
+					.iter_mut()
+					.enumerate()
+					.find(|(_, (_, tree))| tree.contains(na::Point2::new(p.x, p.z), 0.1))
+				else {
+					property.push(0);
+					continue;
+				};
+				let elem = trees.remove(idx).unwrap();
+				property.push(elem.0 as u32);
+				segments.entry(elem.0).or_default().value_mut().push(p);
+				// hope next point is in the same segment
+				trees.push_front(elem);
+			}
+
+			if slice.is_empty().not() {
+				let point_cloud = render::PointCloud::new(&segmenting.state, &slice);
+				let property = render::PointCloudProperty::new(&segmenting.state, &property);
+				let mut point_clouds = segmenting.point_clouds.lock().unwrap();
+				point_clouds.push((point_cloud, property));
+			}
+			false
+		});
+	if cancel {
+		return;
+	}
+	segmenting.done.store(Some(segments));
+}
+
+pub enum SegmentingResponse {
+	None,
+	Done(DashMap<usize, Vec<na::Point3<f32>>>),
 }
 
 #[derive(Debug, Clone)]
@@ -379,30 +353,6 @@ impl Tree {
 			.coords
 			.zip_map(&point.coords, |a, b| a.max(b))
 			.into();
-	}
-
-	#[cfg(feature = "segmentation-svgs")]
-	pub fn save_svg(&self, file: &mut std::fs::File, min: na::Point3<f32>, fill: bool) {
-		file.write_all(b"  <polygon points=\"").unwrap();
-		for &point in &self.points {
-			file.write_all(format!("{},{} ", (point.x - min.x) * 10.0, (point.y - min.z) * 10.0).as_bytes())
-				.unwrap();
-		}
-		if fill {
-			file.write_all(
-				format!(
-					"\" fill=\"rgb({}, {}, {})\"/>\n",
-					rand::random::<u8>(),
-					rand::random::<u8>(),
-					rand::random::<u8>(),
-				)
-				.as_bytes(),
-			)
-			.unwrap();
-		} else {
-			file.write_all("\" stroke=\"black\" fill=\"none\" />\n".as_bytes())
-				.unwrap();
-		}
 	}
 }
 
