@@ -41,14 +41,6 @@ impl Octree {
 		}
 	}
 
-	pub fn corner(&self) -> na::Point3<f32> {
-		self.corner
-	}
-
-	pub fn size(&self) -> f32 {
-		self.size
-	}
-
 	pub fn insert(&self, mut points: Vec<na::Point3<f32>>, mut changed: impl FnMut(usize)) {
 		let idx = 0;
 		let corner = self.corner;

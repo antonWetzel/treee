@@ -20,7 +20,9 @@ pub struct Program {
 	pub state: Arc<render::State>,
 	pub window: render::Window,
 	pub keyboard: input::Keyboard,
-	pub mouse: input::Mouse,
+
+	mouse: input::Mouse,
+	mouse_start: Option<na::Point2<f32>>,
 	time: Time,
 	paused: bool,
 
@@ -45,7 +47,7 @@ pub enum World {
 	Empty(Empty),
 	Loading(Arc<Loading>),
 	Segmenting(Segmenting),
-	Interactive(Arc<Interactive>),
+	Interactive(Interactive),
 }
 
 impl Program {
@@ -80,6 +82,7 @@ impl Program {
 			paused: false,
 			keyboard: input::Keyboard::new(),
 			mouse: input::Mouse::new(),
+			mouse_start: None,
 			time: Time::new(),
 
 			eye_dome,
@@ -123,7 +126,7 @@ impl Program {
 						World::Segmenting(segmenting) => match segmenting.ui(ui) {
 							SegmentingResponse::None => {},
 							SegmentingResponse::Done(segments) => {
-								let (interative, receiver) = Interactive::new();
+								let (interative, receiver) = Interactive::new(segments, self.state.clone());
 								self.world = World::Interactive(interative);
 								self.receiver = receiver;
 							},
@@ -236,7 +239,6 @@ impl Program {
 				});
 			},
 			World::Interactive(interactive) => {
-				// let point_clouds = interactive.point_clouds.lock().unwrap();
 				self.window.render(&self.state, |context| {
 					let command_encoder = context.encoder();
 					let commands = self.egui_wgpu.update_buffers(
@@ -249,15 +251,15 @@ impl Program {
 					self.state.queue.submit(commands);
 
 					let mut render_pass = context.render_pass(self.display_settings.background);
-					// let point_cloud_pass = self.point_cloud_state.render(
-					// 	&mut render_pass,
-					// 	self.display_settings.camera.gpu(),
-					// 	&self.display_settings.lookup,
-					// 	&self.display_settings.point_cloud_environment,
-					// );
-					// for (point_cloud, property) in point_clouds.iter() {
-					// 	point_cloud.render(point_cloud_pass, property);
-					// }
+					let point_cloud_pass = self.point_cloud_state.render(
+						&mut render_pass,
+						self.display_settings.camera.gpu(),
+						&self.display_settings.lookup,
+						&self.display_settings.point_cloud_environment,
+					);
+					for (_, (point_cloud, property)) in interactive.point_clouds.iter() {
+						point_cloud.render(point_cloud_pass, property);
+					}
 					drop(render_pass);
 
 					let mut render_pass = context.post_process_pass();
@@ -325,6 +327,51 @@ impl Program {
 			.update_aspect(self.window.get_aspect(), &self.state);
 		self.eye_dome
 			.update_depth(&self.state, self.window.depth_texture());
+	}
+
+	pub fn mouse_click(&mut self, button: input::MouseButton, state: input::State) {
+		self.mouse.update(button, state);
+
+		match (button, state) {
+			(input::MouseButton::Right, input::State::Pressed) => {
+				self.mouse_start = Some(self.mouse.position());
+			},
+			(input::MouseButton::Right, input::State::Released) => {
+				if let Some(start) = self.mouse_start {
+					let dist = (start - self.mouse.position()).norm();
+					if dist < 2.0 {
+						let World::Interactive(interactive) = &mut self.world else {
+							return;
+						};
+						interactive.click(
+							self.display_settings.camera.position(),
+							self.display_settings
+								.camera
+								.ray_direction(self.mouse.position(), self.window.get_size()),
+						);
+					}
+				}
+			},
+			_ => {},
+		}
+	}
+
+	pub fn mouse_move(&mut self, position: na::Point2<f32>) {
+		let delta = self.mouse.delta(position);
+		if self.mouse.pressed(input::MouseButton::Left) {
+			self.display_settings.camera.rotate(delta, &self.state);
+		}
+		if self.mouse.pressed(input::MouseButton::Right) {
+			let World::Interactive(interactive) = &mut self.world else {
+				return;
+			};
+			interactive.draw(
+				self.display_settings.camera.position(),
+				self.display_settings
+					.camera
+					.ray_direction(self.mouse.position(), self.window.get_size()),
+			);
+		}
 	}
 }
 

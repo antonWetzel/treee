@@ -98,7 +98,7 @@ fn segmentation(
 	let lookup = render::Lookup::new_png(
 		&segmenting.state,
 		include_bytes!("../../viewer/assets/grad_turbo.png"),
-		(layers + 1) as u32,
+		(layers) as u32,
 	);
 	sender.send(Event::Lookup(lookup)).unwrap();
 

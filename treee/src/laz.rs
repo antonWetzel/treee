@@ -156,10 +156,6 @@ pub struct Chunk {
 }
 
 impl Chunk {
-	pub fn length(&self) -> usize {
-		self.slice.len() / self.point_length
-	}
-
 	pub fn read(mut self) -> Vec<na::Point3<f32>> {
 		let amount = self.slice.len() / self.point_length;
 		let mut res = Vec::with_capacity(amount);

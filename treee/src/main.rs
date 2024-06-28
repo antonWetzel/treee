@@ -111,17 +111,11 @@ impl App {
 					winit::keyboard::PhysicalKey::Unidentified(_) => {},
 				},
 				winit::event::WindowEvent::MouseInput { state, button, .. } => {
-					program.mouse.update(button.into(), state);
+					program.mouse_click(button.into(), state);
 				},
 				winit::event::WindowEvent::CursorMoved { position, .. } => {
-					let position = na::vector![position.x as f32, position.y as f32].into();
-					let delta = program.mouse.delta(position);
-					if program.mouse.pressed(input::MouseButton::Left) {
-						program
-							.display_settings
-							.camera
-							.rotate(delta, &program.state);
-					}
+					let position = na::point![position.x as f32, position.y as f32];
+					program.mouse_move(position);
 				},
 				winit::event::WindowEvent::MouseWheel { delta, .. } => {
 					let delta = match delta {
