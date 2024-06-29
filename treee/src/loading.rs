@@ -102,10 +102,8 @@ impl Loading {
 			}
 		});
 
-		if self.done.load(Ordering::Relaxed) {
-			if ui.button("Continue").clicked() {
-				self.sender.send(Event::Done).unwrap();
-			}
+		if self.done.load(Ordering::Relaxed) && ui.button("Continue").clicked() {
+			self.sender.send(Event::Done).unwrap();
 		}
 
 		response

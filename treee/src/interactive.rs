@@ -1,47 +1,21 @@
 use nalgebra as na;
-use render::Lookup;
 use std::{collections::HashMap, ops::Not, sync::Arc};
 
-use dashmap::DashMap;
-
-use crate::{calculations::SegmentInformation, program::Event};
+use crate::{
+	calculations::{DisplayModus, Segment},
+	program::Event,
+};
 
 pub struct Interactive {
 	state: Arc<render::State>,
-	segments: HashMap<usize, Segment>,
-	pub point_clouds: HashMap<usize, (render::PointCloud, render::PointCloudProperty)>,
+	pub segments: HashMap<usize, Segment>,
+	pub display: DisplayModus,
 
 	pub modus: Modus,
 	draw_radius: f32,
 }
 
-struct Segment {
-	points: Vec<na::Point3<f32>>,
-	min: na::Point3<f32>,
-	max: na::Point3<f32>,
-}
-
 impl Segment {
-	pub fn empty() -> Self {
-		Self {
-			points: Vec::new(),
-			min: na::point![0.0, 0.0, 0.0],
-			max: na::point![0.0, 0.0, 0.0],
-		}
-	}
-
-	pub fn new(points: Vec<na::Point3<f32>>) -> Self {
-		let (mut min, mut max) = (points[0], points[0]);
-		for &p in points.iter() {
-			for dim in 0..3 {
-				min[dim] = min[dim].min(p[dim]);
-				max[dim] = max[dim].max(p[dim]);
-			}
-		}
-
-		Self { points, min, max }
-	}
-
 	//https://tavianator.com/2011/ray_box.html
 	pub fn raycast_distance(&self, start: na::Point3<f32>, direction: na::Vector3<f32>) -> Option<(f32, f32)> {
 		let mut t_min = f32::NEG_INFINITY;
@@ -87,7 +61,12 @@ impl Segment {
 		found.then_some(best_dist)
 	}
 
-	pub fn remove(&mut self, center: na::Point3<f32>, radius: f32, mut target: Option<&mut Self>) -> bool {
+	pub fn remove(
+		&mut self,
+		center: na::Point3<f32>,
+		radius: f32,
+		mut target: Option<&mut Vec<na::Point3<f32>>>,
+	) -> bool {
 		for dim in 0..3 {
 			if ((self.min[dim] - radius)..(self.max[dim] + radius))
 				.contains(&center[dim])
@@ -103,7 +82,7 @@ impl Segment {
 				return true;
 			}
 			if let Some(target) = &mut target {
-				target.add_point(p);
+				target.push(p);
 			}
 			changed = true;
 			false
@@ -125,66 +104,67 @@ impl Segment {
 		}
 	}
 
-	fn add_point(&mut self, p: na::Point3<f32>) {
-		self.points.push(p);
-		for dim in 0..3 {
-			self.min[dim] = self.min[dim].min(p[dim]);
-			self.max[dim] = self.max[dim].max(p[dim]);
-		}
+	pub fn update_render(&mut self, idx: usize, state: &render::State) {
+		self.point_cloud = render::PointCloud::new(state, &self.points);
+		self.solid = render::PointCloudProperty::new(state, &vec![idx as u32; self.points.len()]);
+		self.update_property(state);
 	}
 
-	pub fn render_data(&self, state: &render::State, index: usize) -> (render::PointCloud, render::PointCloudProperty) {
-		let point_cloud = render::PointCloud::new(state, &self.points);
-		let property = render::PointCloudProperty::new(state, &vec![index as u32; self.points.len()]);
-		(point_cloud, property)
+	pub fn update_property(&mut self, state: &render::State) {
+		let mut property = vec![0u32; self.points.len()];
+		for (idx, p) in self.points.iter().enumerate() {
+			property[idx] = if p.y < self.info.ground_sep {
+				0
+			} else if p.y < self.info.crown_sep {
+				u32::MAX / 2
+			} else {
+				u32::MAX
+			};
+		}
+		self.property = render::PointCloudProperty::new(state, &property);
+	}
+
+	pub fn height(&self) -> f32 {
+		self.max.y - self.min.y
 	}
 }
 
 impl Interactive {
 	pub fn new(
-		segments: DashMap<usize, Vec<na::Point3<f32>>>,
+		segments: HashMap<usize, Segment>,
 		state: Arc<render::State>,
+		display: DisplayModus,
 	) -> (Self, crossbeam::channel::Receiver<Event>) {
-		let (sender, receiver) = crossbeam::channel::unbounded();
-
-		let mut seg = HashMap::new();
-		let mut clouds = HashMap::new();
-		for (_, segment) in segments.into_iter() {
-			if segment.is_empty() {
-				continue;
-			}
-
-			let mut idx = rand::random();
-			while seg.contains_key(&idx) {
-				idx = rand::random();
-			}
-			let point_cloud = render::PointCloud::new(&state, &segment);
-			let property = render::PointCloudProperty::new(&state, &vec![idx as u32; segment.len()]);
-			seg.insert(idx, Segment::new(segment));
-			clouds.insert(idx, (point_cloud, property));
-		}
-
-		sender
-			.send(Event::Lookup(Lookup::new_png(
-				&state,
-				include_bytes!("../../viewer/assets/grad_turbo.png"),
-				u32::MAX,
-			)))
-			.unwrap();
+		let (_sender, receiver) = crossbeam::channel::unbounded();
 
 		let interactive = Self {
 			state,
-			segments: seg,
-			point_clouds: clouds,
+			segments,
 			modus: Modus::SelectView,
 			draw_radius: 0.5,
+			display,
 		};
+
 		(interactive, receiver)
 	}
 
-	pub fn ui(&mut self, ui: &mut egui::Ui) -> InteractiveResponse {
-		let response = InteractiveResponse::None;
-
+	pub fn ui(&mut self, ui: &mut egui::Ui) {
+		if ui
+			.radio(matches!(self.display, DisplayModus::Solid), "Segment")
+			.clicked()
+		{
+			self.display = DisplayModus::Solid;
+		}
+		if ui
+			.radio(
+				matches!(self.display, DisplayModus::Property),
+				"Classification",
+			)
+			.clicked()
+		{
+			self.display = DisplayModus::Property;
+		}
+		ui.separator();
 		if let Modus::View(_) = self.modus {
 			if ui.button("Return").clicked() {
 				self.modus = Modus::SelectView;
@@ -229,65 +209,61 @@ impl Interactive {
 			}
 		}
 
-		match &mut self.modus {
+		ui.separator();
+		ui.label("remove radius");
+		ui.add(
+			egui::Slider::new(&mut self.draw_radius, 0.1..=10.0)
+				.logarithmic(true)
+				.suffix("m"),
+		);
+		ui.separator();
+
+		match self.modus {
 			Modus::SelectView => {},
 			Modus::Spawn => {},
-			Modus::SelectDraw | Modus::Draw(_) => {
-				ui.label("Radius");
-				ui.add(
-					egui::Slider::new(&mut self.draw_radius, 0.1..=10.0)
-						.logarithmic(true)
-						.suffix("m"),
-				);
-			},
-			Modus::Delete => {
-				ui.label("Radius");
-				ui.add(
-					egui::Slider::new(&mut self.draw_radius, 0.1..=10.0)
-						.logarithmic(true)
-						.suffix("m"),
-				);
-			},
-			Modus::View(view) => {
+			Modus::SelectDraw | Modus::Draw(_) => {},
+			Modus::Delete => {},
+			Modus::View(idx) => {
+				let segment = self.segments.get_mut(&idx).unwrap();
 				let mut changed = false;
-				let mut rel_ground = view.info.ground_sep - view.min;
+				let mut rel_ground = segment.info.ground_sep - segment.min.y;
+				ui.label("trunk start");
 				if ui
-					.add(egui::Slider::new(&mut rel_ground, 0.0..=view.height).suffix("m"))
+					.add(egui::Slider::new(&mut rel_ground, 0.0..=segment.height()).suffix("m"))
 					.changed()
 				{
 					changed = true;
-					view.info.ground_sep = view.min + rel_ground;
-					view.info.crown_sep = view.info.crown_sep.max(view.info.ground_sep);
+					segment.info.ground_sep = segment.min.y + rel_ground;
+					segment.info.crown_sep = segment.info.crown_sep.max(segment.info.ground_sep);
 				}
-				let mut rel_crown = view.info.crown_sep - view.min;
+				let mut rel_crown = segment.info.crown_sep - segment.min.y;
+				ui.label("crown start");
 				if ui
-					.add(egui::Slider::new(&mut rel_crown, 0.0..=view.height).suffix("m"))
+					.add(egui::Slider::new(&mut rel_crown, 0.0..=segment.height()).suffix("m"))
 					.changed()
 				{
 					changed = true;
-					view.info.crown_sep = view.min + rel_crown;
-					view.info.ground_sep = view.info.ground_sep.min(view.info.crown_sep);
+					segment.info.crown_sep = segment.min.y + rel_crown;
+					segment.info.ground_sep = segment.info.ground_sep.min(segment.info.crown_sep);
 				}
 				if changed {
-					view.property = SegmentView::gen_property(
-						&self.state,
-						self.segments.get(&view.index).unwrap(),
-						view.info.ground_sep,
-						view.info.crown_sep,
-					);
+					segment
+						.info
+						.redo_diameters(&segment.points, segment.min.y, segment.max.y);
+					segment.update_property(&self.state);
 				}
+				ui.separator();
 				ui.label("trunk diameter");
-				ui.label(format!("{}m", view.info.trunk_diameter));
+				ui.label(format!("{}m", segment.info.trunk_diameter));
 				ui.label("crown diameter");
-				ui.label(format!("{}m", view.info.crown_diameter));
+				ui.label(format!("{}m", segment.info.crown_diameter));
+				ui.separator();
 
-				if ui.button("Export Options...").clicked() {
+				if ui.button("Export (todo)").clicked() {
 					println!("todo");
 				}
 			},
 		};
-
-		response
 	}
 
 	fn select(&self, start: na::Point3<f32>, direction: na::Vector3<f32>) -> Option<(usize, f32)> {
@@ -330,22 +306,20 @@ impl Interactive {
 					return;
 				};
 				let hit = start + direction * distance;
-				let mut target = Segment::empty();
+				let mut points = Vec::new();
 				let mut empty: Vec<usize> = Vec::new();
 				for (&other, segment) in self.segments.iter_mut() {
-					let seg_changed = segment.remove(hit, self.draw_radius, Some(&mut target));
+					let seg_changed = segment.remove(hit, self.draw_radius, Some(&mut points));
 					if segment.points.is_empty() {
 						empty.push(other);
 					} else if seg_changed {
-						self.point_clouds
-							.insert(other, segment.render_data(&self.state, other));
+						segment.update_property(&self.state);
 					}
 				}
 				for empty in empty {
 					self.segments.remove(&empty);
-					self.point_clouds.remove(&empty);
 				}
-				if target.points.is_empty() {
+				if points.is_empty() {
 					return;
 				}
 
@@ -353,9 +327,8 @@ impl Interactive {
 				while self.segments.contains_key(&idx) {
 					idx = rand::random();
 				}
-				self.point_clouds
-					.insert(idx, target.render_data(&self.state, idx));
-				self.segments.insert(idx, target);
+				let segment = Segment::new(points, idx, &self.state);
+				self.segments.insert(idx, segment);
 				self.modus = Modus::Draw(idx);
 			},
 			Modus::Delete => {},
@@ -364,30 +337,17 @@ impl Interactive {
 				let Some((idx, _)) = self.select(start, direction) else {
 					return;
 				};
-				self.modus = Modus::View(SegmentView::new(
-					&self.state,
-					idx,
-					self.segments.get(&idx).unwrap(),
-				));
+				let seg = self.segments.get_mut(&idx).unwrap();
+				seg.info.redo_diameters(&seg.points, seg.min.y, seg.max.y);
+				self.modus = Modus::View(idx);
 			},
 
-			Modus::View(view) => {
-				let seg = self.segments.get_mut(&view.index).unwrap();
-				let Some(distance) = seg.exact_distance(start, direction) else {
-					return;
-				};
-
-				let hit = start + direction * distance;
-				if seg.remove(hit, self.draw_radius, None) {
-					self.point_clouds
-						.insert(view.index, seg.render_data(&self.state, view.index));
-				}
-			},
+			Modus::View(_) => {},
 		}
 	}
 
 	pub fn drag(&mut self, start: na::Point3<f32>, direction: na::Vector3<f32>) {
-		match &self.modus {
+		match self.modus {
 			Modus::Delete => {
 				let Some((_, distance)) = self.select(start, direction) else {
 					return;
@@ -396,8 +356,7 @@ impl Interactive {
 				let mut empty = Vec::new();
 				for (&other, segment) in self.segments.iter_mut() {
 					if segment.remove(hit, self.draw_radius, None) {
-						self.point_clouds
-							.insert(other, segment.render_data(&self.state, other));
+						segment.update_render(other, &self.state);
 					}
 					if segment.points.is_empty() {
 						empty.push(other);
@@ -405,10 +364,9 @@ impl Interactive {
 				}
 				for empty in empty {
 					self.segments.remove(&empty);
-					self.point_clouds.remove(&empty);
 				}
 			},
-			&Modus::Draw(idx) => {
+			Modus::Draw(idx) => {
 				let Some((_, distance)) = self.select(start, direction) else {
 					return;
 				};
@@ -417,9 +375,8 @@ impl Interactive {
 				let mut changed = false;
 				let mut empty = Vec::new();
 				for (&other, segment) in self.segments.iter_mut() {
-					if segment.remove(hit, self.draw_radius, Some(&mut target)) {
-						self.point_clouds
-							.insert(other, segment.render_data(&self.state, other));
+					if segment.remove(hit, self.draw_radius, Some(&mut target.points)) {
+						segment.update_render(other, &self.state);
 						changed = true;
 					}
 					if segment.points.is_empty() {
@@ -427,17 +384,23 @@ impl Interactive {
 					}
 				}
 				if changed {
-					self.point_clouds
-						.insert(idx, target.render_data(&self.state, idx));
+					target.update_render(idx, &self.state);
 				}
 				self.segments.insert(idx, target);
 				for empty in empty {
 					self.segments.remove(&empty);
-					self.point_clouds.remove(&empty);
 				}
 			},
-			Modus::View(_view) => {
-				// delete in view
+			Modus::View(idx) => {
+				let seg = self.segments.get_mut(&idx).unwrap();
+				let Some(distance) = seg.exact_distance(start, direction) else {
+					return;
+				};
+
+				let hit = start + direction * distance;
+				if seg.remove(hit, self.draw_radius, None) {
+					seg.update_render(idx, &self.state);
+				}
 			},
 			_ => {},
 		}
@@ -451,52 +414,5 @@ pub enum Modus {
 	Draw(usize),
 	Spawn,
 	Delete,
-	View(SegmentView),
-}
-
-pub enum InteractiveResponse {
-	None,
-}
-
-#[derive(Debug)]
-pub struct SegmentView {
-	pub index: usize,
-	min: f32,
-	height: f32,
-	info: SegmentInformation,
-	pub property: render::PointCloudProperty,
-}
-
-impl SegmentView {
-	fn new(state: &render::State, index: usize, segment: &Segment) -> Self {
-		let min = segment.min.y;
-		let max = segment.max.y;
-		let info = SegmentInformation::new(&segment.points, min, max);
-		Self {
-			index,
-			min,
-			info,
-			height: max - min,
-			property: Self::gen_property(state, segment, info.ground_sep, info.crown_sep),
-		}
-	}
-
-	fn gen_property(
-		state: &render::State,
-		segment: &Segment,
-		ground_sep: f32,
-		crown_sep: f32,
-	) -> render::PointCloudProperty {
-		let mut property = vec![0u32; segment.points.len()];
-		for (idx, p) in segment.points.iter().enumerate() {
-			property[idx] = if p.y < ground_sep {
-				0
-			} else if p.y < crown_sep {
-				u32::MAX / 2
-			} else {
-				u32::MAX
-			};
-		}
-		render::PointCloudProperty::new(state, &property)
-	}
+	View(usize),
 }

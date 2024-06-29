@@ -1,6 +1,7 @@
+use crate::calculations::{self, Calculations, DisplayModus};
 use crate::camera::Camera;
 use crate::empty::{Empty, EmptyResponse};
-use crate::interactive::{self, Interactive, InteractiveResponse};
+use crate::interactive::{self, Interactive};
 use crate::loading::{Loading, LoadingResponse};
 use crate::segmenting::{Segmenting, SegmentingResponse, DEFAULT_MAX_DISTANCE};
 use crate::{Error, EventLoop};
@@ -47,6 +48,7 @@ pub enum World {
 	Empty(Empty),
 	Loading(Arc<Loading>),
 	Segmenting(Segmenting),
+	Calculations(Calculations),
 	Interactive(Interactive),
 }
 
@@ -125,14 +127,14 @@ impl Program {
 					World::Segmenting(segmenting) => match segmenting.ui(ui) {
 						SegmentingResponse::None => {},
 						SegmentingResponse::Done(segments) => {
-							let (interative, receiver) = Interactive::new(segments, self.state.clone());
-							self.world = World::Interactive(interative);
+							let (calculations, receiver) = Calculations::new(segments, self.state.clone());
+							self.world = World::Calculations(calculations);
 							self.receiver = receiver;
 						},
 					},
-					World::Interactive(interactive) => match interactive.ui(ui) {
-						InteractiveResponse::None => {},
-					},
+
+					World::Calculations(calculations) => calculations.ui(ui),
+					World::Interactive(interactive) => interactive.ui(ui),
 				});
 		});
 		self.egui_winit
@@ -236,6 +238,43 @@ impl Program {
 					drop(render_pass);
 				});
 			},
+			World::Calculations(calculations) => {
+				let segments = calculations.shared.segments.lock().unwrap();
+				self.window.render(&self.state, |context| {
+					let command_encoder = context.encoder();
+					let commands = self.egui_wgpu.update_buffers(
+						&self.state.device,
+						&self.state.queue,
+						command_encoder,
+						&paint_jobs,
+						screen,
+					);
+					self.state.queue.submit(commands);
+
+					let mut render_pass = context.render_pass(self.display_settings.background);
+					let point_cloud_pass = self.point_cloud_state.render(
+						&mut render_pass,
+						self.display_settings.camera.gpu(),
+						&self.display_settings.lookup,
+						&self.display_settings.point_cloud_environment,
+					);
+
+					for (_, seg) in segments.iter() {
+						match calculations.modus {
+							calculations::DisplayModus::Solid => seg.point_cloud.render(point_cloud_pass, &seg.solid),
+							calculations::DisplayModus::Property => {
+								seg.point_cloud.render(point_cloud_pass, &seg.property)
+							},
+						}
+					}
+					drop(render_pass);
+
+					let mut render_pass = context.post_process_pass();
+					self.eye_dome.render(&mut render_pass);
+					self.egui_wgpu.render(&mut render_pass, &paint_jobs, screen);
+					drop(render_pass);
+				});
+			},
 			World::Interactive(interactive) => {
 				self.window.render(&self.state, |context| {
 					let command_encoder = context.encoder();
@@ -256,12 +295,18 @@ impl Program {
 						&self.display_settings.point_cloud_environment,
 					);
 
-					if let interactive::Modus::View(seg) = &interactive.modus {
-						let (point_cloud, _) = &interactive.point_clouds.get(&seg.index).unwrap();
-						point_cloud.render(point_cloud_pass, &seg.property);
+					if let interactive::Modus::View(idx) = interactive.modus {
+						let seg = interactive.segments.get(&idx).unwrap();
+						match interactive.display {
+							DisplayModus::Solid => seg.point_cloud.render(point_cloud_pass, &seg.solid),
+							DisplayModus::Property => seg.point_cloud.render(point_cloud_pass, &seg.property),
+						}
 					} else {
-						for (_, (point_cloud, property)) in interactive.point_clouds.iter() {
-							point_cloud.render(point_cloud_pass, property);
+						for (_, seg) in interactive.segments.iter() {
+							match interactive.display {
+								DisplayModus::Solid => seg.point_cloud.render(point_cloud_pass, &seg.solid),
+								DisplayModus::Property => seg.point_cloud.render(point_cloud_pass, &seg.property),
+							}
 						}
 					}
 
@@ -309,6 +354,16 @@ impl Program {
 							let (segmenting, receiver) =
 								Segmenting::new(loading.octree, self.state.clone(), DEFAULT_MAX_DISTANCE);
 							self.world = World::Segmenting(segmenting);
+							self.receiver = receiver;
+						},
+						World::Calculations(calculations) => {
+							let shared = Arc::try_unwrap(calculations.shared).unwrap();
+							let (interactive, receiver) = Interactive::new(
+								shared.segments.into_inner().unwrap(),
+								self.state.clone(),
+								calculations.modus,
+							);
+							self.world = World::Interactive(interactive);
 							self.receiver = receiver;
 						},
 						world @ _ => self.world = world,
