@@ -5,8 +5,8 @@ use rand::{seq::SliceRandom, thread_rng};
 use rayon::iter::{ParallelBridge, ParallelIterator};
 use std::{
 	collections::VecDeque,
-	ops::{DerefMut, Not},
-	sync::{Arc, Mutex, RwLock},
+	ops::Not,
+	sync::{Arc, Mutex},
 };
 use voronator::delaunator::Point;
 
@@ -98,7 +98,7 @@ fn segmentation(
 	let lookup = render::Lookup::new_png(
 		&segmenting.state,
 		include_bytes!("../../viewer/assets/grad_turbo.png"),
-		(layers) as u32,
+		128, // overflow to repeat
 	);
 	sender.send(Event::Lookup(lookup)).unwrap();
 
@@ -213,7 +213,7 @@ pub struct Tree {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct TreeStatistics {
 	pub area: f32,
-	pub center: na::Point2<f32>,
+	pub _center: na::Point2<f32>,
 }
 
 impl Tree {
@@ -286,7 +286,7 @@ impl Tree {
 
 	pub fn statistics(&self) -> TreeStatistics {
 		let (center, area) = centroid(&self.points);
-		TreeStatistics { center, area }
+		TreeStatistics { _center: center, area }
 	}
 
 	pub fn contains(&self, point: na::Point2<f32>, max_distance: f32) -> bool {

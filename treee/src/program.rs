@@ -1,6 +1,6 @@
 use crate::camera::Camera;
 use crate::empty::{Empty, EmptyResponse};
-use crate::interactive::{Interactive, InteractiveResponse};
+use crate::interactive::{self, Interactive, InteractiveResponse};
 use crate::loading::{Loading, LoadingResponse};
 use crate::segmenting::{Segmenting, SegmentingResponse, DEFAULT_MAX_DISTANCE};
 use crate::{Error, EventLoop};
@@ -103,38 +103,36 @@ impl Program {
 		}
 		let raw_input = self.egui_winit.take_egui_input(&self.window);
 		let full_output = self.egui.run(raw_input, |ctx| {
-			egui::TopBottomPanel::top("panel")
+			egui::SidePanel::left("panel")
 				.resizable(false)
-				.show(ctx, |ui| {
-					ui.horizontal(|ui| match &mut self.world {
-						World::Empty(empty) => match empty.ui(ui) {
-							EmptyResponse::None => {},
-							EmptyResponse::Load(path) => {
-								let (loading, receiver) = Loading::new(path, self.state.clone());
-								self.world = World::Loading(loading);
-								self.receiver = receiver;
-							},
+				.show(ctx, |ui| match &mut self.world {
+					World::Empty(empty) => match empty.ui(ui) {
+						EmptyResponse::None => {},
+						EmptyResponse::Load(path) => {
+							let (loading, receiver) = Loading::new(path, self.state.clone());
+							self.world = World::Loading(loading);
+							self.receiver = receiver;
 						},
-						World::Loading(loading) => match loading.ui(ui, &mut self.display_settings) {
-							LoadingResponse::None => {},
-							LoadingResponse::Close => {
-								let (empty, receiver) = Empty::new();
-								self.world = World::Empty(empty);
-								self.receiver = receiver;
-							},
+					},
+					World::Loading(loading) => match loading.ui(ui, &mut self.display_settings) {
+						LoadingResponse::None => {},
+						LoadingResponse::Close => {
+							let (empty, receiver) = Empty::new();
+							self.world = World::Empty(empty);
+							self.receiver = receiver;
 						},
-						World::Segmenting(segmenting) => match segmenting.ui(ui) {
-							SegmentingResponse::None => {},
-							SegmentingResponse::Done(segments) => {
-								let (interative, receiver) = Interactive::new(segments, self.state.clone());
-								self.world = World::Interactive(interative);
-								self.receiver = receiver;
-							},
+					},
+					World::Segmenting(segmenting) => match segmenting.ui(ui) {
+						SegmentingResponse::None => {},
+						SegmentingResponse::Done(segments) => {
+							let (interative, receiver) = Interactive::new(segments, self.state.clone());
+							self.world = World::Interactive(interative);
+							self.receiver = receiver;
 						},
-						World::Interactive(interactive) => match interactive.ui(ui) {
-							InteractiveResponse::None => {},
-						},
-					});
+					},
+					World::Interactive(interactive) => match interactive.ui(ui) {
+						InteractiveResponse::None => {},
+					},
 				});
 		});
 		self.egui_winit
@@ -257,9 +255,16 @@ impl Program {
 						&self.display_settings.lookup,
 						&self.display_settings.point_cloud_environment,
 					);
-					for (_, (point_cloud, property)) in interactive.point_clouds.iter() {
-						point_cloud.render(point_cloud_pass, property);
+
+					if let interactive::Modus::View(seg) = &interactive.modus {
+						let (point_cloud, _) = &interactive.point_clouds.get(&seg.index).unwrap();
+						point_cloud.render(point_cloud_pass, &seg.property);
+					} else {
+						for (_, (point_cloud, property)) in interactive.point_clouds.iter() {
+							point_cloud.render(point_cloud_pass, property);
+						}
 					}
+
 					drop(render_pass);
 
 					let mut render_pass = context.post_process_pass();
@@ -333,39 +338,55 @@ impl Program {
 		self.mouse.update(button, state);
 
 		match (button, state) {
-			(input::MouseButton::Right, input::State::Pressed) => {
+			(input::MouseButton::Left, input::State::Pressed) => {
 				self.mouse_start = Some(self.mouse.position());
 			},
-			(input::MouseButton::Right, input::State::Released) => {
-				if let Some(start) = self.mouse_start {
-					let dist = (start - self.mouse.position()).norm();
-					if dist < 2.0 {
-						let World::Interactive(interactive) = &mut self.world else {
-							return;
-						};
-						interactive.click(
-							self.display_settings.camera.position(),
-							self.display_settings
-								.camera
-								.ray_direction(self.mouse.position(), self.window.get_size()),
-						);
-					}
+			(input::MouseButton::Left, input::State::Released) => {
+				let Some(start) = self.mouse_start else {
+					return;
+				};
+				let dist = (start - self.mouse.position()).norm();
+				if dist >= 2.0 {
+					return;
 				}
+				let World::Interactive(interactive) = &mut self.world else {
+					return;
+				};
+				interactive.click(
+					self.display_settings.camera.position(),
+					self.display_settings
+						.camera
+						.ray_direction(self.mouse.position(), self.window.get_size()),
+				);
+			},
+			(input::MouseButton::Right, input::State::Pressed) => {
+				let World::Interactive(interactive) = &mut self.world else {
+					return;
+				};
+				interactive.drag(
+					self.display_settings.camera.position(),
+					self.display_settings
+						.camera
+						.ray_direction(self.mouse.position(), self.window.get_size()),
+				);
 			},
 			_ => {},
 		}
+	}
+
+	pub fn key(&mut self, key: input::KeyCode, state: input::State) {
+		self.keyboard.update(key, state);
 	}
 
 	pub fn mouse_move(&mut self, position: na::Point2<f32>) {
 		let delta = self.mouse.delta(position);
 		if self.mouse.pressed(input::MouseButton::Left) {
 			self.display_settings.camera.rotate(delta, &self.state);
-		}
-		if self.mouse.pressed(input::MouseButton::Right) {
+		} else if self.mouse.pressed(input::MouseButton::Right) {
 			let World::Interactive(interactive) = &mut self.world else {
 				return;
 			};
-			interactive.draw(
+			interactive.drag(
 				self.display_settings.camera.position(),
 				self.display_settings
 					.camera

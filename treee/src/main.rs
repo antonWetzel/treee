@@ -1,3 +1,4 @@
+mod calculations;
 mod camera;
 mod empty;
 mod interactive;
@@ -107,7 +108,7 @@ impl App {
 					program.resized();
 				},
 				winit::event::WindowEvent::KeyboardInput { event, .. } => match event.physical_key {
-					winit::keyboard::PhysicalKey::Code(key) => program.keyboard.update(key, event.state),
+					winit::keyboard::PhysicalKey::Code(key) => program.key(key, event.state),
 					winit::keyboard::PhysicalKey::Unidentified(_) => {},
 				},
 				winit::event::WindowEvent::MouseInput { state, button, .. } => {
