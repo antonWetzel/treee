@@ -49,7 +49,7 @@ impl Calculations {
 		sender
 			.send(Event::Lookup(render::Lookup::new_png(
 				&shared.state,
-				include_bytes!("../../viewer/assets/grad_turbo.png"),
+				include_bytes!("../assets/grad_turbo.png"),
 				u32::MAX,
 			)))
 			.unwrap();

@@ -58,11 +58,7 @@ impl Program {
 
 		let point_cloud_environment = render::PointCloudEnvironment::new(&state, 0, u32::MAX, 0.1);
 		let point_cloud_state = render::PointCloudState::new(&state);
-		let lookup = render::Lookup::new_png(
-			&state,
-			include_bytes!("../../viewer/assets/grad_warm.png"),
-			u32::MAX,
-		);
+		let lookup = render::Lookup::new_png(&state, include_bytes!("../assets/grad_warm.png"), u32::MAX);
 		let camera = Camera::new(&state, window.get_aspect());
 		let eye_dome = render::EyeDome::new(&state, window.config(), window.depth_texture(), 0.7);
 

@@ -1,18 +1,7 @@
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [workspace]
-members = [
-	"project",
-	# "importer",
-	"input",
-	"k-nearest",
-	"render",
-	"treee",
-	"triangulation",
-	# "viewer",
-	"treee",
-	"data-file",
-]
+members = ["input", "render", "treee"]
 default-members = ["treee"]
 
 resolver = "2"
@@ -28,12 +17,6 @@ rust-version = "1.73"
 [workspace.dependencies]
 render = { path = "./render" }
 input = { path = "./input" }
-project = { path = "./project" }
-k-nearest = { path = "./k-nearest" }
-triangulation = { path = "./triangulation" }
-# importer = { path = "./importer" }
-# viewer = { path = "./viewer" }
-data-file = { path = "./data-file" }
 
 pollster = "0.3"
 rfd = "0.14"

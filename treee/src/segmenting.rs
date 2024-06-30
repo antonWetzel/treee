@@ -97,7 +97,7 @@ fn segmentation(
 	let layers = size.ceil() as usize;
 	let lookup = render::Lookup::new_png(
 		&segmenting.state,
-		include_bytes!("../../viewer/assets/grad_turbo.png"),
+		include_bytes!("../assets/grad_turbo.png"),
 		128, // overflow to repeat
 	);
 	sender.send(Event::Lookup(lookup)).unwrap();
