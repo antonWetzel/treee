@@ -387,6 +387,7 @@ impl Program {
 
 	pub fn mouse_click(&mut self, button: input::MouseButton, state: input::State) {
 		self.mouse.update(button, state);
+		self.window.request_redraw();
 
 		match (button, state) {
 			(input::MouseButton::Left, input::State::Pressed) => {
@@ -430,6 +431,7 @@ impl Program {
 	}
 
 	pub fn mouse_move(&mut self, position: na::Point2<f32>) {
+		self.window.request_redraw();
 		let delta = self.mouse.delta(position);
 		if self.mouse.pressed(input::MouseButton::Left) {
 			self.display_settings.camera.rotate(delta, &self.state);

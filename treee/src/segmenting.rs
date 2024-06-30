@@ -47,6 +47,7 @@ impl Segmenting {
 			let shared = shared.clone();
 			std::thread::spawn(move || {
 				while let Ok(distance) = restart_reciever.recv() {
+					shared.done.store(None);
 					segmentation(distance, &octree, &shared, &sender, &restart_reciever);
 				}
 			});
