@@ -1,6 +1,5 @@
 use nalgebra as na;
 
-const BASE_MOVE_SPEED: f32 = 0.1;
 const BASE_ROTATE_SPEED: f32 = 0.002;
 const FIELD_OF_VIEW: f32 = 45.0 * std::f32::consts::TAU / 360.0;
 
@@ -11,6 +10,7 @@ pub struct Camera {
 	controller: Controller,
 }
 
+#[allow(dead_code)]
 impl Camera {
 	pub fn new(state: &render::State, aspect: f32) -> Self {
 		let camera = render::Camera3D {
@@ -42,6 +42,11 @@ impl Camera {
 
 	pub fn movement(&mut self, direction: na::Vector2<f32>, state: &render::State) {
 		self.controller.movement(direction, &mut self.transform);
+		self.update_gpu(state);
+	}
+
+	pub fn vertical_movement(&mut self, amount: f32, state: &render::State) {
+		self.transform *= na::Translation3::new(0.0, amount, 0.0);
 		self.update_gpu(state);
 	}
 
@@ -107,24 +112,25 @@ impl Camera {
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum Controller {
-	FirstPerson { sensitivity: f32 },
-	Orbital { offset: f32 },
+	#[allow(dead_code)]
+	FirstPerson {
+		sensitivity: f32,
+	},
+	Orbital {
+		offset: f32,
+	},
 }
 
 impl Controller {
 	pub fn movement(&mut self, direction: na::Vector2<f32>, transform: &mut na::Affine3<f32>) {
 		match *self {
 			Self::FirstPerson { sensitivity } => {
-				*transform *= na::Translation3::new(
-					direction.x * sensitivity * BASE_MOVE_SPEED,
-					0.0,
-					direction.y * sensitivity * BASE_MOVE_SPEED,
-				)
+				*transform *= na::Translation3::new(direction.x * sensitivity, 0.0, direction.y * sensitivity)
 			},
 			Self::Orbital { offset } => {
 				let vector = (*transform * na::vector![1.0, 0.0, 0.0] * direction.x
 					+ (*transform * na::vector![1.0, 0.0, 0.0]).cross(&na::vector![0.0, 1.0, 0.0]) * direction.y)
-					* offset * BASE_MOVE_SPEED;
+					* offset;
 				*transform = na::Translation3 { vector } * *transform;
 			},
 		}

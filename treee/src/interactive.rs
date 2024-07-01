@@ -1,7 +1,8 @@
 use nalgebra as na;
 use std::{
-	collections::HashMap,
+	collections::{HashMap, HashSet},
 	fs::File,
+	hash::Hash,
 	io::{BufReader, BufWriter},
 	ops::Not,
 	path::PathBuf,
@@ -26,7 +27,7 @@ pub struct Interactive {
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
-struct InteractiveSer {
+struct InteractiveSave {
 	pub segments: HashMap<usize, SegmentData>,
 	pub deleted: SegmentData,
 }
@@ -152,13 +153,20 @@ impl Interactive {
 
 	pub fn load(path: PathBuf, state: Arc<render::State>) -> (Self, crossbeam::channel::Receiver<Event>) {
 		let (sender, receiver) = crossbeam::channel::unbounded();
+		sender
+			.send(Event::Lookup(render::Lookup::new_png(
+				&state,
+				include_bytes!("../assets/grad_turbo.png"),
+				u32::MAX,
+			)))
+			.unwrap();
 
 		let file = File::open(path).unwrap();
-		let ser = bincode::deserialize_from::<_, InteractiveSer>(BufReader::new(file)).unwrap();
+		let save = bincode::deserialize_from::<_, InteractiveSave>(BufReader::new(file)).unwrap();
 
-		let deleted = Segment::from_data(0, ser.deleted, &state);
+		let deleted = Segment::from_data(0, save.deleted, &state);
 		let mut segments = HashMap::new();
-		for (idx, data) in ser.segments {
+		for (idx, data) in save.segments {
 			segments.insert(idx, Segment::from_data(idx, data, &state));
 		}
 
@@ -198,7 +206,7 @@ impl Interactive {
 			self.display = DisplayModus::Property;
 		}
 		ui.separator();
-		if let Modus::View(_) = self.modus {
+		if let Modus::View(..) = self.modus {
 			if ui.button("Return").clicked() {
 				self.modus = Modus::SelectView;
 			}
@@ -267,7 +275,7 @@ impl Interactive {
 			Modus::SelectDraw | Modus::Draw(_) => {},
 			Modus::SelectCombine | Modus::Combine(_) => {},
 			Modus::Delete => {},
-			Modus::View(idx) => {
+			Modus::View(idx, ref mut mesh) => {
 				let segment = self.segments.get_mut(&idx).unwrap();
 				let mut changed = false;
 				let mut rel_ground = segment.data.info.ground_sep - segment.data.min.y;
@@ -304,7 +312,28 @@ impl Interactive {
 						.info
 						.redo_diameters(&segment.data.points, segment.data.min.y, segment.data.max.y);
 					segment.update_render(idx, &self.state);
+					if let Some(mesh) = mesh {
+						*mesh = convex_hull(
+							&segment.data.points,
+							segment.data.info.crown_sep,
+							&self.state,
+						);
+					}
 				}
+				ui.separator();
+				let mut render_mesh = mesh.is_some();
+				if ui.checkbox(&mut render_mesh, "Convex Hull").changed() {
+					*mesh = if render_mesh {
+						Some(convex_hull(
+							&segment.data.points,
+							segment.data.info.crown_sep,
+							&self.state,
+						))
+					} else {
+						None
+					};
+				}
+
 				ui.separator();
 				ui.label("trunk diameter");
 				ui.label(format!("{}m", segment.data.info.trunk_diameter));
@@ -328,12 +357,12 @@ impl Interactive {
 				for (&idx, segment) in self.segments.iter() {
 					segments.insert(idx, segment.data.clone());
 				}
-				let ser = InteractiveSer {
+				let save = InteractiveSave {
 					segments,
 					deleted: self.deleted.data.clone(),
 				};
 				let file = File::create(path).unwrap();
-				bincode::serialize_into(BufWriter::new(file), &ser).unwrap();
+				bincode::serialize_into(BufWriter::new(file), &save).unwrap();
 			}
 		}
 	}
@@ -420,10 +449,11 @@ impl Interactive {
 				seg.data
 					.info
 					.redo_diameters(&seg.data.points, seg.data.min.y, seg.data.max.y);
-				self.modus = Modus::View(idx);
+				// let mesh = convex_hull(&seg.data.points, seg.data.info.crown_sep, &self.state);
+				self.modus = Modus::View(idx, None);
 			},
 
-			Modus::View(_) => {},
+			Modus::View(..) => {},
 		}
 	}
 
@@ -465,14 +495,7 @@ impl Interactive {
 						if self.show_deleted.not() {
 							return None;
 						}
-						if self
-							.deleted
-							.data
-							.raycast_distance(start, direction)
-							.is_none()
-						{
-							return None;
-						}
+						self.deleted.data.raycast_distance(start, direction)?;
 						self.deleted.data.exact_distance(start, direction)
 					})
 				else {
@@ -516,25 +539,28 @@ impl Interactive {
 					self.segments.remove(&empty);
 				}
 			},
-			Modus::View(idx) => {
+			Modus::View(idx, ref mut mesh) => {
 				let seg = self.segments.get_mut(&idx).unwrap();
 				let Some(distance) = seg.data.exact_distance(start, direction) else {
 					return;
 				};
 				let hit = start + direction * distance;
-				let target = &mut self.deleted;
+
 				let mut changed = false;
 				if seg
 					.data
-					.remove(hit, self.draw_radius, &mut target.data.points)
+					.remove(hit, self.draw_radius, &mut self.deleted.data.points)
 				{
 					seg.update_render(idx, &self.state);
 					seg.data.update_min_max();
+					if let Some(mesh) = mesh {
+						*mesh = convex_hull(&seg.data.points, seg.data.info.crown_sep, &self.state);
+					}
 					changed = true;
 				}
 				if changed {
-					target.update_render(0, &self.state);
-					target.data.update_min_max();
+					self.deleted.update_render(0, &self.state);
+					self.deleted.data.update_min_max();
 				}
 			},
 			Modus::Combine(idx) => {
@@ -564,5 +590,113 @@ pub enum Modus {
 	Combine(usize),
 	Spawn,
 	Delete,
-	View(usize),
+	View(usize, Option<render::Mesh>),
+}
+
+// https://tildesites.bowdoin.edu/~ltoma/teaching/cs3250-CompGeom/spring17/Lectures/cg-hull3d.pdf
+fn convex_hull(points: &[na::Point3<f32>], min_height: f32, state: &render::State) -> render::Mesh {
+	#[derive(Debug, Clone, Copy)]
+	struct Point {
+		idx: usize,
+		pos: na::Point3<f32>,
+	}
+
+	impl PartialEq for Point {
+		fn eq(&self, other: &Self) -> bool {
+			self.idx == other.idx
+		}
+	}
+	impl Eq for Point {}
+	impl Hash for Point {
+		fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+			self.idx.hash(state)
+		}
+	}
+
+	let points = {
+		let mut vec = Vec::new();
+		for (idx, &p) in points.iter().enumerate() {
+			if p.y >= min_height {
+				vec.push(Point { idx, pos: p });
+			}
+		}
+		vec
+	};
+	if points.len() < 10 {
+		return render::Mesh::new(state, &[0, 0, 0]);
+	}
+
+	let mut first = points[0];
+	for &p in points.iter() {
+		if p.pos.y < first.pos.y {
+			first = p;
+		}
+	}
+
+	let mut best_value = f32::MAX;
+	let mut second = None;
+	for &p in points.iter() {
+		if first.idx == p.idx {
+			continue;
+		}
+		let v = p.pos - first.pos;
+		let x = v.dot(&na::vector![1.0, 0.0, 0.0]);
+		let y = v.dot(&na::vector![0.0, 1.0, 0.0]);
+		let angle = y.atan2(x);
+		assert!(angle >= 0.0);
+		if angle < best_value {
+			best_value = angle;
+			second = Some(p);
+		}
+	}
+	let second = second.unwrap();
+
+	let mut iter = points
+		.iter()
+		.copied()
+		.filter(|&p| p != first && p != second);
+	let mut third = iter.next().unwrap();
+	for p in iter {
+		let out = (second.pos - first.pos)
+			.normalize()
+			.cross(&(third.pos - first.pos).normalize());
+		if out.dot(&(p.pos - first.pos).normalize()) < 0.0 {
+			third = p;
+		}
+	}
+
+	let mut indices = Vec::new();
+	indices.extend_from_slice(&[first.idx as u32, second.idx as u32, third.idx as u32]);
+	let mut edges = [(second, first), (third, second), (first, third)]
+		.into_iter()
+		.collect::<HashSet<_>>();
+
+	while let Some(&(first, second)) = edges.iter().next() {
+		edges.remove(&(first, second));
+
+		let mut iter = points
+			.iter()
+			.copied()
+			.filter(|&p| p != first && p != second);
+		let mut third = iter.next().unwrap();
+		for p in iter {
+			let out = (second.pos - first.pos)
+				.normalize()
+				.cross(&(third.pos - first.pos).normalize());
+			if out.dot(&(p.pos - first.pos).normalize()) < 0.0 {
+				third = p;
+			}
+		}
+
+		if edges.remove(&(third, first)).not() {
+			edges.insert((first, third));
+		}
+		if edges.remove(&(second, third)).not() {
+			edges.insert((third, second));
+		}
+
+		indices.extend_from_slice(&[first.idx as u32, second.idx as u32, third.idx as u32]);
+	}
+
+	render::Mesh::new(state, &indices)
 }

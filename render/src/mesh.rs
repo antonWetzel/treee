@@ -30,7 +30,8 @@ impl MeshState {
 			.device
 			.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
 				label: Some("Render Pipeline Layout"),
-				bind_group_layouts: &[&Camera3DGPU::get_layout(state), &Lookup::get_layout(state)],
+				// bind_group_layouts: &[&Camera3DGPU::get_layout(state), &Lookup::get_layout(state)],
+				bind_group_layouts: &[&Camera3DGPU::get_layout(state)],
 				push_constant_ranges: &[],
 			});
 
@@ -44,7 +45,7 @@ impl MeshState {
 					entry_point: "vs_main",
 					buffers: &[
 						point_description(wgpu::VertexStepMode::Vertex),
-						point_property_description(wgpu::VertexStepMode::Vertex),
+						// point_property_description(wgpu::VertexStepMode::Vertex),
 					],
 				},
 				fragment: Some(wgpu::FragmentState {
@@ -81,31 +82,22 @@ impl MeshState {
 				multiview: None,
 			})
 	}
+
+	pub fn render<'a, 'b>(
+		&'a self,
+		render_pass: &'b mut RenderPass<'a>,
+		camera: &'a Camera3DGPU,
+		// lookup: &'a Lookup,
+	) -> &'b mut MeshPass<'a> {
+		render_pass.set_pipeline(&self.pipeline);
+		render_pass.set_bind_group(0, camera.get_bind_group(), &[]);
+		// render_pass.set_bind_group(1, lookup.get_bind_group(), &[]);
+		unsafe { std::mem::transmute::<_, &'b mut MeshPass<'a>>(render_pass) }
+	}
 }
 
 #[repr(transparent)]
 pub struct MeshPass<'a>(wgpu::RenderPass<'a>);
-
-pub trait MeshRender {
-	fn render<'a>(&'a self, mesh_pass: &mut MeshPass<'a>);
-}
-
-pub trait MeshRenderExt<'a, V> {
-	fn render_meshes(&mut self, value: &'a V, state: &'a MeshState, camera: &'a Camera3DGPU, lookup: &'a Lookup);
-}
-
-impl<'a, V> MeshRenderExt<'a, V> for RenderPass<'a>
-where
-	V: MeshRender,
-{
-	fn render_meshes(&mut self, value: &'a V, state: &'a MeshState, camera: &'a Camera3DGPU, lookup: &'a Lookup) {
-		self.set_pipeline(&state.pipeline);
-		self.set_bind_group(0, camera.get_bind_group(), &[]);
-		self.set_bind_group(1, lookup.get_bind_group(), &[]);
-		let lines_pass = unsafe { std::mem::transmute::<_, &mut MeshPass<'a>>(self) };
-		value.render(lines_pass);
-	}
-}
 
 #[derive(Debug)]
 pub struct Mesh {
@@ -130,17 +122,17 @@ impl Mesh {
 		&'a self,
 		mesh_pass: &mut MeshPass<'a>,
 		point_cloud: &'a PointCloud,
-		property: &'a PointCloudProperty,
+		// property: &'a PointCloudProperty,
 	) {
 		mesh_pass
 			.0
 			.set_vertex_buffer(0, point_cloud.buffer.slice(..));
-		mesh_pass.0.set_vertex_buffer(
-			1,
-			property
-				.buffer
-				.slice(0..(point_cloud.instances * std::mem::size_of::<u32>() as u32) as wgpu::BufferAddress),
-		);
+		// mesh_pass.0.set_vertex_buffer(
+		// 	1,
+		// 	property
+		// 		.buffer
+		// 		.slice(0..(point_cloud.instances * std::mem::size_of::<u32>() as u32) as wgpu::BufferAddress),
+		// );
 		mesh_pass
 			.0
 			.set_index_buffer(self.buffer.slice(..), wgpu::IndexFormat::Uint32);

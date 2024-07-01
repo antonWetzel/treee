@@ -200,7 +200,7 @@ fn segmentation(
 			}
 
 			if slice.is_empty().not() {
-				let point_cloud = render::PointCloud::new(&segmenting.state, &slice);
+				let point_cloud = render::PointCloud::new(&segmenting.state, slice);
 				let property = render::PointCloudProperty::new(&segmenting.state, &property);
 				let mut point_clouds = segmenting.point_clouds.lock().unwrap();
 				point_clouds.push((point_cloud, property));

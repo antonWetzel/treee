@@ -43,6 +43,13 @@ impl LoadingChunk {
 impl Loading {
 	pub fn new(path: PathBuf, state: Arc<render::State>) -> (Arc<Self>, crossbeam::channel::Receiver<Event>) {
 		let (sender, receiver) = crossbeam::channel::unbounded();
+		sender
+			.send(Event::Lookup(render::Lookup::new_png(
+				&state,
+				include_bytes!("../assets/white.png"),
+				u32::MAX,
+			)))
+			.unwrap();
 		let point_clouds = Mutex::new(HashMap::new());
 
 		let laz = Laz::new(&path).unwrap();
@@ -127,10 +134,8 @@ impl Loading {
 		if progress < self.total {
 			let progress = progress as f32 / self.total as f32;
 			ui.add(egui::ProgressBar::new(progress).rounding(egui::Rounding::ZERO));
-		} else {
-			if ui.button("Continue").clicked() {
-				self.sender.send(Event::Done).unwrap();
-			}
+		} else if ui.button("Continue").clicked() {
+			self.sender.send(Event::Done).unwrap();
 		}
 
 		response

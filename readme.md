@@ -8,5 +8,6 @@ out of date
 
 ## Todo
 
-- convex crown hull
 - combine scans
+- export
+- window icon

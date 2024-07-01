@@ -34,6 +34,7 @@ pub struct Program {
 
 	pub eye_dome: render::EyeDome,
 	pub point_cloud_state: render::PointCloudState,
+	pub mesh_state: render::MeshState,
 
 	pub display_settings: DisplaySettings,
 }
@@ -59,6 +60,8 @@ impl Program {
 
 		let point_cloud_environment = render::PointCloudEnvironment::new(&state, 0, u32::MAX, 0.1);
 		let point_cloud_state = render::PointCloudState::new(&state);
+		// let mesh_state = render::MeshState::new(&state);
+		let mesh_state = render::MeshState::new_as_lines(&state);
 		let lookup = render::Lookup::new_png(&state, include_bytes!("../assets/grad_warm.png"), u32::MAX);
 		let camera = Camera::new(&state, window.get_aspect());
 		let eye_dome = render::EyeDome::new(&state, window.config(), window.depth_texture(), 0.7);
@@ -86,6 +89,7 @@ impl Program {
 
 			eye_dome,
 			point_cloud_state,
+			mesh_state,
 
 			display_settings: DisplaySettings {
 				background: na::point![0.1, 0.2, 0.3],
@@ -302,7 +306,7 @@ impl Program {
 							render.render(interactive.display, point_cloud_pass);
 						}
 					}
-					if let interactive::Modus::View(idx) = interactive.modus {
+					if let interactive::Modus::View(idx, _) = interactive.modus {
 						let seg = interactive.segments.get(&idx).unwrap();
 						if let Some(render) = &seg.render {
 							render.render(interactive.display, point_cloud_pass);
@@ -314,6 +318,18 @@ impl Program {
 							};
 							render.render(interactive.display, point_cloud_pass);
 						}
+					}
+					if let interactive::Modus::View(idx, mesh) = &interactive.modus {
+						let seg = interactive.segments.get(idx).unwrap();
+						let mesh_pass = self.mesh_state.render(
+							&mut render_pass,
+							self.display_settings.camera.gpu(),
+							// &self.display_settings.lookup,
+						);
+						if let (Some(render), Some(mesh)) = (&seg.render, mesh) {
+							// mesh.render(mesh_pass, &render.point_cloud, &render.property);
+							mesh.render(mesh_pass, &render.point_cloud);
+						};
 					}
 
 					drop(render_pass);
@@ -344,10 +360,20 @@ impl Program {
 		}
 		let l = direction.norm();
 		if l > 0.0 {
-			direction *= 10.0 * delta / l;
+			direction *= delta / l;
 			self.display_settings
 				.camera
 				.movement(direction, &self.state);
+		}
+		if self.keyboard.pressed(input::KeyCode::KeyQ) {
+			self.display_settings
+				.camera
+				.vertical_movement(delta * -10.0, &self.state);
+		}
+		if self.keyboard.pressed(input::KeyCode::KeyE) {
+			self.display_settings
+				.camera
+				.vertical_movement(delta * 10.0, &self.state);
 		}
 
 		while let Ok(event) = self.receiver.try_recv() {
@@ -376,7 +402,7 @@ impl Program {
 							self.world = World::Interactive(interactive);
 							self.receiver = receiver;
 						},
-						world @ _ => self.world = world,
+						world => self.world = world,
 					};
 				},
 			}

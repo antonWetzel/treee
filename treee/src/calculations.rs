@@ -47,9 +47,9 @@ pub struct SegmentData {
 
 #[derive(Debug)]
 pub struct SegmentRender {
-	point_cloud: render::PointCloud,
+	pub point_cloud: render::PointCloud,
 	solid: render::PointCloudProperty,
-	property: render::PointCloudProperty,
+	pub property: render::PointCloudProperty,
 }
 
 impl SegmentRender {
