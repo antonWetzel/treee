@@ -15,7 +15,7 @@ impl Empty {
 		if ui.button("Load").clicked() {
 			let path = rfd::FileDialog::new()
 				.set_title("Load")
-				.add_filter("Pointcloud", &["las", "laz"])
+				.add_filter("Pointcloud", &["las", "laz", "ipc"])
 				.pick_file();
 			if let Some(path) = path {
 				response = EmptyResponse::Load(path);
@@ -24,6 +24,7 @@ impl Empty {
 		response
 	}
 }
+
 pub enum EmptyResponse {
 	None,
 	Load(PathBuf),

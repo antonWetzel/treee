@@ -3,7 +3,7 @@ use std::{
 	collections::HashMap,
 	path::PathBuf,
 	sync::{
-		atomic::{AtomicBool, AtomicUsize, Ordering},
+		atomic::{AtomicUsize, Ordering},
 		Arc, Mutex,
 	},
 };

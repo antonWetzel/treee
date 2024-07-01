@@ -30,3 +30,5 @@ dashmap.workspace = true
 rayon.workspace = true
 rand.workspace = true
 voronator.workspace = true
+serde.workspace = true
+bincode.workspace = true

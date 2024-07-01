@@ -33,9 +33,14 @@ pub struct Shared {
 
 #[derive(Debug)]
 pub struct Segment {
+	pub data: SegmentData,
+	pub render: Option<SegmentRender>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SegmentData {
 	pub points: Vec<na::Point3<f32>>,
 	pub info: SegmentInformation,
-	pub render: Option<SegmentRender>,
 	pub min: na::Point3<f32>,
 	pub max: na::Point3<f32>,
 }
@@ -175,11 +180,19 @@ impl Segment {
 
 		let info = SegmentInformation::new(&points, min.y, max.y);
 		let render = SegmentRender::new(&points, idx, info, state);
-		Self { points, render, info, min, max }
+		Self {
+			render,
+			data: SegmentData { points, info, min, max },
+		}
+	}
+
+	pub fn from_data(idx: usize, data: SegmentData, state: &render::State) -> Self {
+		let render = SegmentRender::new(&data.points, idx, data.info, state);
+		Self { data, render }
 	}
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct SegmentInformation {
 	pub ground_sep: f32,
 	pub crown_sep: f32,

@@ -1,8 +1,15 @@
 use nalgebra as na;
-use std::{collections::HashMap, ops::Not, sync::Arc};
+use std::{
+	collections::HashMap,
+	fs::File,
+	io::{BufReader, BufWriter},
+	ops::Not,
+	path::PathBuf,
+	sync::Arc,
+};
 
 use crate::{
-	calculations::{DisplayModus, Segment, SegmentRender},
+	calculations::{DisplayModus, Segment, SegmentData, SegmentRender},
 	program::Event,
 };
 
@@ -11,13 +18,20 @@ pub struct Interactive {
 	pub segments: HashMap<usize, Segment>,
 	pub deleted: Segment,
 	pub display: DisplayModus,
+	sender: crossbeam::channel::Sender<Event>,
 
 	pub modus: Modus,
 	pub show_deleted: bool,
 	draw_radius: f32,
 }
 
-impl Segment {
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+struct InteractiveSer {
+	pub segments: HashMap<usize, SegmentData>,
+	pub deleted: SegmentData,
+}
+
+impl SegmentData {
 	//https://tavianator.com/2011/ray_box.html
 	pub fn raycast_distance(&self, start: na::Point3<f32>, direction: na::Vector3<f32>) -> Option<(f32, f32)> {
 		let mut t_min = f32::NEG_INFINITY;
@@ -102,12 +116,14 @@ impl Segment {
 		}
 	}
 
-	pub fn update_render(&mut self, idx: usize, state: &render::State) {
-		self.render = SegmentRender::new(&self.points, idx, self.info, state);
-	}
-
 	pub fn height(&self) -> f32 {
 		self.max.y - self.min.y
+	}
+}
+
+impl Segment {
+	pub fn update_render(&mut self, idx: usize, state: &render::State) {
+		self.render = SegmentRender::new(&self.data.points, idx, self.data.info, state);
 	}
 }
 
@@ -117,7 +133,7 @@ impl Interactive {
 		state: Arc<render::State>,
 		display: DisplayModus,
 	) -> (Self, crossbeam::channel::Receiver<Event>) {
-		let (_sender, receiver) = crossbeam::channel::unbounded();
+		let (sender, receiver) = crossbeam::channel::unbounded();
 		let deleted = Segment::new(Vec::new(), 0, &state);
 
 		let interactive = Self {
@@ -127,6 +143,33 @@ impl Interactive {
 			deleted,
 			draw_radius: 0.5,
 			display,
+			sender,
+			show_deleted: false,
+		};
+
+		(interactive, receiver)
+	}
+
+	pub fn load(path: PathBuf, state: Arc<render::State>) -> (Self, crossbeam::channel::Receiver<Event>) {
+		let (sender, receiver) = crossbeam::channel::unbounded();
+
+		let file = File::open(path).unwrap();
+		let ser = bincode::deserialize_from::<_, InteractiveSer>(BufReader::new(file)).unwrap();
+
+		let deleted = Segment::from_data(0, ser.deleted, &state);
+		let mut segments = HashMap::new();
+		for (idx, data) in ser.segments {
+			segments.insert(idx, Segment::from_data(idx, data, &state));
+		}
+
+		let interactive = Self {
+			state,
+			segments,
+			modus: Modus::SelectView,
+			sender,
+			deleted,
+			draw_radius: 0.5,
+			display: DisplayModus::Solid,
 			show_deleted: false,
 		};
 
@@ -134,6 +177,11 @@ impl Interactive {
 	}
 
 	pub fn ui(&mut self, ui: &mut egui::Ui) {
+		if ui.button("Close").clicked() {
+			self.sender.send(Event::Close).unwrap();
+		}
+
+		ui.separator();
 		if ui
 			.radio(matches!(self.display, DisplayModus::Solid), "Segment")
 			.clicked()
@@ -222,37 +270,46 @@ impl Interactive {
 			Modus::View(idx) => {
 				let segment = self.segments.get_mut(&idx).unwrap();
 				let mut changed = false;
-				let mut rel_ground = segment.info.ground_sep - segment.min.y;
+				let mut rel_ground = segment.data.info.ground_sep - segment.data.min.y;
 				ui.label("trunk start");
 				if ui
-					.add(egui::Slider::new(&mut rel_ground, 0.0..=segment.height()).suffix("m"))
+					.add(egui::Slider::new(&mut rel_ground, 0.0..=segment.data.height()).suffix("m"))
 					.changed()
 				{
 					changed = true;
-					segment.info.ground_sep = segment.min.y + rel_ground;
-					segment.info.crown_sep = segment.info.crown_sep.max(segment.info.ground_sep);
+					segment.data.info.ground_sep = segment.data.min.y + rel_ground;
+					segment.data.info.crown_sep = segment
+						.data
+						.info
+						.crown_sep
+						.max(segment.data.info.ground_sep);
 				}
-				let mut rel_crown = segment.info.crown_sep - segment.min.y;
+				let mut rel_crown = segment.data.info.crown_sep - segment.data.min.y;
 				ui.label("crown start");
 				if ui
-					.add(egui::Slider::new(&mut rel_crown, 0.0..=segment.height()).suffix("m"))
+					.add(egui::Slider::new(&mut rel_crown, 0.0..=segment.data.height()).suffix("m"))
 					.changed()
 				{
 					changed = true;
-					segment.info.crown_sep = segment.min.y + rel_crown;
-					segment.info.ground_sep = segment.info.ground_sep.min(segment.info.crown_sep);
+					segment.data.info.crown_sep = segment.data.min.y + rel_crown;
+					segment.data.info.ground_sep = segment
+						.data
+						.info
+						.ground_sep
+						.min(segment.data.info.crown_sep);
 				}
 				if changed {
 					segment
+						.data
 						.info
-						.redo_diameters(&segment.points, segment.min.y, segment.max.y);
+						.redo_diameters(&segment.data.points, segment.data.min.y, segment.data.max.y);
 					segment.update_render(idx, &self.state);
 				}
 				ui.separator();
 				ui.label("trunk diameter");
-				ui.label(format!("{}m", segment.info.trunk_diameter));
+				ui.label(format!("{}m", segment.data.info.trunk_diameter));
 				ui.label("crown diameter");
-				ui.label(format!("{}m", segment.info.crown_diameter));
+				ui.label(format!("{}m", segment.data.info.crown_diameter));
 				ui.separator();
 
 				if ui.button("Export (todo)").clicked() {
@@ -260,12 +317,31 @@ impl Interactive {
 				}
 			},
 		};
+
+		ui.separator();
+		if ui.button("Save").clicked() {
+			let path = rfd::FileDialog::new()
+				.add_filter("Pointcloud", &["ipc"])
+				.save_file();
+			if let Some(path) = path {
+				let mut segments = HashMap::new();
+				for (&idx, segment) in self.segments.iter() {
+					segments.insert(idx, segment.data.clone());
+				}
+				let ser = InteractiveSer {
+					segments,
+					deleted: self.deleted.data.clone(),
+				};
+				let file = File::create(path).unwrap();
+				bincode::serialize_into(BufWriter::new(file), &ser).unwrap();
+			}
+		}
 	}
 
 	fn select(&self, start: na::Point3<f32>, direction: na::Vector3<f32>) -> Option<(usize, f32)> {
 		let mut potential = Vec::new();
 		for (&idx, segment) in self.segments.iter() {
-			let Some(distance) = segment.raycast_distance(start, direction) else {
+			let Some(distance) = segment.data.raycast_distance(start, direction) else {
 				continue;
 			};
 			potential.push((idx, distance));
@@ -277,7 +353,7 @@ impl Interactive {
 			if min > distance {
 				break;
 			}
-			let Some(d) = self.segments[&idx].exact_distance(start, direction) else {
+			let Some(d) = self.segments[&idx].data.exact_distance(start, direction) else {
 				continue;
 			};
 			if d < distance {
@@ -312,8 +388,8 @@ impl Interactive {
 				let mut points = Vec::new();
 				let mut empty: Vec<usize> = Vec::new();
 				for (&other, segment) in self.segments.iter_mut() {
-					let seg_changed = segment.remove(hit, self.draw_radius, &mut points);
-					if segment.points.is_empty() {
+					let seg_changed = segment.data.remove(hit, self.draw_radius, &mut points);
+					if segment.data.points.is_empty() {
 						empty.push(other);
 					} else if seg_changed {
 						segment.update_render(other, &self.state);
@@ -341,7 +417,9 @@ impl Interactive {
 					return;
 				};
 				let seg = self.segments.get_mut(&idx).unwrap();
-				seg.info.redo_diameters(&seg.points, seg.min.y, seg.max.y);
+				seg.data
+					.info
+					.redo_diameters(&seg.data.points, seg.data.min.y, seg.data.max.y);
 				self.modus = Modus::View(idx);
 			},
 
@@ -359,12 +437,15 @@ impl Interactive {
 				let mut changed = false;
 				let mut empty = Vec::new();
 				for (&other, segment) in self.segments.iter_mut() {
-					if segment.remove(hit, self.draw_radius, &mut self.deleted.points) {
+					if segment
+						.data
+						.remove(hit, self.draw_radius, &mut self.deleted.data.points)
+					{
 						segment.update_render(other, &self.state);
-						segment.update_min_max();
+						segment.data.update_min_max();
 						changed = true;
 					}
-					if segment.points.is_empty() {
+					if segment.data.points.is_empty() {
 						empty.push(other);
 					}
 				}
@@ -372,7 +453,7 @@ impl Interactive {
 					self.segments.remove(&empty);
 				}
 				if changed {
-					self.deleted.update_min_max();
+					self.deleted.data.update_min_max();
 					self.deleted.update_render(0, &self.state);
 				}
 			},
@@ -384,10 +465,15 @@ impl Interactive {
 						if self.show_deleted.not() {
 							return None;
 						}
-						if self.deleted.raycast_distance(start, direction).is_none() {
+						if self
+							.deleted
+							.data
+							.raycast_distance(start, direction)
+							.is_none()
+						{
 							return None;
 						}
-						self.deleted.exact_distance(start, direction)
+						self.deleted.data.exact_distance(start, direction)
 					})
 				else {
 					return;
@@ -397,29 +483,33 @@ impl Interactive {
 				let mut changed = false;
 				let mut empty = Vec::new();
 				for (&other, segment) in self.segments.iter_mut() {
-					if segment.remove(hit, self.draw_radius, &mut target.points) {
+					if segment
+						.data
+						.remove(hit, self.draw_radius, &mut target.data.points)
+					{
 						segment.update_render(other, &self.state);
-						segment.update_min_max();
+						segment.data.update_min_max();
 						changed = true;
 					}
-					if segment.points.is_empty() {
+					if segment.data.points.is_empty() {
 						empty.push(other);
 					}
 				}
 				if self.show_deleted {
 					if self
 						.deleted
-						.remove(hit, self.draw_radius, &mut target.points)
+						.data
+						.remove(hit, self.draw_radius, &mut target.data.points)
 					{
 						self.deleted.update_render(0, &self.state);
-						self.deleted.update_min_max();
+						self.deleted.data.update_min_max();
 						changed = true;
 					}
 				}
 
 				if changed {
 					target.update_render(idx, &self.state);
-					target.update_min_max();
+					target.data.update_min_max();
 				}
 				self.segments.insert(idx, target);
 				for empty in empty {
@@ -428,20 +518,23 @@ impl Interactive {
 			},
 			Modus::View(idx) => {
 				let seg = self.segments.get_mut(&idx).unwrap();
-				let Some(distance) = seg.exact_distance(start, direction) else {
+				let Some(distance) = seg.data.exact_distance(start, direction) else {
 					return;
 				};
 				let hit = start + direction * distance;
 				let target = &mut self.deleted;
 				let mut changed = false;
-				if seg.remove(hit, self.draw_radius, &mut target.points) {
+				if seg
+					.data
+					.remove(hit, self.draw_radius, &mut target.data.points)
+				{
 					seg.update_render(idx, &self.state);
-					seg.update_min_max();
+					seg.data.update_min_max();
 					changed = true;
 				}
 				if changed {
-					target.update_min_max();
 					target.update_render(0, &self.state);
+					target.data.update_min_max();
 				}
 			},
 			Modus::Combine(idx) => {
@@ -453,9 +546,9 @@ impl Interactive {
 				}
 				let mut other = self.segments.remove(&other).unwrap();
 				let target = self.segments.get_mut(&idx).unwrap();
-				target.points.append(&mut other.points);
+				target.data.points.append(&mut other.data.points);
 				target.update_render(idx, &self.state);
-				target.update_min_max();
+				target.data.update_min_max();
 			},
 			_ => {},
 		}

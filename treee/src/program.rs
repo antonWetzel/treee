@@ -1,4 +1,4 @@
-use crate::calculations::{self, Calculations, DisplayModus};
+use crate::calculations::Calculations;
 use crate::camera::Camera;
 use crate::empty::{Empty, EmptyResponse};
 use crate::interactive::{self, Interactive};
@@ -12,6 +12,7 @@ use std::sync::Arc;
 pub enum Event {
 	Done,
 	Lookup(render::Lookup),
+	Close,
 }
 
 pub struct Program {
@@ -106,10 +107,18 @@ impl Program {
 				.show(ctx, |ui| match &mut self.world {
 					World::Empty(empty) => match empty.ui(ui) {
 						EmptyResponse::None => {},
-						EmptyResponse::Load(path) => {
-							let (loading, receiver) = Loading::new(path, self.state.clone());
-							self.world = World::Loading(loading);
-							self.receiver = receiver;
+						EmptyResponse::Load(path) => match path.extension().unwrap().to_str().unwrap() {
+							"laz" | "las" => {
+								let (loading, receiver) = Loading::new(path, self.state.clone());
+								self.world = World::Loading(loading);
+								self.receiver = receiver;
+							},
+							"ipc" => {
+								let (interactive, receiver) = Interactive::load(path, self.state.clone());
+								self.world = World::Interactive(interactive);
+								self.receiver = receiver;
+							},
+							_ => panic!("invalid file format"),
 						},
 					},
 					World::Loading(loading) => match loading.ui(ui, &mut self.display_settings) {
@@ -343,6 +352,11 @@ impl Program {
 
 		while let Ok(event) = self.receiver.try_recv() {
 			match event {
+				Event::Close => {
+					let (empty, receiver) = Empty::new();
+					self.world = World::Empty(empty);
+					self.receiver = receiver;
+				},
 				Event::Lookup(lookup) => self.display_settings.lookup = lookup,
 				Event::Done => {
 					match std::mem::replace(&mut self.world, World::Empty(Empty::new().0)) {
