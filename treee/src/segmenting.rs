@@ -6,7 +6,10 @@ use rayon::iter::{ParallelBridge, ParallelIterator};
 use std::{
 	collections::VecDeque,
 	ops::Not,
-	sync::{Arc, Mutex},
+	sync::{
+		atomic::{AtomicUsize, Ordering},
+		Arc, Mutex,
+	},
 };
 use voronator::delaunator::Point;
 
@@ -18,12 +21,14 @@ pub struct Segmenting {
 	pub shared: Arc<Shared>,
 	pub distance: f32,
 	pub restart: crossbeam::channel::Sender<f32>,
+	pub total: usize,
 }
 
 pub struct Shared {
 	pub state: Arc<render::State>,
 	pub point_clouds: Mutex<Vec<(render::PointCloud, render::PointCloudProperty)>>,
 	pub done: AtomicCell<Option<DashMap<usize, Vec<na::Point3<f32>>>>>,
+	pub progress: AtomicUsize,
 }
 
 impl Segmenting {
@@ -41,7 +46,15 @@ impl Segmenting {
 			state,
 			point_clouds: Mutex::new(Vec::new()),
 			done: AtomicCell::new(None),
+			progress: AtomicUsize::new(0),
 		});
+		let total = loading
+			.slices
+			.lock()
+			.unwrap()
+			.iter()
+			.map(|slice| slice.len())
+			.sum();
 
 		{
 			let shared = shared.clone();
@@ -58,6 +71,7 @@ impl Segmenting {
 				shared,
 				distance: max_distance,
 				restart: restart_sender,
+				total,
 			},
 			receiver,
 		)
@@ -79,6 +93,9 @@ impl Segmenting {
 			} else {
 				self.shared.done.store(Some(segments));
 			}
+		} else {
+			let progress = self.shared.progress.load(Ordering::Relaxed) as f32 / self.total as f32;
+			ui.add(egui::ProgressBar::new(progress).rounding(egui::Rounding::ZERO));
 		}
 
 		response
@@ -103,6 +120,7 @@ fn segmentation(
 		128, // overflow to repeat
 	);
 	sender.send(Event::Lookup(lookup)).unwrap();
+	segmenting.progress.store(0, Ordering::Relaxed);
 
 	let mut source_slices = loading.slices.lock().unwrap();
 	let slices = {
@@ -187,6 +205,9 @@ fn segmentation(
 				let mut point_clouds = segmenting.point_clouds.lock().unwrap();
 				point_clouds.push((point_cloud, property));
 			}
+			segmenting
+				.progress
+				.fetch_add(slice.len(), Ordering::Relaxed);
 			false
 		});
 	if cancel {

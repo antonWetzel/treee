@@ -96,6 +96,10 @@ impl Laz {
 		})
 	}
 
+	pub fn total(&self) -> usize {
+		self.chunks.len()
+	}
+
 	pub fn read(self, cb: impl Fn(Chunk) + std::marker::Sync) -> Result<(), Error> {
 		self.chunks
 			.into_iter()

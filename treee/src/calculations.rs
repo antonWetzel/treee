@@ -1,4 +1,10 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+	collections::HashMap,
+	sync::{
+		atomic::{AtomicUsize, Ordering},
+		Arc,
+	},
+};
 
 use dashmap::DashMap;
 use nalgebra as na;
@@ -9,6 +15,7 @@ use crate::{program::Event, segmenting::Tree};
 pub struct Calculations {
 	pub modus: DisplayModus,
 	pub shared: Arc<Shared>,
+	pub total: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -21,6 +28,7 @@ pub enum DisplayModus {
 pub struct Shared {
 	state: Arc<render::State>,
 	pub segments: std::sync::Mutex<HashMap<usize, Segment>>,
+	pub progress: AtomicUsize,
 }
 
 #[derive(Debug)]
@@ -84,8 +92,10 @@ impl Calculations {
 		let shared = Shared {
 			state,
 			segments: std::sync::Mutex::new(HashMap::new()),
+			progress: AtomicUsize::new(0),
 		};
 		let shared = Arc::new(shared);
+		let total = segments.len();
 
 		let (sender, reciever) = crossbeam::channel::unbounded();
 
@@ -111,12 +121,20 @@ impl Calculations {
 				segs.into_par_iter().for_each(|(idx, points)| {
 					let seg = Segment::new(points, idx, &shared.state);
 					shared.segments.lock().unwrap().insert(idx, seg);
+					shared.progress.fetch_add(1, Ordering::Relaxed);
 				});
 				sender.send(Event::Done).unwrap();
 			});
 		}
 
-		(Self { shared, modus: DisplayModus::Solid }, reciever)
+		(
+			Self {
+				shared,
+				modus: DisplayModus::Solid,
+				total,
+			},
+			reciever,
+		)
 	}
 
 	pub fn ui(&mut self, ui: &mut egui::Ui) {
@@ -135,6 +153,8 @@ impl Calculations {
 		{
 			self.modus = DisplayModus::Property;
 		}
+		let progress = self.shared.progress.load(Ordering::Relaxed) as f32 / self.total as f32;
+		ui.add(egui::ProgressBar::new(progress).rounding(egui::Rounding::ZERO));
 	}
 }
 

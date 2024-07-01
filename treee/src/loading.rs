@@ -3,7 +3,7 @@ use std::{
 	collections::HashMap,
 	path::PathBuf,
 	sync::{
-		atomic::{AtomicBool, Ordering},
+		atomic::{AtomicBool, AtomicUsize, Ordering},
 		Arc, Mutex,
 	},
 };
@@ -22,7 +22,8 @@ pub struct Loading {
 	pub min: na::Point3<f32>,
 	pub max: na::Point3<f32>,
 	sender: crossbeam::channel::Sender<Event>,
-	done: AtomicBool,
+	pub total: usize,
+	progress: AtomicUsize,
 }
 
 #[derive(Debug)]
@@ -58,7 +59,8 @@ impl Loading {
 			slices: Mutex::new(slices),
 
 			chunks: point_clouds,
-			done: AtomicBool::new(false),
+			total: laz.total(),
+			progress: AtomicUsize::new(0),
 		};
 		let loading = Arc::new(loading);
 
@@ -83,9 +85,9 @@ impl Loading {
 						slices[idx].push(p);
 					}
 					drop(slices);
+					loading.progress.fetch_add(1, Ordering::Relaxed);
 				})
 				.unwrap();
-				loading.done.store(true, Ordering::Relaxed);
 			});
 		}
 		(loading, receiver)
@@ -121,8 +123,14 @@ impl Loading {
 			}
 		});
 
-		if self.done.load(Ordering::Relaxed) && ui.button("Continue").clicked() {
-			self.sender.send(Event::Done).unwrap();
+		let progress = self.progress.load(Ordering::Relaxed);
+		if progress < self.total {
+			let progress = progress as f32 / self.total as f32;
+			ui.add(egui::ProgressBar::new(progress).rounding(egui::Rounding::ZERO));
+		} else {
+			if ui.button("Continue").clicked() {
+				self.sender.send(Event::Done).unwrap();
+			}
 		}
 
 		response
