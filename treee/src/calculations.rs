@@ -11,6 +11,7 @@ pub struct Calculations {
 	pub shared: Arc<Shared>,
 }
 
+#[derive(Debug, Clone, Copy)]
 pub enum DisplayModus {
 	Solid,
 	Property,
@@ -25,12 +26,54 @@ pub struct Shared {
 #[derive(Debug)]
 pub struct Segment {
 	pub points: Vec<na::Point3<f32>>,
-	pub point_cloud: render::PointCloud,
-	pub solid: render::PointCloudProperty,
-	pub property: render::PointCloudProperty,
 	pub info: SegmentInformation,
+	pub render: Option<SegmentRender>,
 	pub min: na::Point3<f32>,
 	pub max: na::Point3<f32>,
+}
+
+#[derive(Debug)]
+pub struct SegmentRender {
+	point_cloud: render::PointCloud,
+	solid: render::PointCloudProperty,
+	property: render::PointCloudProperty,
+}
+
+impl SegmentRender {
+	pub fn new(
+		points: &[na::Point3<f32>],
+		idx: usize,
+		info: SegmentInformation,
+		state: &render::State,
+	) -> Option<Self> {
+		if points.is_empty() {
+			return None;
+		}
+		let point_cloud = render::PointCloud::new(state, points);
+		let solid = render::PointCloudProperty::new(state, &vec![idx as u32; points.len()]);
+
+		let mut property = vec![0u32; points.len()];
+		for (idx, p) in points.iter().enumerate() {
+			property[idx] = if p.y < info.ground_sep {
+				0
+			} else if p.y < info.crown_sep {
+				u32::MAX / 2
+			} else {
+				u32::MAX
+			};
+		}
+		let property = render::PointCloudProperty::new(state, &property);
+		let render = Self { point_cloud, solid, property };
+		Some(render)
+	}
+
+	pub fn render<'a>(&'a self, modus: DisplayModus, point_cloud_pass: &mut render::PointCloudPass<'a>) {
+		let property = match modus {
+			DisplayModus::Solid => &self.solid,
+			DisplayModus::Property => &self.property,
+		};
+		self.point_cloud.render(point_cloud_pass, property);
+	}
 }
 
 impl Calculations {
@@ -97,37 +140,22 @@ impl Calculations {
 
 impl Segment {
 	pub fn new(points: Vec<na::Point3<f32>>, idx: usize, state: &render::State) -> Self {
-		let (mut min, mut max) = (points[0], points[0]);
-		for p in points.iter() {
-			for dim in 0..3 {
-				min[dim] = min[dim].min(p[dim]);
-				max[dim] = max[dim].max(p[dim]);
+		let (min, max) = if points.is_empty() {
+			(na::point![0.0, 0.0, 0.0], na::point![0.0, 0.0, 0.0])
+		} else {
+			let (mut min, mut max) = (points[0], points[0]);
+			for p in points.iter() {
+				for dim in 0..3 {
+					min[dim] = min[dim].min(p[dim]);
+					max[dim] = max[dim].max(p[dim]);
+				}
 			}
-		}
-		let info = SegmentInformation::new(&points, min.y, max.y);
-		let point_cloud = render::PointCloud::new(state, &points);
-		let solid = render::PointCloudProperty::new(state, &vec![idx as u32; points.len()]);
+			(min, max)
+		};
 
-		let mut property = vec![0u32; points.len()];
-		for (idx, p) in points.iter().enumerate() {
-			property[idx] = if p.y < info.ground_sep {
-				0
-			} else if p.y < info.crown_sep {
-				u32::MAX / 2
-			} else {
-				u32::MAX
-			};
-		}
-		let property = render::PointCloudProperty::new(state, &property);
-		Self {
-			points,
-			point_cloud,
-			solid,
-			property,
-			info,
-			min,
-			max,
-		}
+		let info = SegmentInformation::new(&points, min.y, max.y);
+		let render = SegmentRender::new(&points, idx, info, state);
+		Self { points, render, info, min, max }
 	}
 }
 

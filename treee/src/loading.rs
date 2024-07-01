@@ -1,71 +1,90 @@
+use nalgebra as na;
 use std::{
 	collections::HashMap,
 	path::PathBuf,
 	sync::{
 		atomic::{AtomicBool, Ordering},
-		Arc,
+		Arc, Mutex,
 	},
 };
 
 use crate::{
 	laz::Laz,
-	octree::{Octree, MAX_POINTS},
 	program::{DisplaySettings, Event},
 };
 
 #[derive(Debug)]
 pub struct Loading {
 	pub state: Arc<render::State>,
-	pub octree: Octree,
 
-	pub point_clouds: std::sync::Mutex<HashMap<usize, render::PointCloud>>,
-	pub property: render::PointCloudProperty,
+	pub chunks: Mutex<HashMap<usize, LoadingChunk>>,
+	pub slices: Mutex<Vec<Vec<na::Point3<f32>>>>,
+	pub min: na::Point3<f32>,
+	pub max: na::Point3<f32>,
 	sender: crossbeam::channel::Sender<Event>,
 	done: AtomicBool,
+}
+
+#[derive(Debug)]
+pub struct LoadingChunk {
+	pub point_cloud: render::PointCloud,
+	pub property: render::PointCloudProperty,
+}
+
+impl LoadingChunk {
+	pub fn new(points: &[na::Point3<f32>], state: &render::State) -> Self {
+		let point_cloud = render::PointCloud::new(state, points);
+		let property = render::PointCloudProperty::new(state, &vec![0; points.len()]);
+		Self { point_cloud, property }
+	}
 }
 
 impl Loading {
 	pub fn new(path: PathBuf, state: Arc<render::State>) -> (Arc<Self>, crossbeam::channel::Receiver<Event>) {
 		let (sender, receiver) = crossbeam::channel::unbounded();
-		let point_clouds = std::sync::Mutex::new(HashMap::new());
+		let point_clouds = Mutex::new(HashMap::new());
 
 		let laz = Laz::new(&path).unwrap();
+		let min = laz.min.y - 1.0;
+		let size = laz.max.y + 2.0 - min;
+		let layers = size.ceil() as usize;
+		let slices = vec![Vec::new(); layers];
 
 		let loading = Self {
-			property: render::PointCloudProperty::new_empty(&state, MAX_POINTS),
 			state: state.clone(),
-			octree: Octree::new(laz.min, laz.max),
 			sender,
+			min: laz.min,
+			max: laz.max,
+			slices: Mutex::new(slices),
 
-			point_clouds,
+			chunks: point_clouds,
 			done: AtomicBool::new(false),
 		};
 		let loading = Arc::new(loading);
 
 		{
-			let (sender, receiver) = crossbeam::channel::unbounded();
 			let loading = loading.clone();
 			std::thread::spawn(move || {
 				laz.read(|chunk| {
-					while receiver.len() > 1000 {
-						let Ok(idx) = receiver.try_recv() else {
-							break;
-						};
-						loading
-							.octree
-							.update(&loading.state, &loading.point_clouds, idx);
+					let points = chunk.read();
+
+					let segment = LoadingChunk::new(&points, &loading.state);
+					let mut point_clouds = loading.chunks.lock().unwrap();
+					let mut idx = rand::random();
+					while point_clouds.contains_key(&idx) {
+						idx = rand::random();
 					}
-					loading
-						.octree
-						.insert(chunk.read(), |idx| sender.send(idx).unwrap());
+					point_clouds.insert(idx, segment);
+					drop(point_clouds);
+
+					let mut slices = loading.slices.lock().unwrap();
+					for p in points {
+						let idx = (p.y - loading.min.y).floor() as usize;
+						slices[idx].push(p);
+					}
+					drop(slices);
 				})
 				.unwrap();
-				drop(sender);
-				while let Ok(idx) = receiver.recv() {
-					loading
-						.octree
-						.update(&loading.state, &loading.point_clouds, idx);
-				}
 				loading.done.store(true, Ordering::Relaxed);
 			});
 		}

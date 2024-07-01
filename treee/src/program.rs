@@ -173,7 +173,7 @@ impl Program {
 				});
 			},
 			World::Loading(loading) => {
-				let point_clouds = loading.point_clouds.lock().unwrap();
+				let point_clouds = loading.chunks.lock().unwrap();
 				self.window.render(&self.state, |context| {
 					let command_encoder = context.encoder();
 					let commands = self.egui_wgpu.update_buffers(
@@ -192,9 +192,9 @@ impl Program {
 						&self.display_settings.lookup,
 						&self.display_settings.point_cloud_environment,
 					);
-					loading
-						.octree
-						.render(point_cloud_pass, &point_clouds, &loading.property);
+					for (_, seg) in point_clouds.iter() {
+						seg.point_cloud.render(point_cloud_pass, &seg.property);
+					}
 					drop(render_pass);
 
 					let mut render_pass = context.post_process_pass();
@@ -256,12 +256,10 @@ impl Program {
 					);
 
 					for (_, seg) in segments.iter() {
-						match calculations.modus {
-							calculations::DisplayModus::Solid => seg.point_cloud.render(point_cloud_pass, &seg.solid),
-							calculations::DisplayModus::Property => {
-								seg.point_cloud.render(point_cloud_pass, &seg.property)
-							},
-						}
+						let Some(render) = &seg.render else {
+							continue;
+						};
+						render.render(calculations.modus, point_cloud_pass);
 					}
 					drop(render_pass);
 
@@ -290,19 +288,22 @@ impl Program {
 						&self.display_settings.lookup,
 						&self.display_settings.point_cloud_environment,
 					);
-
+					if interactive.show_deleted {
+						if let Some(render) = &interactive.deleted.render {
+							render.render(interactive.display, point_cloud_pass);
+						}
+					}
 					if let interactive::Modus::View(idx) = interactive.modus {
 						let seg = interactive.segments.get(&idx).unwrap();
-						match interactive.display {
-							DisplayModus::Solid => seg.point_cloud.render(point_cloud_pass, &seg.solid),
-							DisplayModus::Property => seg.point_cloud.render(point_cloud_pass, &seg.property),
+						if let Some(render) = &seg.render {
+							render.render(interactive.display, point_cloud_pass);
 						}
 					} else {
 						for (_, seg) in interactive.segments.iter() {
-							match interactive.display {
-								DisplayModus::Solid => seg.point_cloud.render(point_cloud_pass, &seg.solid),
-								DisplayModus::Property => seg.point_cloud.render(point_cloud_pass, &seg.property),
-							}
+							let Some(render) = &seg.render else {
+								continue;
+							};
+							render.render(interactive.display, point_cloud_pass);
 						}
 					}
 
@@ -346,9 +347,8 @@ impl Program {
 				Event::Done => {
 					match std::mem::replace(&mut self.world, World::Empty(Empty::new().0)) {
 						World::Loading(loading) => {
-							let loading = Arc::try_unwrap(loading).unwrap();
 							let (segmenting, receiver) =
-								Segmenting::new(loading.octree, self.state.clone(), DEFAULT_MAX_DISTANCE);
+								Segmenting::new(loading, self.state.clone(), DEFAULT_MAX_DISTANCE);
 							self.world = World::Segmenting(segmenting);
 							self.receiver = receiver;
 						},

@@ -10,7 +10,7 @@ use std::{
 };
 use voronator::delaunator::Point;
 
-use crate::{octree::Octree, program::Event};
+use crate::{loading::Loading, program::Event};
 
 pub const DEFAULT_MAX_DISTANCE: f32 = 0.75;
 
@@ -28,7 +28,7 @@ pub struct Shared {
 
 impl Segmenting {
 	pub fn new(
-		octree: Octree,
+		loading: Arc<Loading>,
 		state: Arc<render::State>,
 		max_distance: f32,
 	) -> (Self, crossbeam::channel::Receiver<Event>) {
@@ -48,7 +48,7 @@ impl Segmenting {
 			std::thread::spawn(move || {
 				while let Ok(distance) = restart_reciever.recv() {
 					shared.done.store(None);
-					segmentation(distance, &octree, &shared, &sender, &restart_reciever);
+					segmentation(distance, &loading, &shared, &sender, &restart_reciever);
 				}
 			});
 		}
@@ -87,14 +87,15 @@ impl Segmenting {
 
 fn segmentation(
 	max_distance: f32,
-	octree: &Octree,
+	loading: &Loading,
 	segmenting: &Shared,
 	sender: &crossbeam::channel::Sender<Event>,
 	reciever: &crossbeam::channel::Receiver<f32>,
 ) {
 	segmenting.point_clouds.lock().unwrap().clear();
-	let min = octree.points_min.y - 1.0;
-	let size = octree.points_max.y + 2.0 - min;
+
+	let min = loading.min.y - 1.0;
+	let size = loading.max.y + 2.0 - min;
 	let layers = size.ceil() as usize;
 	let lookup = render::Lookup::new_png(
 		&segmenting.state,
@@ -103,26 +104,27 @@ fn segmentation(
 	);
 	sender.send(Event::Lookup(lookup)).unwrap();
 
+	let mut source_slices = loading.slices.lock().unwrap();
 	let slices = {
 		let (sender, mut receiver) = crossbeam::channel::bounded(1);
 		let mut slices = Vec::with_capacity(layers);
-		for i in (0..layers).rev() {
+		for slice in source_slices.iter_mut().rev() {
 			let (next_sender, next_receiver) = crossbeam::channel::bounded(1);
-			let range = (min + i as f32)..(min + (i + 1) as f32);
-			slices.push((receiver, range, next_sender));
+			slices.push((receiver, slice.as_mut_slice(), next_sender));
 			receiver = next_receiver;
 		}
+
 		sender.send(Vec::new()).unwrap();
 		slices
 	};
 
 	let min = Point {
-		x: octree.points_min.x as f64,
-		y: octree.points_min.z as f64,
+		x: loading.min.x as f64,
+		y: loading.min.z as f64,
 	};
 	let max = Point {
-		x: octree.points_max.x as f64,
-		y: octree.points_max.z as f64,
+		x: loading.max.x as f64,
+		y: loading.max.z as f64,
 	};
 
 	let segments = DashMap::<usize, Vec<na::Point3<f32>>>::new();
@@ -130,13 +132,12 @@ fn segmentation(
 	let cancel = slices
 		.into_iter()
 		.par_bridge()
-		.any(|(c_receiver, range, c_sender)| {
+		.any(|(c_receiver, slice, c_sender)| {
 			if reciever.is_empty().not() {
 				return true;
 			}
 
-			let mut slice = octree.get_range(range);
-			let tree_set = TreeSet::new(&mut slice, max_distance);
+			let tree_set = TreeSet::new(slice, max_distance);
 
 			let centroids = c_receiver.recv().unwrap();
 			let centroids = tree_set.tree_positions(centroids, max_distance);

@@ -2,16 +2,18 @@ use nalgebra as na;
 use std::{collections::HashMap, ops::Not, sync::Arc};
 
 use crate::{
-	calculations::{DisplayModus, Segment},
+	calculations::{DisplayModus, Segment, SegmentRender},
 	program::Event,
 };
 
 pub struct Interactive {
 	state: Arc<render::State>,
 	pub segments: HashMap<usize, Segment>,
+	pub deleted: Segment,
 	pub display: DisplayModus,
 
 	pub modus: Modus,
+	pub show_deleted: bool,
 	draw_radius: f32,
 }
 
@@ -61,12 +63,7 @@ impl Segment {
 		found.then_some(best_dist)
 	}
 
-	pub fn remove(
-		&mut self,
-		center: na::Point3<f32>,
-		radius: f32,
-		mut target: Option<&mut Vec<na::Point3<f32>>>,
-	) -> bool {
+	pub fn remove(&mut self, center: na::Point3<f32>, radius: f32, target: &mut Vec<na::Point3<f32>>) -> bool {
 		for dim in 0..3 {
 			if ((self.min[dim] - radius)..(self.max[dim] + radius))
 				.contains(&center[dim])
@@ -81,20 +78,21 @@ impl Segment {
 			if (p - center).norm_squared() > r2 {
 				return true;
 			}
-			if let Some(target) = &mut target {
-				target.push(p);
-			}
+			target.push(p);
 			changed = true;
 			false
 		});
 
-		if changed && self.points.is_empty().not() {
+		if changed {
 			self.update_min_max();
 		}
 		changed
 	}
 
 	fn update_min_max(&mut self) {
+		if self.points.is_empty() {
+			return;
+		}
 		(self.min, self.max) = (self.points[0], self.points[0]);
 		for &p in self.points.iter() {
 			for dim in 0..3 {
@@ -105,23 +103,7 @@ impl Segment {
 	}
 
 	pub fn update_render(&mut self, idx: usize, state: &render::State) {
-		self.point_cloud = render::PointCloud::new(state, &self.points);
-		self.solid = render::PointCloudProperty::new(state, &vec![idx as u32; self.points.len()]);
-		self.update_property(state);
-	}
-
-	pub fn update_property(&mut self, state: &render::State) {
-		let mut property = vec![0u32; self.points.len()];
-		for (idx, p) in self.points.iter().enumerate() {
-			property[idx] = if p.y < self.info.ground_sep {
-				0
-			} else if p.y < self.info.crown_sep {
-				u32::MAX / 2
-			} else {
-				u32::MAX
-			};
-		}
-		self.property = render::PointCloudProperty::new(state, &property);
+		self.render = SegmentRender::new(&self.points, idx, self.info, state);
 	}
 
 	pub fn height(&self) -> f32 {
@@ -136,13 +118,16 @@ impl Interactive {
 		display: DisplayModus,
 	) -> (Self, crossbeam::channel::Receiver<Event>) {
 		let (_sender, receiver) = crossbeam::channel::unbounded();
+		let deleted = Segment::new(Vec::new(), 0, &state);
 
 		let interactive = Self {
 			state,
 			segments,
 			modus: Modus::SelectView,
+			deleted,
 			draw_radius: 0.5,
 			display,
+			show_deleted: false,
 		};
 
 		(interactive, receiver)
@@ -179,7 +164,6 @@ impl Interactive {
 			{
 				self.modus = Modus::SelectView;
 			}
-
 			if ui
 				.add(egui::RadioButton::new(
 					matches!(self.modus, Modus::SelectDraw | Modus::Draw(_)),
@@ -188,6 +172,15 @@ impl Interactive {
 				.clicked()
 			{
 				self.modus = Modus::SelectDraw;
+			}
+			if ui
+				.add(egui::RadioButton::new(
+					matches!(self.modus, Modus::SelectCombine | Modus::Combine(_)),
+					"Combine",
+				))
+				.clicked()
+			{
+				self.modus = Modus::SelectCombine;
 			}
 			if ui
 				.add(egui::RadioButton::new(
@@ -208,6 +201,8 @@ impl Interactive {
 				self.modus = Modus::Delete;
 			}
 		}
+		ui.separator();
+		ui.checkbox(&mut self.show_deleted, "Show Deleted");
 
 		ui.separator();
 		ui.label("remove radius");
@@ -222,6 +217,7 @@ impl Interactive {
 			Modus::SelectView => {},
 			Modus::Spawn => {},
 			Modus::SelectDraw | Modus::Draw(_) => {},
+			Modus::SelectCombine | Modus::Combine(_) => {},
 			Modus::Delete => {},
 			Modus::View(idx) => {
 				let segment = self.segments.get_mut(&idx).unwrap();
@@ -250,7 +246,7 @@ impl Interactive {
 					segment
 						.info
 						.redo_diameters(&segment.points, segment.min.y, segment.max.y);
-					segment.update_property(&self.state);
+					segment.update_render(idx, &self.state);
 				}
 				ui.separator();
 				ui.label("trunk diameter");
@@ -301,6 +297,13 @@ impl Interactive {
 					Modus::SelectDraw
 				};
 			},
+			Modus::SelectCombine | Modus::Combine(_) => {
+				self.modus = if let Some((idx, _)) = self.select(start, direction) {
+					Modus::Combine(idx)
+				} else {
+					Modus::SelectCombine
+				};
+			},
 			Modus::Spawn => {
 				let Some((_, distance)) = self.select(start, direction) else {
 					return;
@@ -309,11 +312,11 @@ impl Interactive {
 				let mut points = Vec::new();
 				let mut empty: Vec<usize> = Vec::new();
 				for (&other, segment) in self.segments.iter_mut() {
-					let seg_changed = segment.remove(hit, self.draw_radius, Some(&mut points));
+					let seg_changed = segment.remove(hit, self.draw_radius, &mut points);
 					if segment.points.is_empty() {
 						empty.push(other);
 					} else if seg_changed {
-						segment.update_property(&self.state);
+						segment.update_render(other, &self.state);
 					}
 				}
 				for empty in empty {
@@ -353,10 +356,13 @@ impl Interactive {
 					return;
 				};
 				let hit = start + direction * distance;
+				let mut changed = false;
 				let mut empty = Vec::new();
 				for (&other, segment) in self.segments.iter_mut() {
-					if segment.remove(hit, self.draw_radius, None) {
+					if segment.remove(hit, self.draw_radius, &mut self.deleted.points) {
 						segment.update_render(other, &self.state);
+						segment.update_min_max();
+						changed = true;
 					}
 					if segment.points.is_empty() {
 						empty.push(other);
@@ -365,9 +371,25 @@ impl Interactive {
 				for empty in empty {
 					self.segments.remove(&empty);
 				}
+				if changed {
+					self.deleted.update_min_max();
+					self.deleted.update_render(0, &self.state);
+				}
 			},
 			Modus::Draw(idx) => {
-				let Some((_, distance)) = self.select(start, direction) else {
+				let Some(distance) = self
+					.select(start, direction)
+					.map(|(_, distance)| distance)
+					.or_else(|| {
+						if self.show_deleted.not() {
+							return None;
+						}
+						if self.deleted.raycast_distance(start, direction).is_none() {
+							return None;
+						}
+						self.deleted.exact_distance(start, direction)
+					})
+				else {
 					return;
 				};
 				let hit = start + direction * distance;
@@ -375,16 +397,29 @@ impl Interactive {
 				let mut changed = false;
 				let mut empty = Vec::new();
 				for (&other, segment) in self.segments.iter_mut() {
-					if segment.remove(hit, self.draw_radius, Some(&mut target.points)) {
+					if segment.remove(hit, self.draw_radius, &mut target.points) {
 						segment.update_render(other, &self.state);
+						segment.update_min_max();
 						changed = true;
 					}
 					if segment.points.is_empty() {
 						empty.push(other);
 					}
 				}
+				if self.show_deleted {
+					if self
+						.deleted
+						.remove(hit, self.draw_radius, &mut target.points)
+					{
+						self.deleted.update_render(0, &self.state);
+						self.deleted.update_min_max();
+						changed = true;
+					}
+				}
+
 				if changed {
 					target.update_render(idx, &self.state);
+					target.update_min_max();
 				}
 				self.segments.insert(idx, target);
 				for empty in empty {
@@ -396,11 +431,31 @@ impl Interactive {
 				let Some(distance) = seg.exact_distance(start, direction) else {
 					return;
 				};
-
 				let hit = start + direction * distance;
-				if seg.remove(hit, self.draw_radius, None) {
+				let target = &mut self.deleted;
+				let mut changed = false;
+				if seg.remove(hit, self.draw_radius, &mut target.points) {
 					seg.update_render(idx, &self.state);
+					seg.update_min_max();
+					changed = true;
 				}
+				if changed {
+					target.update_min_max();
+					target.update_render(0, &self.state);
+				}
+			},
+			Modus::Combine(idx) => {
+				let Some((other, _)) = self.select(start, direction) else {
+					return;
+				};
+				if other == idx {
+					return;
+				}
+				let mut other = self.segments.remove(&other).unwrap();
+				let target = self.segments.get_mut(&idx).unwrap();
+				target.points.append(&mut other.points);
+				target.update_render(idx, &self.state);
+				target.update_min_max();
 			},
 			_ => {},
 		}
@@ -412,6 +467,8 @@ pub enum Modus {
 	SelectView,
 	SelectDraw,
 	Draw(usize),
+	SelectCombine,
+	Combine(usize),
 	Spawn,
 	Delete,
 	View(usize),
