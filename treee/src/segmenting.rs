@@ -35,7 +35,7 @@ pub struct Shared {
 
 impl Segmenting {
 	pub fn new(
-		loading: Arc<Loading>,
+		loading: Loading,
 		state: Arc<render::State>,
 		max_distance: f32,
 	) -> (Self, crossbeam::channel::Receiver<Event>) {
@@ -52,13 +52,14 @@ impl Segmenting {
 			sender,
 		});
 		let total = loading
+			.shared
 			.slices
 			.lock()
 			.unwrap()
 			.iter()
-			.map(|slice| slice.len())
+			.map(|(_, slice)| slice.len())
 			.sum();
-		let world_offset = loading.world_offset;
+		let world_offset = loading.shared.world_offset;
 		{
 			let shared = shared.clone();
 			std::thread::spawn(move || {
@@ -126,9 +127,6 @@ fn segmentation(
 ) {
 	segmenting.point_clouds.lock().unwrap().clear();
 
-	let min = loading.min.y - 1.0;
-	let size = loading.max.y + 2.0 - min;
-	let layers = size.ceil() as usize;
 	let lookup = render::Lookup::new_png(
 		&segmenting.state,
 		include_bytes!("../assets/grad_turbo.png"),
@@ -137,13 +135,26 @@ fn segmentation(
 	segmenting.sender.send(Event::Lookup(lookup)).unwrap();
 	segmenting.progress.store(0, Ordering::Relaxed);
 
-	let mut source_slices = loading.slices.lock().unwrap();
+	let mut source_slices = loading.shared.slices.lock().unwrap();
+	let min = source_slices.iter().map(|(&idx, _)| idx).min().unwrap_or(0);
+	let max = source_slices.iter().map(|(&idx, _)| idx).max().unwrap_or(0);
+	let layers = (max - min + 1) as usize;
+	let mut slices = Vec::with_capacity(layers);
+	for _ in 0..layers {
+		slices.push(None);
+	}
+	for (&idx, slice) in source_slices.iter_mut() {
+		let idx = (idx - min) as usize;
+		slices[idx] = Some(slice.as_mut_slice());
+	}
+	let source_slices = slices;
+
 	let slices = {
 		let (sender, mut receiver) = crossbeam::channel::bounded(1);
 		let mut slices = Vec::with_capacity(layers);
-		for slice in source_slices.iter_mut().rev() {
+		for slice in source_slices.into_iter().rev() {
 			let (next_sender, next_receiver) = crossbeam::channel::bounded(1);
-			slices.push((receiver, slice.as_mut_slice(), next_sender));
+			slices.push((receiver, slice.unwrap_or(&mut []), next_sender));
 			receiver = next_receiver;
 		}
 

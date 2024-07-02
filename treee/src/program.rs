@@ -55,7 +55,7 @@ pub struct DisplaySettings {
 
 pub enum World {
 	Empty(Empty),
-	Loading(Arc<Loading>),
+	Loading(Loading),
 	Segmenting(Segmenting),
 	Calculations(Calculations),
 	Interactive(Interactive),
@@ -129,7 +129,7 @@ impl Program {
 					}
 					match &mut self.world {
 						World::Empty(empty) => empty.ui(ui),
-						World::Loading(loading) => loading.ui(ui, &mut self.display_settings),
+						World::Loading(loading) => loading.ui(ui),
 						World::Segmenting(segmenting) => segmenting.ui(ui),
 						World::Calculations(calculations) => calculations.ui(ui),
 						World::Interactive(interactive) => interactive.ui(ui),
@@ -176,7 +176,7 @@ impl Program {
 				});
 			},
 			World::Loading(loading) => {
-				let point_clouds = loading.chunks.lock().unwrap();
+				let point_clouds = loading.shared.chunks.lock().unwrap();
 				self.window.render(&self.state, |context| {
 					let command_encoder = context.encoder();
 					let commands = self.egui_wgpu.update_buffers(

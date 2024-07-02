@@ -8,23 +8,25 @@ use std::{
 	},
 };
 
-use crate::{
-	laz::Laz,
-	program::{DisplaySettings, Event},
-};
+use crate::{laz::Laz, program::Event};
 
 #[derive(Debug)]
 pub struct Loading {
-	pub state: Arc<render::State>,
-
-	pub chunks: Mutex<HashMap<usize, LoadingChunk>>,
-	pub slices: Mutex<Vec<Vec<na::Point3<f32>>>>,
 	pub min: na::Point3<f32>,
 	pub max: na::Point3<f32>,
 	sender: crossbeam::channel::Sender<Event>,
 	pub total: usize,
+	pub shared: Arc<Shared>,
+}
+
+#[derive(Debug)]
+pub struct Shared {
 	progress: AtomicUsize,
+	pub state: Arc<render::State>,
 	pub world_offset: na::Point3<f64>,
+
+	pub chunks: Mutex<HashMap<usize, LoadingChunk>>,
+	pub slices: Mutex<HashMap<isize, Vec<na::Point3<f32>>>>,
 }
 
 #[derive(Debug)]
@@ -42,7 +44,7 @@ impl LoadingChunk {
 }
 
 impl Loading {
-	pub fn new(path: PathBuf, state: Arc<render::State>) -> (Arc<Self>, crossbeam::channel::Receiver<Event>) {
+	pub fn new(path: PathBuf, state: Arc<render::State>) -> (Self, crossbeam::channel::Receiver<Event>) {
 		let (sender, receiver) = crossbeam::channel::unbounded();
 		sender
 			.send(Event::Lookup(render::Lookup::new_png(
@@ -53,62 +55,53 @@ impl Loading {
 			.unwrap();
 		let point_clouds = Mutex::new(HashMap::new());
 
-		let laz = Laz::new(&path).unwrap();
-		let min = laz.min.y - 1.0;
-		let size = laz.max.y + 2.0 - min;
-		let layers = size.ceil() as usize;
-		let slices = vec![Vec::new(); layers];
+		let laz = Laz::new(&path, None).unwrap();
+		let (min, max) = (laz.min, laz.max);
+		let total = laz.total();
 
-		let loading = Self {
+		let shared = Shared {
 			state: state.clone(),
-			sender,
-			min: laz.min,
-			max: laz.max,
-			slices: Mutex::new(slices),
-
+			slices: Mutex::new(HashMap::new()),
 			chunks: point_clouds,
-			total: laz.total(),
 			progress: AtomicUsize::new(0),
 			world_offset: laz.world_offset,
 		};
-		let loading = Arc::new(loading);
+		let shared = Arc::new(shared);
 
-		{
-			let loading = loading.clone();
-			std::thread::spawn(move || {
-				laz.read(|chunk| {
-					let points = chunk.read();
+		spawn_load_worker(laz, shared.clone());
 
-					let segment = LoadingChunk::new(&points, &loading.state);
-					let mut point_clouds = loading.chunks.lock().unwrap();
-					let mut idx = rand::random();
-					while point_clouds.contains_key(&idx) {
-						idx = rand::random();
-					}
-					point_clouds.insert(idx, segment);
-					drop(point_clouds);
+		let loading = Self { sender, min, max, total, shared };
 
-					let mut slices = loading.slices.lock().unwrap();
-					for p in points {
-						let idx = (p.y - loading.min.y).floor() as usize;
-						slices[idx].push(p);
-					}
-					drop(slices);
-					loading.progress.fetch_add(1, Ordering::Relaxed);
-				})
-				.unwrap();
-			});
-		}
 		(loading, receiver)
 	}
 
-	pub fn ui(&self, ui: &mut egui::Ui, display_settings: &mut DisplaySettings) {
+	pub fn ui(&mut self, ui: &mut egui::Ui) {
 		ui.separator();
-		let progress = self.progress.load(Ordering::Relaxed);
+		let progress = self.shared.progress.load(Ordering::Relaxed);
 		if progress < self.total {
 			let progress = progress as f32 / self.total as f32;
 			ui.add(egui::ProgressBar::new(progress).rounding(egui::Rounding::ZERO));
 		} else {
+			if ui
+				.add_sized([ui.available_width(), 0.0], egui::Button::new("Add"))
+				.clicked()
+			{
+				let path = rfd::FileDialog::new()
+					.set_title("Load")
+					.add_filter("Pointcloud", &["las", "laz"])
+					.pick_file();
+				if let Some(path) = path {
+					let laz = Laz::new(&path, Some(self.shared.world_offset)).unwrap();
+					for dim in 0..3 {
+						self.min[dim] = self.min[dim].min(laz.min[dim]);
+						self.max[dim] = self.max[dim].max(laz.max[dim]);
+					}
+					self.total = laz.total();
+					self.shared.progress.store(0, Ordering::Relaxed);
+					spawn_load_worker(laz, self.shared.clone());
+				}
+			}
+
 			if ui
 				.add_sized([ui.available_width(), 0.0], egui::Button::new("Continue"))
 				.clicked()
@@ -117,4 +110,30 @@ impl Loading {
 			}
 		}
 	}
+}
+
+fn spawn_load_worker(laz: Laz, shared: Arc<Shared>) {
+	std::thread::spawn(move || {
+		laz.read(|chunk| {
+			let points = chunk.read();
+
+			let segment = LoadingChunk::new(&points, &shared.state);
+			let mut point_clouds = shared.chunks.lock().unwrap();
+			let mut idx = rand::random();
+			while point_clouds.contains_key(&idx) {
+				idx = rand::random();
+			}
+			point_clouds.insert(idx, segment);
+			drop(point_clouds);
+
+			let mut slices = shared.slices.lock().unwrap();
+			for p in points {
+				let idx = p.y.floor() as isize;
+				slices.entry(idx).or_default().push(p);
+			}
+			drop(slices);
+			shared.progress.fetch_add(1, Ordering::Relaxed);
+		})
+		.unwrap();
+	});
 }

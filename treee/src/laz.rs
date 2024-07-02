@@ -30,7 +30,7 @@ pub struct Laz {
 }
 
 impl Laz {
-	pub fn new(path: &Path) -> Result<Self, Error> {
+	pub fn new(path: &Path, center: Option<na::Point3<f64>>) -> Result<Self, Error> {
 		let mut file = std::fs::File::open(path)?;
 
 		let header = Header::new(&mut file)?;
@@ -46,7 +46,7 @@ impl Laz {
 		let offset = na::Point3::new(header.x_offset, header.y_offset, header.z_offset);
 		let min = na::Point3::new(header.min_x, header.min_z, -header.max_y);
 		let max = na::Point3::new(header.max_x, header.max_z, -header.min_y);
-		let center = na::center(&min, &max);
+		let center = center.unwrap_or(na::center(&min, &max));
 
 		file.seek(SeekFrom::Start(header.header_size as u64))?;
 		let (chunks, vlr) = if let Some(vlr) = read_vlrs_and_get_laszip_vlr(&mut file, &header.quick_header()) {
