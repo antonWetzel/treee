@@ -19,18 +19,25 @@ pub struct Interactive {
 	pub segments: HashMap<usize, Segment>,
 	pub deleted: Segment,
 	pub display: DisplayModus,
-	sender: crossbeam::channel::Sender<Event>,
+	_sender: crossbeam::channel::Sender<Event>,
 
 	pub modus: Modus,
 	pub show_deleted: bool,
 	draw_radius: f32,
+	pub white_lookup: render::Lookup,
+
+	pub source_location: String,
+	world_offset: na::Point3<f64>,
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 struct InteractiveSave {
 	pub segments: HashMap<usize, SegmentData>,
 	pub deleted: SegmentData,
+	pub world_offset: na::Point3<f64>,
 }
+
+const DEFAULT_LOCATION: &str = "+proj=utm\n+ellps=GRS80\n+zone=32";
 
 impl SegmentData {
 	//https://tavianator.com/2011/ray_box.html
@@ -117,6 +124,16 @@ impl SegmentData {
 		}
 	}
 
+	fn update_location(&mut self, world_offset: na::Point3<f64>, proj: &proj4rs::Proj) {
+		let to = proj4rs::Proj::from_proj_string("+proj=latlong +ellps=GRS80").unwrap();
+		let mut point = (
+			world_offset.x + ((self.min.x + self.max.x) / 2.0) as f64,
+			-(world_offset.z + ((self.min.z + self.max.z) / 2.0) as f64),
+		);
+		proj4rs::transform::transform(proj, &to, &mut point).unwrap();
+		self.coords = Some(point);
+	}
+
 	pub fn height(&self) -> f32 {
 		self.max.y - self.min.y
 	}
@@ -133,9 +150,11 @@ impl Interactive {
 		segments: HashMap<usize, Segment>,
 		state: Arc<render::State>,
 		display: DisplayModus,
+		world_offset: na::Point3<f64>,
 	) -> (Self, crossbeam::channel::Receiver<Event>) {
 		let (sender, receiver) = crossbeam::channel::unbounded();
 		let deleted = Segment::new(Vec::new(), 0, &state);
+		let white_lookup = render::Lookup::new_png(&state, include_bytes!("../assets/white.png"), u32::MAX);
 
 		let interactive = Self {
 			state,
@@ -144,8 +163,11 @@ impl Interactive {
 			deleted,
 			draw_radius: 0.5,
 			display,
-			sender,
+			_sender: sender,
 			show_deleted: false,
+			source_location: DEFAULT_LOCATION.into(),
+			world_offset,
+			white_lookup,
 		};
 
 		(interactive, receiver)
@@ -163,6 +185,7 @@ impl Interactive {
 
 		let file = File::open(path).unwrap();
 		let save = bincode::deserialize_from::<_, InteractiveSave>(BufReader::new(file)).unwrap();
+		let white_lookup = render::Lookup::new_png(&state, include_bytes!("../assets/white.png"), u32::MAX);
 
 		let deleted = Segment::from_data(0, save.deleted, &state);
 		let mut segments = HashMap::new();
@@ -174,43 +197,53 @@ impl Interactive {
 			state,
 			segments,
 			modus: Modus::SelectView,
-			sender,
+			_sender: sender,
 			deleted,
 			draw_radius: 0.5,
 			display: DisplayModus::Solid,
 			show_deleted: false,
+			source_location: DEFAULT_LOCATION.into(),
+			world_offset: save.world_offset,
+			white_lookup,
 		};
 
 		(interactive, receiver)
 	}
 
 	pub fn ui(&mut self, ui: &mut egui::Ui) {
-		if ui.button("Close").clicked() {
-			self.sender.send(Event::Close).unwrap();
+		ui.separator();
+		if ui
+			.add_sized([ui.available_width(), 0.0], egui::Button::new("Save"))
+			.clicked()
+		{
+			let path = rfd::FileDialog::new()
+				.add_filter("Pointcloud", &["ipc"])
+				.save_file();
+			if let Some(path) = path {
+				let mut segments = HashMap::new();
+				for (&idx, segment) in self.segments.iter() {
+					segments.insert(idx, segment.data.clone());
+				}
+				let save = InteractiveSave {
+					segments,
+					deleted: self.deleted.data.clone(),
+					world_offset: self.world_offset,
+				};
+				let file = File::create(path).unwrap();
+				bincode::serialize_into(BufWriter::new(file), &save).unwrap();
+			}
 		}
 
 		ui.separator();
-		if ui
-			.radio(matches!(self.display, DisplayModus::Solid), "Segment")
-			.clicked()
-		{
-			self.display = DisplayModus::Solid;
-		}
-		if ui
-			.radio(
-				matches!(self.display, DisplayModus::Property),
-				"Classification",
-			)
-			.clicked()
-		{
-			self.display = DisplayModus::Property;
-		}
-		ui.separator();
+		ui.checkbox(&mut self.show_deleted, "Show Deleted");
+
+		self.display.ui(ui);
+
 		if let Modus::View(..) = self.modus {
-			if ui.button("Return").clicked() {
-				self.modus = Modus::SelectView;
-			}
+			// skip
 		} else {
+			ui.separator();
+			ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Modus"));
 			if ui
 				.add(egui::RadioButton::new(
 					matches!(self.modus, Modus::SelectView),
@@ -257,18 +290,53 @@ impl Interactive {
 				self.modus = Modus::Delete;
 			}
 		}
-		ui.separator();
-		ui.checkbox(&mut self.show_deleted, "Show Deleted");
 
 		ui.separator();
-		ui.label("remove radius");
-		ui.add(
-			egui::Slider::new(&mut self.draw_radius, 0.1..=10.0)
-				.logarithmic(true)
-				.suffix("m"),
+		ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Remove"));
+		egui::Grid::new("remove grid")
+			.num_columns(2)
+			.show(ui, |ui| {
+				ui.label("Radius");
+				ui.add(
+					egui::Slider::new(&mut self.draw_radius, 0.1..=10.0)
+						.logarithmic(true)
+						.fixed_decimals(2)
+						.suffix("m"),
+				);
+				ui.end_row();
+			});
+
+		ui.separator();
+		ui.add_sized(
+			[ui.available_width(), 0.0],
+			egui::Label::new("Source Region"),
 		);
-		ui.separator();
+		if ui
+			.text_edit_multiline(&mut self.source_location)
+			.lost_focus()
+		{
+			if let Modus::View(idx, _) = self.modus {
+				let seg = self.segments.get_mut(&idx).unwrap();
+				match proj4rs::Proj::from_proj_string(&self.source_location) {
+					Ok(proj) => seg.data.update_location(self.world_offset, &proj),
+					Err(err) => eprintln!("{}", err),
+				}
+			}
+		};
 
+		if let Modus::View(..) = self.modus {
+			ui.separator();
+			ui.add_sized(
+				[ui.available_width(), 0.0],
+				egui::Label::new(egui::RichText::new("View").heading()),
+			);
+			if ui
+				.add_sized([ui.available_width(), 0.0], egui::Button::new("Return"))
+				.clicked()
+			{
+				self.modus = Modus::SelectView;
+			}
+		}
 		match self.modus {
 			Modus::SelectView => {},
 			Modus::Spawn => {},
@@ -277,49 +345,100 @@ impl Interactive {
 			Modus::Delete => {},
 			Modus::View(idx, ref mut mesh) => {
 				let segment = self.segments.get_mut(&idx).unwrap();
-				let mut changed = false;
-				let mut rel_ground = segment.data.info.ground_sep - segment.data.min.y;
-				ui.label("trunk start");
-				if ui
-					.add(egui::Slider::new(&mut rel_ground, 0.0..=segment.data.height()).suffix("m"))
-					.changed()
-				{
-					changed = true;
-					segment.data.info.ground_sep = segment.data.min.y + rel_ground;
-					segment.data.info.crown_sep = segment
-						.data
-						.info
-						.crown_sep
-						.max(segment.data.info.ground_sep);
-				}
-				let mut rel_crown = segment.data.info.crown_sep - segment.data.min.y;
-				ui.label("crown start");
-				if ui
-					.add(egui::Slider::new(&mut rel_crown, 0.0..=segment.data.height()).suffix("m"))
-					.changed()
-				{
-					changed = true;
-					segment.data.info.crown_sep = segment.data.min.y + rel_crown;
-					segment.data.info.ground_sep = segment
-						.data
-						.info
-						.ground_sep
-						.min(segment.data.info.crown_sep);
-				}
-				if changed {
-					segment
-						.data
-						.info
-						.redo_diameters(&segment.data.points, segment.data.min.y, segment.data.max.y);
-					segment.update_render(idx, &self.state);
-					if let Some(mesh) = mesh {
+
+				ui.separator();
+				ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Seperation"));
+				egui::Grid::new("sep grid").num_columns(2).show(ui, |ui| {
+					let mut changed = false;
+					let mut stopped = false;
+					let mut rel_ground = segment.data.info.ground_sep - segment.data.min.y;
+					ui.label("Ground");
+					let res = ui.add(
+						egui::Slider::new(&mut rel_ground, 0.0..=segment.data.height())
+							.suffix("m")
+							.fixed_decimals(2),
+					);
+					if res.changed() {
+						changed = true;
+						segment.data.info.ground_sep = segment.data.min.y + rel_ground;
+						segment.data.info.crown_sep = segment
+							.data
+							.info
+							.crown_sep
+							.max(segment.data.info.ground_sep);
+					}
+					if res.drag_stopped() {
+						stopped = true;
+					}
+					ui.end_row();
+
+					let mut rel_crown = segment.data.info.crown_sep - segment.data.min.y;
+					ui.label("Crown");
+					let res = ui.add(
+						egui::Slider::new(&mut rel_crown, 0.0..=segment.data.height())
+							.suffix("m")
+							.fixed_decimals(2),
+					);
+					if res.changed() {
+						changed = true;
+						segment.data.info.crown_sep = segment.data.min.y + rel_crown;
+						segment.data.info.ground_sep = segment
+							.data
+							.info
+							.ground_sep
+							.min(segment.data.info.crown_sep);
+					}
+					if res.drag_stopped() {
+						stopped = true;
+					}
+					ui.end_row();
+
+					if changed {
+						segment
+							.data
+							.info
+							.redo_diameters(&segment.data.points, segment.data.min.y, segment.data.max.y);
+						segment.update_render(idx, &self.state);
+					}
+					if let (true, Some(mesh)) = (stopped, mesh.as_mut()) {
 						*mesh = convex_hull(
 							&segment.data.points,
 							segment.data.info.crown_sep,
 							&self.state,
 						);
 					}
+				});
+
+				ui.separator();
+				ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Diameter"));
+				egui::Grid::new("diameter grid")
+					.num_columns(2)
+					.show(ui, |ui| {
+						ui.label("Trunk");
+						ui.label(format!("{}m", segment.data.info.trunk_diameter));
+						ui.end_row();
+
+						ui.label("Crown");
+						ui.label(format!("{}m", segment.data.info.crown_diameter));
+						ui.end_row();
+					});
+
+				ui.separator();
+				ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Coordinates"));
+				if let Some((long, lat)) = segment.data.coords {
+					egui::Grid::new("coords grid")
+						.num_columns(2)
+						.show(ui, |ui| {
+							ui.label("Lat");
+							ui.label(format_degrees(lat));
+							ui.end_row();
+
+							ui.label("Long");
+							ui.label(format_degrees(long));
+							ui.end_row();
+						});
 				}
+
 				ui.separator();
 				let mut render_mesh = mesh.is_some();
 				if ui.checkbox(&mut render_mesh, "Convex Hull").changed() {
@@ -335,36 +454,17 @@ impl Interactive {
 				}
 
 				ui.separator();
-				ui.label("trunk diameter");
-				ui.label(format!("{}m", segment.data.info.trunk_diameter));
-				ui.label("crown diameter");
-				ui.label(format!("{}m", segment.data.info.crown_diameter));
-				ui.separator();
-
-				if ui.button("Export (todo)").clicked() {
+				if ui
+					.add_sized(
+						[ui.available_width(), 0.0],
+						egui::Button::new("Export (Todo)"),
+					)
+					.clicked()
+				{
 					println!("todo");
 				}
 			},
 		};
-
-		ui.separator();
-		if ui.button("Save").clicked() {
-			let path = rfd::FileDialog::new()
-				.add_filter("Pointcloud", &["ipc"])
-				.save_file();
-			if let Some(path) = path {
-				let mut segments = HashMap::new();
-				for (&idx, segment) in self.segments.iter() {
-					segments.insert(idx, segment.data.clone());
-				}
-				let save = InteractiveSave {
-					segments,
-					deleted: self.deleted.data.clone(),
-				};
-				let file = File::create(path).unwrap();
-				bincode::serialize_into(BufWriter::new(file), &save).unwrap();
-			}
-		}
 	}
 
 	fn select(&self, start: na::Point3<f32>, direction: na::Vector3<f32>) -> Option<(usize, f32)> {
@@ -449,7 +549,12 @@ impl Interactive {
 				seg.data
 					.info
 					.redo_diameters(&seg.data.points, seg.data.min.y, seg.data.max.y);
-				// let mesh = convex_hull(&seg.data.points, seg.data.info.crown_sep, &self.state);
+
+				match proj4rs::Proj::from_proj_string(&self.source_location) {
+					Ok(proj) => seg.data.update_location(self.world_offset, &proj),
+					Err(err) => eprintln!("{}", err),
+				}
+
 				self.modus = Modus::View(idx, None);
 			},
 
@@ -541,26 +646,50 @@ impl Interactive {
 			},
 			Modus::View(idx, ref mut mesh) => {
 				let seg = self.segments.get_mut(&idx).unwrap();
-				let Some(distance) = seg.data.exact_distance(start, direction) else {
-					return;
-				};
-				let hit = start + direction * distance;
+				if self.show_deleted {
+					let Some(distance) = self
+						.deleted
+						.data
+						.exact_distance(start, direction)
+						.or_else(|| seg.data.exact_distance(start, direction))
+					else {
+						return;
+					};
+					let hit = start + direction * distance;
 
-				let mut changed = false;
-				if seg
-					.data
-					.remove(hit, self.draw_radius, &mut self.deleted.data.points)
-				{
-					seg.update_render(idx, &self.state);
-					seg.data.update_min_max();
-					if let Some(mesh) = mesh {
-						*mesh = convex_hull(&seg.data.points, seg.data.info.crown_sep, &self.state);
+					if self
+						.deleted
+						.data
+						.remove(hit, self.draw_radius, &mut seg.data.points)
+					{
+						seg.update_render(idx, &self.state);
+						seg.data.update_min_max();
+						if let Some(mesh) = mesh {
+							*mesh = convex_hull(&seg.data.points, seg.data.info.crown_sep, &self.state);
+						}
+						self.deleted.update_render(0, &self.state);
+						self.deleted.data.update_min_max();
 					}
-					changed = true;
-				}
-				if changed {
-					self.deleted.update_render(0, &self.state);
-					self.deleted.data.update_min_max();
+				} else {
+					let Some(distance) = seg.data.exact_distance(start, direction) else {
+						return;
+					};
+
+					let hit = start + direction * distance;
+
+					if seg
+						.data
+						.remove(hit, self.draw_radius, &mut self.deleted.data.points)
+					{
+						seg.update_render(idx, &self.state);
+						seg.data.update_min_max();
+						if let Some(mesh) = mesh {
+							*mesh = convex_hull(&seg.data.points, seg.data.info.crown_sep, &self.state);
+						}
+
+						self.deleted.update_render(0, &self.state);
+						self.deleted.data.update_min_max();
+					}
 				}
 			},
 			Modus::Combine(idx) => {
@@ -699,4 +828,12 @@ fn convex_hull(points: &[na::Point3<f32>], min_height: f32, state: &render::Stat
 	}
 
 	render::Mesh::new(state, &indices)
+}
+
+fn format_degrees(val: f64) -> String {
+	let deg = val.to_degrees();
+	let min = deg.fract() * if deg >= 0.0 { 60.0 } else { -60.0 };
+	let deg = deg.trunc() as isize;
+	let (min, sec) = (min.trunc() as isize, min.fract() * 60.0);
+	format!("{:0>2}°{:0>2}'{:0>4.1}\"", deg, min, sec)
 }

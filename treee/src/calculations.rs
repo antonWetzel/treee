@@ -13,15 +13,35 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use crate::{program::Event, segmenting::Tree};
 
 pub struct Calculations {
-	pub modus: DisplayModus,
+	pub display: DisplayModus,
 	pub shared: Arc<Shared>,
 	pub total: usize,
+	pub world_offset: na::Point3<f64>,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub enum DisplayModus {
 	Solid,
 	Property,
+}
+
+impl DisplayModus {
+	pub fn ui(&mut self, ui: &mut egui::Ui) {
+		ui.separator();
+		ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Display"));
+		if ui
+			.radio(matches!(self, DisplayModus::Solid), "Segment")
+			.clicked()
+		{
+			*self = DisplayModus::Solid;
+		}
+		if ui
+			.radio(matches!(self, DisplayModus::Property), "Classification")
+			.clicked()
+		{
+			*self = DisplayModus::Property;
+		}
+	}
 }
 
 #[derive(Debug)]
@@ -43,6 +63,7 @@ pub struct SegmentData {
 	pub info: SegmentInformation,
 	pub min: na::Point3<f32>,
 	pub max: na::Point3<f32>,
+	pub coords: Option<(f64, f64)>,
 }
 
 #[derive(Debug)]
@@ -93,6 +114,7 @@ impl Calculations {
 	pub fn new(
 		segments: DashMap<usize, Vec<na::Point3<f32>>>,
 		state: Arc<render::State>,
+		world_offset: na::Point3<f64>,
 	) -> (Self, crossbeam::channel::Receiver<Event>) {
 		let shared = Shared {
 			state,
@@ -135,29 +157,18 @@ impl Calculations {
 		(
 			Self {
 				shared,
-				modus: DisplayModus::Solid,
+				display: DisplayModus::Solid,
 				total,
+				world_offset,
 			},
 			reciever,
 		)
 	}
 
 	pub fn ui(&mut self, ui: &mut egui::Ui) {
-		if ui
-			.radio(matches!(self.modus, DisplayModus::Solid), "Segment")
-			.clicked()
-		{
-			self.modus = DisplayModus::Solid;
-		}
-		if ui
-			.radio(
-				matches!(self.modus, DisplayModus::Property),
-				"Classification",
-			)
-			.clicked()
-		{
-			self.modus = DisplayModus::Property;
-		}
+		self.display.ui(ui);
+
+		ui.separator();
 		let progress = self.shared.progress.load(Ordering::Relaxed) as f32 / self.total as f32;
 		ui.add(egui::ProgressBar::new(progress).rounding(egui::Rounding::ZERO));
 	}
@@ -182,7 +193,7 @@ impl Segment {
 		let render = SegmentRender::new(&points, idx, info, state);
 		Self {
 			render,
-			data: SegmentData { points, info, min, max },
+			data: SegmentData { points, info, min, max, coords: None },
 		}
 	}
 

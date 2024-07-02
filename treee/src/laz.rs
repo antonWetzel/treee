@@ -26,7 +26,7 @@ pub struct Laz {
 
 	pub min: na::Point3<f32>,
 	pub max: na::Point3<f32>,
-	pub _world_offset: na::Point3<f64>,
+	pub world_offset: na::Point3<f64>,
 }
 
 impl Laz {
@@ -92,7 +92,7 @@ impl Laz {
 
 			min: (min - center).map(|x| x as f32).into(),
 			max: (max - center).map(|x| x as f32).into(),
-			_world_offset: center,
+			world_offset: center,
 		})
 	}
 

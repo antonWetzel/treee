@@ -22,6 +22,7 @@ pub struct Segmenting {
 	pub distance: f32,
 	pub restart: crossbeam::channel::Sender<f32>,
 	pub total: usize,
+	pub world_offset: na::Point3<f64>,
 }
 
 pub struct Shared {
@@ -29,6 +30,7 @@ pub struct Shared {
 	pub point_clouds: Mutex<Vec<(render::PointCloud, render::PointCloudProperty)>>,
 	pub done: AtomicCell<Option<DashMap<usize, Vec<na::Point3<f32>>>>>,
 	pub progress: AtomicUsize,
+	pub sender: crossbeam::channel::Sender<Event>,
 }
 
 impl Segmenting {
@@ -47,6 +49,7 @@ impl Segmenting {
 			point_clouds: Mutex::new(Vec::new()),
 			done: AtomicCell::new(None),
 			progress: AtomicUsize::new(0),
+			sender,
 		});
 		let total = loading
 			.slices
@@ -55,13 +58,13 @@ impl Segmenting {
 			.iter()
 			.map(|slice| slice.len())
 			.sum();
-
+		let world_offset = loading.world_offset;
 		{
 			let shared = shared.clone();
 			std::thread::spawn(move || {
 				while let Ok(distance) = restart_reciever.recv() {
 					shared.done.store(None);
-					segmentation(distance, &loading, &shared, &sender, &restart_reciever);
+					segmentation(distance, &loading, &shared, &restart_reciever);
 				}
 			});
 		}
@@ -72,24 +75,39 @@ impl Segmenting {
 				distance: max_distance,
 				restart: restart_sender,
 				total,
+				world_offset,
 			},
 			receiver,
 		)
 	}
 
-	pub fn ui(&mut self, ui: &mut egui::Ui) -> SegmentingResponse {
-		let mut response = SegmentingResponse::None;
+	pub fn ui(&mut self, ui: &mut egui::Ui) {
+		ui.separator();
+		ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Settings"));
+		egui::Grid::new("settings grid").show(ui, |ui| {
+			ui.label("Distance");
+			if ui
+				.add(egui::Slider::new(&mut self.distance, 0.1..=2.0))
+				.changed()
+			{
+				self.restart.send(self.distance).unwrap();
+			};
+			ui.end_row();
+		});
 
-		if ui
-			.add(egui::Slider::new(&mut self.distance, 0.1..=2.0))
-			.changed()
-		{
-			self.restart.send(self.distance).unwrap();
-		};
-
+		ui.separator();
 		if let Some(segments) = self.shared.done.take() {
-			if ui.button("Continue").clicked() {
-				response = SegmentingResponse::Done(segments);
+			if ui
+				.add_sized([ui.available_width(), 0.0], egui::Button::new("Continue"))
+				.clicked()
+			{
+				self.shared
+					.sender
+					.send(Event::Segmented {
+						segments,
+						world_offset: self.world_offset,
+					})
+					.unwrap();
 			} else {
 				self.shared.done.store(Some(segments));
 			}
@@ -97,8 +115,6 @@ impl Segmenting {
 			let progress = self.shared.progress.load(Ordering::Relaxed) as f32 / self.total as f32;
 			ui.add(egui::ProgressBar::new(progress).rounding(egui::Rounding::ZERO));
 		}
-
-		response
 	}
 }
 
@@ -106,7 +122,6 @@ fn segmentation(
 	max_distance: f32,
 	loading: &Loading,
 	segmenting: &Shared,
-	sender: &crossbeam::channel::Sender<Event>,
 	reciever: &crossbeam::channel::Receiver<f32>,
 ) {
 	segmenting.point_clouds.lock().unwrap().clear();
@@ -119,7 +134,7 @@ fn segmentation(
 		include_bytes!("../assets/grad_turbo.png"),
 		128, // overflow to repeat
 	);
-	sender.send(Event::Lookup(lookup)).unwrap();
+	segmenting.sender.send(Event::Lookup(lookup)).unwrap();
 	segmenting.progress.store(0, Ordering::Relaxed);
 
 	let mut source_slices = loading.slices.lock().unwrap();
@@ -214,11 +229,6 @@ fn segmentation(
 		return;
 	}
 	segmenting.done.store(Some(segments));
-}
-
-pub enum SegmentingResponse {
-	None,
-	Done(DashMap<usize, Vec<na::Point3<f32>>>),
 }
 
 #[derive(Debug, Clone)]

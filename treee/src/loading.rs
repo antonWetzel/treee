@@ -24,6 +24,7 @@ pub struct Loading {
 	sender: crossbeam::channel::Sender<Event>,
 	pub total: usize,
 	progress: AtomicUsize,
+	pub world_offset: na::Point3<f64>,
 }
 
 #[derive(Debug)]
@@ -68,6 +69,7 @@ impl Loading {
 			chunks: point_clouds,
 			total: laz.total(),
 			progress: AtomicUsize::new(0),
+			world_offset: laz.world_offset,
 		};
 		let loading = Arc::new(loading);
 
@@ -100,49 +102,19 @@ impl Loading {
 		(loading, receiver)
 	}
 
-	pub fn ui(&self, ui: &mut egui::Ui, display_settings: &mut DisplaySettings) -> LoadingResponse {
-		let mut response = LoadingResponse::None;
-		if ui.button("Close").clicked() {
-			response = LoadingResponse::Close;
-		}
-
-		let background = &mut display_settings.background.coords.data.0[0];
-		egui::color_picker::color_edit_button_rgb(ui, background);
-
-		let popup_response = ui.button("Point size");
-		let popup_id = ui.make_persistent_id("point size popup");
-		if popup_response.clicked() {
-			ui.memory_mut(|mem| mem.toggle_popup(popup_id));
-		}
-		egui::popup::popup_below_widget(ui, popup_id, &popup_response, |ui| {
-			ui.set_min_width(200.0);
-			if ui
-				.add(
-					egui::Slider::new(
-						&mut display_settings.point_cloud_environment.scale,
-						0.005..=2.0,
-					)
-					.logarithmic(true),
-				)
-				.changed()
-			{
-				display_settings.point_cloud_environment.update(&self.state);
-			}
-		});
-
+	pub fn ui(&self, ui: &mut egui::Ui, display_settings: &mut DisplaySettings) {
+		ui.separator();
 		let progress = self.progress.load(Ordering::Relaxed);
 		if progress < self.total {
 			let progress = progress as f32 / self.total as f32;
 			ui.add(egui::ProgressBar::new(progress).rounding(egui::Rounding::ZERO));
-		} else if ui.button("Continue").clicked() {
-			self.sender.send(Event::Done).unwrap();
+		} else {
+			if ui
+				.add_sized([ui.available_width(), 0.0], egui::Button::new("Continue"))
+				.clicked()
+			{
+				self.sender.send(Event::Done).unwrap();
+			}
 		}
-
-		response
 	}
-}
-
-pub enum LoadingResponse {
-	None,
-	Close,
 }

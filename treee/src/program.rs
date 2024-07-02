@@ -1,18 +1,25 @@
 use crate::calculations::Calculations;
 use crate::camera::Camera;
-use crate::empty::{Empty, EmptyResponse};
+use crate::empty::Empty;
 use crate::interactive::{self, Interactive};
-use crate::loading::{Loading, LoadingResponse};
-use crate::segmenting::{Segmenting, SegmentingResponse, DEFAULT_MAX_DISTANCE};
+use crate::loading::Loading;
+use crate::segmenting::{Segmenting, DEFAULT_MAX_DISTANCE};
 use crate::{Error, EventLoop};
+use dashmap::DashMap;
 use nalgebra as na;
 use pollster::FutureExt;
+use std::ops::Not;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 pub enum Event {
 	Done,
 	Lookup(render::Lookup),
-	Close,
+	Load(PathBuf),
+	Segmented {
+		segments: DashMap<usize, Vec<na::Point3<f32>>>,
+		world_offset: na::Point3<f64>,
+	},
 }
 
 pub struct Program {
@@ -108,42 +115,25 @@ impl Program {
 		let full_output = self.egui.run(raw_input, |ctx| {
 			egui::SidePanel::left("panel")
 				.resizable(false)
-				.show(ctx, |ui| match &mut self.world {
-					World::Empty(empty) => match empty.ui(ui) {
-						EmptyResponse::None => {},
-						EmptyResponse::Load(path) => match path.extension().unwrap().to_str().unwrap() {
-							"laz" | "las" => {
-								let (loading, receiver) = Loading::new(path, self.state.clone());
-								self.world = World::Loading(loading);
-								self.receiver = receiver;
-							},
-							"ipc" => {
-								let (interactive, receiver) = Interactive::load(path, self.state.clone());
-								self.world = World::Interactive(interactive);
-								self.receiver = receiver;
-							},
-							_ => panic!("invalid file format"),
-						},
-					},
-					World::Loading(loading) => match loading.ui(ui, &mut self.display_settings) {
-						LoadingResponse::None => {},
-						LoadingResponse::Close => {
-							let (empty, receiver) = Empty::new();
+				.min_width(200.0)
+				.show(ctx, |ui| {
+					if matches!(self.world, World::Empty(_)).not() {
+						if ui
+							.add_sized([ui.available_width(), 0.0], egui::Button::new("Close"))
+							.clicked()
+						{
+							let (empty, reciever) = Empty::new();
 							self.world = World::Empty(empty);
-							self.receiver = receiver;
-						},
-					},
-					World::Segmenting(segmenting) => match segmenting.ui(ui) {
-						SegmentingResponse::None => {},
-						SegmentingResponse::Done(segments) => {
-							let (calculations, receiver) = Calculations::new(segments, self.state.clone());
-							self.world = World::Calculations(calculations);
-							self.receiver = receiver;
-						},
-					},
-
-					World::Calculations(calculations) => calculations.ui(ui),
-					World::Interactive(interactive) => interactive.ui(ui),
+							self.receiver = reciever;
+						}
+					}
+					match &mut self.world {
+						World::Empty(empty) => empty.ui(ui),
+						World::Loading(loading) => loading.ui(ui, &mut self.display_settings),
+						World::Segmenting(segmenting) => segmenting.ui(ui),
+						World::Calculations(calculations) => calculations.ui(ui),
+						World::Interactive(interactive) => interactive.ui(ui),
+					}
 				});
 		});
 		self.egui_winit
@@ -272,7 +262,7 @@ impl Program {
 						let Some(render) = &seg.render else {
 							continue;
 						};
-						render.render(calculations.modus, point_cloud_pass);
+						render.render(calculations.display, point_cloud_pass);
 					}
 					drop(render_pass);
 
@@ -303,7 +293,9 @@ impl Program {
 					);
 					if interactive.show_deleted {
 						if let Some(render) = &interactive.deleted.render {
+							point_cloud_pass.lookup(&interactive.white_lookup);
 							render.render(interactive.display, point_cloud_pass);
+							point_cloud_pass.lookup(&self.display_settings.lookup);
 						}
 					}
 					if let interactive::Modus::View(idx, _) = interactive.modus {
@@ -378,10 +370,18 @@ impl Program {
 
 		while let Ok(event) = self.receiver.try_recv() {
 			match event {
-				Event::Close => {
-					let (empty, receiver) = Empty::new();
-					self.world = World::Empty(empty);
-					self.receiver = receiver;
+				Event::Load(path) => match path.extension().unwrap().to_str().unwrap() {
+					"laz" | "las" => {
+						let (loading, receiver) = Loading::new(path, self.state.clone());
+						self.world = World::Loading(loading);
+						self.receiver = receiver;
+					},
+					"ipc" => {
+						let (interactive, receiver) = Interactive::load(path, self.state.clone());
+						self.world = World::Interactive(interactive);
+						self.receiver = receiver;
+					},
+					_ => panic!("invalid file format"),
 				},
 				Event::Lookup(lookup) => self.display_settings.lookup = lookup,
 				Event::Done => {
@@ -397,13 +397,19 @@ impl Program {
 							let (interactive, receiver) = Interactive::new(
 								shared.segments.into_inner().unwrap(),
 								self.state.clone(),
-								calculations.modus,
+								calculations.display,
+								calculations.world_offset,
 							);
 							self.world = World::Interactive(interactive);
 							self.receiver = receiver;
 						},
 						world => self.world = world,
 					};
+				},
+				Event::Segmented { segments, world_offset } => {
+					let (calculations, receiver) = Calculations::new(segments, self.state.clone(), world_offset);
+					self.world = World::Calculations(calculations);
+					self.receiver = receiver;
 				},
 			}
 		}

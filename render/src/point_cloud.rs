@@ -168,6 +168,12 @@ impl PointCloudState {
 #[repr(transparent)]
 pub struct PointCloudPass<'a>(wgpu::RenderPass<'a>);
 
+impl<'a> PointCloudPass<'a> {
+	pub fn lookup(&mut self, lookup: &'a Lookup) {
+		self.0.set_bind_group(2, lookup.get_bind_group(), &[]);
+	}
+}
+
 #[derive(Debug)]
 pub struct PointCloud {
 	pub buffer: wgpu::Buffer,
