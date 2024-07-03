@@ -45,7 +45,7 @@ impl Laz {
 		{
 			use wasm_bindgen::prelude::*;
 
-			const MAX_NUMBER_POINTS: usize = 25_000_000;
+			const MAX_NUMBER_POINTS: usize = 15_000_000;
 
 			#[wasm_bindgen]
 			extern "C" {

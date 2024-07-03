@@ -61,7 +61,9 @@ impl Window {
 
 	pub fn set_window_icon(&self, png: &[u8]) {
 		let img = image::load_from_memory(png).unwrap();
-		let icon = winit::window::Icon::from_rgba(img.to_rgba8().into_vec(), img.width(), img.height()).unwrap();
+		let icon =
+			winit::window::Icon::from_rgba(img.to_rgba8().into_vec(), img.width(), img.height())
+				.unwrap();
 		self.window.set_window_icon(Some(icon));
 	}
 
@@ -70,7 +72,9 @@ impl Window {
 		use winit::platform::windows::WindowExtWindows;
 
 		let img = image::load_from_memory(png).unwrap();
-		let icon = winit::window::Icon::from_rgba(img.to_rgba8().into_vec(), img.width(), img.height()).unwrap();
+		let icon =
+			winit::window::Icon::from_rgba(img.to_rgba8().into_vec(), img.width(), img.height())
+				.unwrap();
 		self.window.set_taskbar_icon(Some(icon));
 	}
 
@@ -90,7 +94,9 @@ impl Window {
 
 		let encoder = state
 			.device
-			.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("Render Encoder") });
+			.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+				label: Some("Render Encoder"),
+			});
 
 		let mut context = RenderContext {
 			encoder,
@@ -128,50 +134,52 @@ impl<'a> RenderContext<'a> {
 	}
 
 	pub fn render_pass(&mut self, background: na::Point3<f32>) -> RenderPass {
-		let render_pass = RenderPass::new(self.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-			label: Some("Render Pass"),
-			color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-				view: &self.view,
-				resolve_target: None,
-				ops: wgpu::Operations {
-					load: wgpu::LoadOp::Clear(wgpu::Color {
-						r: background.x as f64,
-						g: background.y as f64,
-						b: background.z as f64,
-						a: 1.0,
+		let render_pass =
+			RenderPass::new(self.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+				label: Some("Render Pass"),
+				color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+					view: &self.view,
+					resolve_target: None,
+					ops: wgpu::Operations {
+						load: wgpu::LoadOp::Clear(wgpu::Color {
+							r: background.x as f64,
+							g: background.y as f64,
+							b: background.z as f64,
+							a: 1.0,
+						}),
+						store: wgpu::StoreOp::Store,
+					},
+				})],
+				depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+					view: self.depth_texture,
+					depth_ops: Some(wgpu::Operations {
+						load: wgpu::LoadOp::Clear(1.0),
+						store: wgpu::StoreOp::Store,
 					}),
-					store: wgpu::StoreOp::Store,
-				},
-			})],
-			depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-				view: self.depth_texture,
-				depth_ops: Some(wgpu::Operations {
-					load: wgpu::LoadOp::Clear(1.0),
-					store: wgpu::StoreOp::Store,
+					stencil_ops: None,
 				}),
-				stencil_ops: None,
-			}),
-			occlusion_query_set: None,
-			timestamp_writes: None,
-		}));
+				occlusion_query_set: None,
+				timestamp_writes: None,
+			}));
 		render_pass
 	}
 
 	pub fn post_process_pass(&mut self) -> RenderPass {
-		let render_pass = RenderPass::new(self.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-			label: Some("eye dome"),
-			color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-				view: &self.view,
-				resolve_target: None,
-				ops: wgpu::Operations {
-					load: wgpu::LoadOp::Load,
-					store: wgpu::StoreOp::Store,
-				},
-			})],
-			depth_stencil_attachment: None,
-			occlusion_query_set: None,
-			timestamp_writes: None,
-		}));
+		let render_pass =
+			RenderPass::new(self.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+				label: Some("eye dome"),
+				color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+					view: &self.view,
+					resolve_target: None,
+					ops: wgpu::Operations {
+						load: wgpu::LoadOp::Load,
+						store: wgpu::StoreOp::Store,
+					},
+				})],
+				depth_stencil_attachment: None,
+				occlusion_query_set: None,
+				timestamp_writes: None,
+			}));
 		render_pass
 	}
 }

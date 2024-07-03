@@ -25,7 +25,9 @@ pub async fn try_main() -> Result<(), Error> {
 		event_loop.run(|event, event_loop| match event {
 			winit::event::Event::Resumed => app.resumed(event_loop),
 			winit::event::Event::Suspended => app.suspended(event_loop),
-			winit::event::Event::WindowEvent { window_id, event } => app.window_event(event_loop, window_id, event),
+			winit::event::Event::WindowEvent { window_id, event } => {
+				app.window_event(event_loop, window_id, event)
+			},
 			winit::event::Event::AboutToWait => app.about_to_wait(event_loop),
 			_ => {},
 		})?;
@@ -41,7 +43,9 @@ pub async fn try_main() -> Result<(), Error> {
 		event_loop.spawn(move |event, event_loop| match event {
 			winit::event::Event::Resumed => app.resumed(event_loop),
 			winit::event::Event::Suspended => app.suspended(event_loop),
-			winit::event::Event::WindowEvent { window_id, event } => app.window_event(event_loop, window_id, event),
+			winit::event::Event::WindowEvent { window_id, event } => {
+				app.window_event(event_loop, window_id, event)
+			},
 			winit::event::Event::AboutToWait => app.about_to_wait(event_loop),
 			_ => {},
 		});
@@ -120,9 +124,14 @@ impl App {
 				winit::event::WindowEvent::Resized(_size) => {
 					program.resized();
 				},
-				winit::event::WindowEvent::KeyboardInput { event, .. } => match event.physical_key {
-					winit::keyboard::PhysicalKey::Code(key) => program.key(key, event.state),
-					winit::keyboard::PhysicalKey::Unidentified(_) => {},
+				winit::event::WindowEvent::ScaleFactorChanged { .. } => {
+					program.resized();
+				},
+				winit::event::WindowEvent::KeyboardInput { event, .. } => {
+					match event.physical_key {
+						winit::keyboard::PhysicalKey::Code(key) => program.key(key, event.state),
+						winit::keyboard::PhysicalKey::Unidentified(_) => {},
+					}
 				},
 				winit::event::WindowEvent::MouseInput { state, button, .. } => {
 					program.mouse_click(button.into(), state);
@@ -149,7 +158,11 @@ impl App {
 }
 
 impl App {
-	pub fn try_do(&mut self, event_loop: &EventLoop, action: impl FnOnce(&mut Program) -> Result<(), Error>) {
+	pub fn try_do(
+		&mut self,
+		event_loop: &EventLoop,
+		action: impl FnOnce(&mut Program) -> Result<(), Error>,
+	) {
 		match self {
 			Self::Running(program) => match action(program) {
 				Ok(()) => {},

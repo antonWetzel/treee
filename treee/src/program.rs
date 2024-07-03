@@ -128,8 +128,13 @@ impl Program {
 		let eye_dome = render::EyeDome::new(&state, window.config(), window.depth_texture(), 0.7);
 
 		let egui = egui::Context::default();
-		let egui_winit =
-			egui_winit::State::new(egui.clone(), egui.viewport_id(), window.inner(), None, None);
+		let egui_winit = egui_winit::State::new(
+			egui.clone(),
+			egui.viewport_id(),
+			window.inner(),
+			Some(window.scale_factor() as f32),
+			None,
+		);
 		let egui_wgpu = egui_wgpu::Renderer::new(state.device(), state.surface_format(), None, 1);
 
 		let (empty, receiver) = Empty::new();
@@ -203,7 +208,7 @@ impl Program {
 		let config = self.window.config();
 		let screen = &egui_wgpu::ScreenDescriptor {
 			size_in_pixels: [config.width, config.height],
-			pixels_per_point: 1.0,
+			pixels_per_point: self.egui.pixels_per_point(),
 		};
 		for (id, delta) in full_output.textures_delta.set {
 			self.egui_wgpu
