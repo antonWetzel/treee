@@ -18,5 +18,3 @@ nalgebra.workspace = true
 
 [features]
 default = []
-quad-point = []
-oct-point = []

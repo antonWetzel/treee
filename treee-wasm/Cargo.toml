@@ -1,0 +1,22 @@
+[package]
+name = "treee-wasm"
+version.workspace = true
+edition.workspace = true
+# rust-version.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[lints]
+workspace = true
+
+[dependencies]
+treee.workspace = true
+
+wasm-bindgen.workspace = true
+log.workspace = true
+console_error_panic_hook.workspace = true
+console_log.workspace = true
+getrandom = { workspace = true, features = ["js"] }
+wasm-bindgen-rayon.workspace = true
+wasm-bindgen-futures.workspace = true

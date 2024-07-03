@@ -12,16 +12,7 @@ pub struct State {
 pub type RenderError = winit::error::EventLoopError;
 
 impl State {
-	pub async fn new(
-		title: &str,
-		event_loop: &winit::event_loop::EventLoopWindowTarget<()>,
-	) -> Result<(Self, Window), RenderError> {
-		let window = winit::window::WindowBuilder::new()
-			.with_title(title)
-			.with_min_inner_size(winit::dpi::LogicalSize { width: 10, height: 10 })
-			.build(event_loop)?;
-		let window = Arc::new(window);
-
+	pub async fn new(window: Arc<winit::window::Window>) -> Result<(Self, Window), RenderError> {
 		let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
 			backends: wgpu::Backends::PRIMARY,
 			dx12_shader_compiler: wgpu::Dx12Compiler::default(),
@@ -43,7 +34,7 @@ impl State {
 		let (device, queue) = adapter
 			.request_device(
 				&wgpu::DeviceDescriptor {
-					required_features: wgpu::Features::POLYGON_MODE_LINE,
+					required_features: wgpu::Features::empty(),
 					required_limits: wgpu::Limits::default(),
 					label: None,
 				},
@@ -55,11 +46,12 @@ impl State {
 		let size = window.inner_size();
 		let surface = instance.create_surface(window.clone()).unwrap();
 		let surface_caps = surface.get_capabilities(&adapter);
-		let surface_format = *surface_caps
+		let surface_format = surface_caps
 			.formats
 			.iter()
-			.find(|f| f.is_srgb())
-			.unwrap_or(&surface_caps.formats[0]);
+			.find(|&&format| format == wgpu::TextureFormat::Bgra8Unorm)
+			.copied()
+			.unwrap_or(surface_caps.formats[0]);
 		let config = wgpu::SurfaceConfiguration {
 			usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
 			format: surface_format,

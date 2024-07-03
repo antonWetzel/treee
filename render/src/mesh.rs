@@ -1,9 +1,6 @@
 use wgpu::util::DeviceExt;
 
-use crate::{
-	depth_texture::DepthTexture, point_description, point_property_description, Camera3DGPU, Lookup, PointCloud,
-	PointCloudProperty, RenderPass, State,
-};
+use crate::{depth_texture::DepthTexture, point_description, Camera3DGPU, PointCloud, RenderPass, State};
 
 pub struct MeshState {
 	pipeline: wgpu::RenderPipeline,
@@ -13,12 +10,6 @@ impl MeshState {
 	pub fn new(state: &State) -> Self {
 		Self {
 			pipeline: Self::create_pipeline(state, wgpu::PolygonMode::Fill, true),
-		}
-	}
-
-	pub fn new_as_lines(state: &State) -> Self {
-		Self {
-			pipeline: Self::create_pipeline(state, wgpu::PolygonMode::Line, false),
 		}
 	}
 

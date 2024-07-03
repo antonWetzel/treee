@@ -1,10 +1,9 @@
 use crossbeam::atomic::AtomicCell;
-use dashmap::DashMap;
 use nalgebra as na;
 use rand::{seq::SliceRandom, thread_rng};
 use rayon::iter::{ParallelBridge, ParallelIterator};
 use std::{
-	collections::VecDeque,
+	collections::{HashMap, VecDeque},
 	ops::Not,
 	sync::{
 		atomic::{AtomicUsize, Ordering},
@@ -26,27 +25,19 @@ pub struct Segmenting {
 }
 
 pub struct Shared {
-	pub state: Arc<render::State>,
-	pub point_clouds: Mutex<Vec<(render::PointCloud, render::PointCloudProperty)>>,
-	pub done: AtomicCell<Option<DashMap<usize, Vec<na::Point3<f32>>>>>,
+	pub done: AtomicCell<Option<HashMap<u32, Vec<na::Point3<f32>>>>>,
 	pub progress: AtomicUsize,
 	pub sender: crossbeam::channel::Sender<Event>,
 }
 
 impl Segmenting {
-	pub fn new(
-		loading: Loading,
-		state: Arc<render::State>,
-		max_distance: f32,
-	) -> (Self, crossbeam::channel::Receiver<Event>) {
+	pub fn new(loading: Loading, max_distance: f32) -> (Self, crossbeam::channel::Receiver<Event>) {
 		let (sender, receiver) = crossbeam::channel::unbounded();
 
 		let (restart_sender, restart_reciever) = crossbeam::channel::unbounded();
 		restart_sender.send(max_distance).unwrap();
 
 		let shared = Arc::new(Shared {
-			state,
-			point_clouds: Mutex::new(Vec::new()),
 			done: AtomicCell::new(None),
 			progress: AtomicUsize::new(0),
 			sender,
@@ -62,7 +53,7 @@ impl Segmenting {
 		let world_offset = loading.shared.world_offset;
 		{
 			let shared = shared.clone();
-			std::thread::spawn(move || {
+			rayon::spawn(move || {
 				while let Ok(distance) = restart_reciever.recv() {
 					shared.done.store(None);
 					segmentation(distance, &loading, &shared, &restart_reciever);
@@ -125,14 +116,15 @@ fn segmentation(
 	segmenting: &Shared,
 	reciever: &crossbeam::channel::Receiver<f32>,
 ) {
-	segmenting.point_clouds.lock().unwrap().clear();
+	segmenting.sender.send(Event::ClearPointClouds).unwrap();
 
-	let lookup = render::Lookup::new_png(
-		&segmenting.state,
-		include_bytes!("../assets/grad_turbo.png"),
-		128, // overflow to repeat
-	);
-	segmenting.sender.send(Event::Lookup(lookup)).unwrap();
+	segmenting
+		.sender
+		.send(Event::Lookup {
+			bytes: include_bytes!("../assets/grad_turbo.png"),
+			max: 128,
+		})
+		.unwrap();
 	segmenting.progress.store(0, Ordering::Relaxed);
 
 	let mut source_slices = loading.shared.slices.lock().unwrap();
@@ -171,7 +163,8 @@ fn segmentation(
 		y: loading.max.z as f64,
 	};
 
-	let segments = DashMap::<usize, Vec<na::Point3<f32>>>::new();
+	let segments = HashMap::<u32, Vec<na::Point3<f32>>>::new();
+	let segments = Mutex::new(segments);
 
 	let cancel = slices
 		.into_iter()
@@ -208,28 +201,38 @@ fn segmentation(
 				.enumerate()
 				.collect::<VecDeque<_>>();
 
-			let mut property = Vec::with_capacity(slice.len());
+			let mut segment_data = Vec::with_capacity(slice.len());
 			for &p in slice.iter() {
 				let Some((idx, _)) = trees
 					.iter_mut()
 					.enumerate()
 					.find(|(_, (_, tree))| tree.contains(na::Point2::new(p.x, p.z), 0.1))
 				else {
-					property.push(0);
+					segment_data.push(0);
 					continue;
 				};
 				let elem = trees.remove(idx).unwrap();
-				property.push(elem.0 as u32);
-				segments.entry(elem.0).or_default().value_mut().push(p);
+				segment_data.push(elem.0 as u32);
+
 				// hope next point is in the same segment
 				trees.push_front(elem);
 			}
+			let mut segments = segments.lock().unwrap();
+			for (&idx, &p) in segment_data.iter().zip(slice.iter()) {
+				segments.entry(idx).or_default().push(p);
+			}
+			drop(segments);
 
 			if slice.is_empty().not() {
-				let point_cloud = render::PointCloud::new(&segmenting.state, slice);
-				let property = render::PointCloudProperty::new(&segmenting.state, &property);
-				let mut point_clouds = segmenting.point_clouds.lock().unwrap();
-				point_clouds.push((point_cloud, property));
+				segmenting
+					.sender
+					.send(Event::PointCloud {
+						idx: None,
+						data: slice.to_vec(),
+						segment: segment_data,
+						property: None,
+					})
+					.unwrap();
 			}
 			segmenting
 				.progress
@@ -239,6 +242,7 @@ fn segmentation(
 	if cancel {
 		return;
 	}
+	let segments = segments.into_inner().unwrap();
 	segmenting.done.store(Some(segments));
 }
 

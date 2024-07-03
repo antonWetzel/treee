@@ -12,66 +12,14 @@ pub struct PointCloudState {
 	pipeline: wgpu::RenderPipeline,
 }
 
-#[cfg(not(all(feature = "quad_point", feature = "oct_point")))]
-mod vertices {
-	use super::*;
+//tan(60°)
+const DIFF: f32 = 1.732_050_8;
 
-	//tan(60°)
-	const DIFF: f32 = 1.732_050_8;
-
-	pub const BASE_VERTICES: [PointEdge; 3] = [
-		PointEdge { position: na::Point2::new(-DIFF, -1.0) },
-		PointEdge { position: na::Point2::new(DIFF, -1.0) },
-		PointEdge { position: na::Point2::new(0.0, 2.0) },
-	];
-}
-
-#[cfg(all(feature = "quad_point", not(feature = "oct_point")))]
-mod vertices {
-	use super::*;
-
-	//Triangle is a lot faster then Square
-	pub const BASE_VERTICES: [PointEdge; 6] = [
-		PointEdge { position: Vector::new([-1.0, -1.0]) },
-		PointEdge { position: Vector::new([1.0, -1.0]) },
-		PointEdge { position: Vector::new([1.0, 1.0]) },
-		PointEdge { position: Vector::new([-1.0, -1.0]) },
-		PointEdge { position: Vector::new([1.0, 1.0]) },
-		PointEdge { position: Vector::new([-1.0, 1.0]) },
-	];
-}
-
-#[cfg(all(not(feature = "quad_point"), feature = "oct_point"))]
-mod vertices {
-	use super::*;
-
-	//tan(22.5°)
-	const DIFF: f32 = 0.41421356237309503;
-
-	// Triangle is a lot faster then Octagon
-	pub const BASE_VERTICES: [PointEdge; 18] = [
-		PointEdge { position: Vector::new([-DIFF, -1.0]) },
-		PointEdge { position: Vector::new([DIFF, -1.0]) },
-		PointEdge { position: Vector::new([-1.0, -DIFF]) },
-		PointEdge { position: Vector::new([-1.0, -DIFF]) },
-		PointEdge { position: Vector::new([DIFF, -1.0]) },
-		PointEdge { position: Vector::new([1.0, -DIFF]) },
-		PointEdge { position: Vector::new([-1.0, -DIFF]) },
-		PointEdge { position: Vector::new([1.0, -DIFF]) },
-		PointEdge { position: Vector::new([-1.0, DIFF]) },
-		PointEdge { position: Vector::new([-1.0, DIFF]) },
-		PointEdge { position: Vector::new([1.0, -DIFF]) },
-		PointEdge { position: Vector::new([1.0, DIFF]) },
-		PointEdge { position: Vector::new([-1.0, DIFF]) },
-		PointEdge { position: Vector::new([1.0, DIFF]) },
-		PointEdge { position: Vector::new([-DIFF, 1.0]) },
-		PointEdge { position: Vector::new([-DIFF, 1.0]) },
-		PointEdge { position: Vector::new([DIFF, 1.0]) },
-		PointEdge { position: Vector::new([1.0, DIFF]) },
-	];
-}
-
-use vertices::*;
+pub const BASE_VERTICES: [PointEdge; 3] = [
+	PointEdge { position: na::Point2::new(-DIFF, -1.0) },
+	PointEdge { position: na::Point2::new(DIFF, -1.0) },
+	PointEdge { position: na::Point2::new(0.0, 2.0) },
+];
 
 impl PointCloudState {
 	pub fn new(state: &State) -> Self {

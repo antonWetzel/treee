@@ -1,7 +1,7 @@
 use nalgebra as na;
 use wgpu::{util::DeviceExt, vertex_attr_array};
 
-use crate::{depth_texture::DepthTexture, Camera3DGPU, RenderPass, State};
+use crate::{depth_texture::DepthTexture, Camera3DGPU, PointCloud, RenderPass, State};
 
 pub struct LinesState {
 	pipeline: wgpu::RenderPipeline,
@@ -44,7 +44,7 @@ impl LinesState {
 					strip_index_format: None,
 					front_face: wgpu::FrontFace::Ccw,
 					cull_mode: None,
-					polygon_mode: wgpu::PolygonMode::Line,
+					polygon_mode: wgpu::PolygonMode::Fill,
 					unclipped_depth: false,
 					conservative: false,
 				},
@@ -65,58 +65,29 @@ impl LinesState {
 
 		Self { pipeline }
 	}
+
+	pub fn render<'a, 'b>(
+		&'a self,
+		render_pass: &'b mut RenderPass<'a>,
+		camera: &'a Camera3DGPU,
+	) -> &'b mut LinesPass<'a> {
+		render_pass.set_pipeline(&self.pipeline);
+		render_pass.set_bind_group(0, camera.get_bind_group(), &[]);
+		unsafe { std::mem::transmute::<_, &mut LinesPass<'a>>(render_pass) }
+	}
 }
 
 #[repr(transparent)]
 pub struct LinesPass<'a>(wgpu::RenderPass<'a>);
 
-pub trait LinesRender {
-	fn render<'a>(&'a self, lines_pass: &mut LinesPass<'a>);
-}
-
-pub trait LinesRenderExt<'a, V> {
-	fn render_lines(&mut self, value: &'a V, state: &'a LinesState, camera: &'a Camera3DGPU);
-}
-
-impl<'a, V> LinesRenderExt<'a, V> for RenderPass<'a>
-where
-	V: LinesRender,
-{
-	fn render_lines(&mut self, value: &'a V, state: &'a LinesState, camera: &'a Camera3DGPU) {
-		self.set_pipeline(&state.pipeline);
-		self.set_bind_group(0, camera.get_bind_group(), &[]);
-		let lines_pass = unsafe { std::mem::transmute::<_, &mut LinesPass<'a>>(self) };
-		value.render(lines_pass);
-	}
-}
-
 #[derive(Debug)]
 pub struct Lines {
-	pub buffer: wgpu::Buffer,
 	pub indices: wgpu::Buffer,
 	pub instances: u32,
 }
 
-impl LinesRender for Lines {
-	fn render<'a>(&'a self, lines_pass: &mut LinesPass<'a>) {
-		lines_pass.0.set_vertex_buffer(0, self.buffer.slice(..));
-		lines_pass
-			.0
-			.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint32);
-		lines_pass.0.draw_indexed(0..self.instances, 0, 0..1);
-	}
-}
-
 impl Lines {
-	pub fn new(state: &State, points: &[na::Point3<f32>], indices: &[u32]) -> Self {
-		let buffer = state
-			.device
-			.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-				label: Some("lines buffer"),
-				contents: bytemuck::cast_slice(points),
-				usage: wgpu::BufferUsages::VERTEX,
-			});
-
+	pub fn new(state: &State, indices: &[u32]) -> Self {
 		let indices_buffer = state
 			.device
 			.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -126,10 +97,17 @@ impl Lines {
 			});
 
 		Self {
-			buffer,
 			indices: indices_buffer,
 			instances: indices.len() as u32,
 		}
+	}
+
+	pub fn render<'a>(&'a self, points: &'a PointCloud, lines_pass: &mut LinesPass<'a>) {
+		lines_pass.0.set_vertex_buffer(0, points.buffer.slice(..));
+		lines_pass
+			.0
+			.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint32);
+		lines_pass.0.draw_indexed(0..self.instances, 0, 0..1);
 	}
 }
 

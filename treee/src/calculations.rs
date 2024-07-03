@@ -6,11 +6,11 @@ use std::{
 	},
 };
 
-use dashmap::DashMap;
+use crossbeam::channel::TrySendError;
 use nalgebra as na;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
-use crate::{program::Event, segmenting::Tree};
+use crate::{interactive::DELETED_INDEX, program::Event, segmenting::Tree};
 
 pub struct Calculations {
 	pub display: DisplayModus,
@@ -21,7 +21,7 @@ pub struct Calculations {
 
 #[derive(Debug, Clone, Copy)]
 pub enum DisplayModus {
-	Solid,
+	Segment,
 	Property,
 }
 
@@ -30,10 +30,10 @@ impl DisplayModus {
 		ui.separator();
 		ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Display"));
 		if ui
-			.radio(matches!(self, DisplayModus::Solid), "Segment")
+			.radio(matches!(self, DisplayModus::Segment), "Segment")
 			.clicked()
 		{
-			*self = DisplayModus::Solid;
+			*self = DisplayModus::Segment;
 		}
 		if ui
 			.radio(matches!(self, DisplayModus::Property), "Classification")
@@ -46,15 +46,8 @@ impl DisplayModus {
 
 #[derive(Debug)]
 pub struct Shared {
-	state: Arc<render::State>,
-	pub segments: std::sync::Mutex<HashMap<usize, Segment>>,
+	pub segments: std::sync::Mutex<HashMap<u32, SegmentData>>,
 	pub progress: AtomicUsize,
-}
-
-#[derive(Debug)]
-pub struct Segment {
-	pub data: SegmentData,
-	pub render: Option<SegmentRender>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -66,87 +59,61 @@ pub struct SegmentData {
 	pub coords: Option<(f64, f64)>,
 }
 
-#[derive(Debug)]
-pub struct SegmentRender {
-	pub point_cloud: render::PointCloud,
-	solid: render::PointCloudProperty,
-	pub property: render::PointCloudProperty,
-}
-
-impl SegmentRender {
-	pub fn new(
-		points: &[na::Point3<f32>],
-		idx: usize,
-		info: SegmentInformation,
-		state: &render::State,
-	) -> Option<Self> {
-		if points.is_empty() {
-			return None;
-		}
-		let point_cloud = render::PointCloud::new(state, points);
-		let solid = render::PointCloudProperty::new(state, &vec![idx as u32; points.len()]);
-
-		let mut property = vec![0u32; points.len()];
-		for (idx, p) in points.iter().enumerate() {
-			property[idx] = if p.y < info.ground_sep {
-				0
-			} else if p.y < info.crown_sep {
-				u32::MAX / 2
-			} else {
-				u32::MAX
-			};
-		}
-		let property = render::PointCloudProperty::new(state, &property);
-		let render = Self { point_cloud, solid, property };
-		Some(render)
-	}
-
-	pub fn render<'a>(&'a self, modus: DisplayModus, point_cloud_pass: &mut render::PointCloudPass<'a>) {
-		let property = match modus {
-			DisplayModus::Solid => &self.solid,
-			DisplayModus::Property => &self.property,
-		};
-		self.point_cloud.render(point_cloud_pass, property);
-	}
-}
+const SENDER_CAPACITY: usize = 256;
 
 impl Calculations {
 	pub fn new(
-		segments: DashMap<usize, Vec<na::Point3<f32>>>,
-		state: Arc<render::State>,
+		segments: HashMap<u32, Vec<na::Point3<f32>>>,
 		world_offset: na::Point3<f64>,
 	) -> (Self, crossbeam::channel::Receiver<Event>) {
 		let shared = Shared {
-			state,
 			segments: std::sync::Mutex::new(HashMap::new()),
 			progress: AtomicUsize::new(0),
 		};
 		let shared = Arc::new(shared);
 		let total = segments.len();
 
-		let (sender, reciever) = crossbeam::channel::unbounded();
+		let (sender, reciever) = crossbeam::channel::bounded(SENDER_CAPACITY);
+		sender.send(Event::ClearPointClouds).unwrap();
 
 		sender
-			.send(Event::Lookup(render::Lookup::new_png(
-				&shared.state,
-				include_bytes!("../assets/grad_turbo.png"),
-				u32::MAX,
-			)))
+			.send(Event::Lookup {
+				bytes: include_bytes!("../assets/grad_turbo.png"),
+				max: u32::MAX,
+			})
 			.unwrap();
 
 		{
 			let shared = shared.clone();
-			std::thread::spawn(move || {
-				let mut segs = HashMap::<usize, _>::new();
+			rayon::spawn(move || {
+				let mut segs = HashMap::<u32, _>::new();
 				for (_, points) in segments.into_iter() {
 					let mut idx = rand::random();
-					while segs.contains_key(&idx) {
+					while idx == DELETED_INDEX || segs.contains_key(&idx) {
 						idx = rand::random();
 					}
 					segs.insert(idx, points);
 				}
 				segs.into_par_iter().for_each(|(idx, points)| {
-					let seg = Segment::new(points, idx, &shared.state);
+					let seg = SegmentData::new(points);
+
+					while sender.len() > SENDER_CAPACITY - 16 {
+						std::hint::spin_loop();
+					}
+					let mut event = Event::PointCloud {
+						idx: Some(idx),
+						data: seg.points.clone(),
+						segment: vec![idx as u32; seg.points.len()],
+						property: Some(seg.property()),
+					};
+					loop {
+						match sender.try_send(event) {
+							Ok(_) => break,
+							Err(TrySendError::Disconnected(_)) => panic!(),
+							Err(TrySendError::Full(v)) => event = v,
+						}
+					}
+
 					shared.segments.lock().unwrap().insert(idx, seg);
 					shared.progress.fetch_add(1, Ordering::Relaxed);
 				});
@@ -157,7 +124,7 @@ impl Calculations {
 		(
 			Self {
 				shared,
-				display: DisplayModus::Solid,
+				display: DisplayModus::Segment,
 				total,
 				world_offset,
 			},
@@ -174,8 +141,8 @@ impl Calculations {
 	}
 }
 
-impl Segment {
-	pub fn new(points: Vec<na::Point3<f32>>, idx: usize, state: &render::State) -> Self {
+impl SegmentData {
+	pub fn new(points: Vec<na::Point3<f32>>) -> Self {
 		let (min, max) = if points.is_empty() {
 			(na::point![0.0, 0.0, 0.0], na::point![0.0, 0.0, 0.0])
 		} else {
@@ -190,16 +157,36 @@ impl Segment {
 		};
 
 		let info = SegmentInformation::new(&points, min.y, max.y);
-		let render = SegmentRender::new(&points, idx, info, state);
-		Self {
-			render,
-			data: SegmentData { points, info, min, max, coords: None },
-		}
+		Self { points, info, min, max, coords: None }
 	}
 
-	pub fn from_data(idx: usize, data: SegmentData, state: &render::State) -> Self {
-		let render = SegmentRender::new(&data.points, idx, data.info, state);
-		Self { data, render }
+	pub fn property(&self) -> Vec<u32> {
+		let mut property = vec![0u32; self.points.len()];
+		for (idx, p) in self.points.iter().enumerate() {
+			property[idx] = if p.y < self.info.ground_sep {
+				u32::MAX / 8 * 1
+			} else if p.y < self.info.crown_sep {
+				u32::MAX / 8 * 3
+			} else {
+				u32::MAX / 8 * 6
+			};
+		}
+		property
+	}
+
+	pub fn update_render(&self, idx: u32, sender: &crossbeam::channel::Sender<Event>) {
+		if self.points.is_empty() {
+			sender.send(Event::RemovePointCloud(idx)).unwrap();
+			return;
+		}
+		sender
+			.send(Event::PointCloud {
+				idx: Some(idx),
+				data: self.points.clone(),
+				segment: vec![idx as u32; self.points.len()],
+				property: Some(self.property()),
+			})
+			.unwrap();
 	}
 }
 
@@ -266,7 +253,8 @@ impl SegmentInformation {
 		};
 
 		let (trunk_diameter, trunk_max) = {
-			let trunk_min = ground_sep as f32 * slice_width + trunk_diameter_height - 0.5 * trunk_diameter_range;
+			let trunk_min = ground_sep as f32 * slice_width + trunk_diameter_height
+				- 0.5 * trunk_diameter_range;
 			let trunk_max = trunk_min + trunk_diameter_range;
 			let slice_trunk = data
 				.iter()
@@ -298,7 +286,8 @@ impl SegmentInformation {
 			(best_circle.0, (trunk_max / slice_width).ceil() as usize)
 		};
 
-		let min_crown_area = std::f32::consts::PI * ((trunk_diameter + crown_diameter_difference) / 2.0).powi(2);
+		let min_crown_area =
+			std::f32::consts::PI * ((trunk_diameter + crown_diameter_difference) / 2.0).powi(2);
 
 		let crown_sep = areas
 			.iter()
@@ -403,8 +392,9 @@ fn circle(
 	}
 
 	let cross = ab.x * ac.y - ab.y * ac.x;
-	let to =
-		(na::vector![-ab.y, ab.x] * ac.norm_squared() + na::vector![ac.y, -ac.x] * ab.norm_squared()) / (2.0 * cross);
+	let to = (na::vector![-ab.y, ab.x] * ac.norm_squared()
+		+ na::vector![ac.y, -ac.x] * ab.norm_squared())
+		/ (2.0 * cross);
 	let radius = to.norm();
 	if radius.is_nan() {
 		return None;

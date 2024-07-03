@@ -1,18 +1,17 @@
 use laz::{
 	las::file::{read_vlrs_and_get_laszip_vlr, QuickHeader},
 	laszip::ChunkTable,
-	record::{LayeredPointRecordDecompressor, RecordDecompressor, SequentialPointRecordDecompressor},
+	record::{
+		LayeredPointRecordDecompressor, RecordDecompressor, SequentialPointRecordDecompressor,
+	},
 	LazVlr,
 };
 use nalgebra as na;
 
 use rayon::prelude::*;
-use std::{
-	io::{BufReader, Read, Seek, SeekFrom},
-	path::{Path, PathBuf},
-};
+use std::io::{Read, Seek, SeekFrom};
 
-use crate::Error;
+use crate::{environment, Error};
 
 pub struct Laz {
 	vlr: Option<LazVlr>,
@@ -22,7 +21,7 @@ pub struct Laz {
 	offset: na::Point3<f64>,
 	scale: na::Point3<f64>,
 
-	path: PathBuf,
+	source: environment::Source,
 
 	pub min: na::Point3<f32>,
 	pub max: na::Point3<f32>,
@@ -30,12 +29,39 @@ pub struct Laz {
 }
 
 impl Laz {
-	pub fn new(path: &Path, center: Option<na::Point3<f64>>) -> Result<Self, Error> {
-		let mut file = std::fs::File::open(path)?;
+	pub fn new(
+		source: environment::Source,
+		center: Option<na::Point3<f64>>,
+	) -> Result<Self, Error> {
+		let mut reader = environment::reader(&source);
 
-		let header = Header::new(&mut file)?;
+		let header = Header::new(&mut reader)?;
 
-		let total = header.number_of_point_records as usize;
+		#[allow(unused_mut)]
+		let mut total = header.number_of_point_records as usize;
+		log::info!("Loading Pointcloud with {} points", total);
+
+		#[cfg(target_arch = "wasm32")]
+		{
+			use wasm_bindgen::prelude::*;
+
+			const MAX_NUMBER_POINTS: usize = 25_000_000;
+
+			#[wasm_bindgen]
+			extern "C" {
+				fn alert(s: &str);
+			}
+
+			if total > MAX_NUMBER_POINTS {
+				unsafe {
+					alert(&format!(
+						"Point cloud to large, only the first {} points are used!",
+						MAX_NUMBER_POINTS
+					))
+				};
+				total = MAX_NUMBER_POINTS;
+			}
+		}
 
 		let point_length = header.point_data_record_length as usize;
 		let scale = na::Point3::new(
@@ -48,38 +74,40 @@ impl Laz {
 		let max = na::Point3::new(header.max_x, header.max_z, -header.min_y);
 		let center = center.unwrap_or(na::center(&min, &max));
 
-		file.seek(SeekFrom::Start(header.header_size as u64))?;
-		let (chunks, vlr) = if let Some(vlr) = read_vlrs_and_get_laszip_vlr(&mut file, &header.quick_header()) {
-			let chunks = ChunkTable::read_from(&mut file, &vlr)?;
-			let mut start = file.stream_position()?;
-			let mut remaining = total;
-			let chunks = chunks
-				.into_iter()
-				.map(|x| {
-					let s = start;
-					start += x.byte_count;
+		reader.seek(SeekFrom::Start(header.header_size as u64))?;
+		let (chunks, vlr) =
+			if let Some(vlr) = read_vlrs_and_get_laszip_vlr(&mut reader, &header.quick_header()) {
+				let chunks = ChunkTable::read_from(&mut reader, &vlr)?;
+				let mut start = reader.stream_position()?;
+				let mut remaining = total;
+				let chunks = chunks
+					.into_iter()
+					.map(|x| {
+						let s = start;
+						start += x.byte_count;
 
-					let l = (x.point_count as usize).min(remaining);
-					remaining -= l;
-					(s, l)
-				})
-				.collect::<Vec<_>>();
+						let l = (x.point_count as usize).min(remaining);
+						remaining -= l;
+						(s, l)
+					})
+					.collect::<Vec<_>>();
 
-			(chunks, Some(vlr))
-		} else {
-			let mut chunks = Vec::new();
-			let mut start = header.offset_to_point_data as u64;
-			const DEFAULT_CHUNK_SIZE: usize = 50_000;
-			for _ in 0..(total / DEFAULT_CHUNK_SIZE) {
-				chunks.push((start, DEFAULT_CHUNK_SIZE));
-				start += (DEFAULT_CHUNK_SIZE * point_length) as u64;
-			}
-			let rem = total % DEFAULT_CHUNK_SIZE;
-			if rem != 0 {
-				chunks.push((start, rem));
-			}
-			(chunks, None)
-		};
+				(chunks, Some(vlr))
+			} else {
+				let mut chunks = Vec::new();
+				let mut start = header.offset_to_point_data as u64;
+				const DEFAULT_CHUNK_SIZE: usize = 50_000;
+				for _ in 0..(total / DEFAULT_CHUNK_SIZE) {
+					chunks.push((start, DEFAULT_CHUNK_SIZE));
+					start += (DEFAULT_CHUNK_SIZE * point_length) as u64;
+				}
+				let rem = total % DEFAULT_CHUNK_SIZE;
+				if rem != 0 {
+					chunks.push((start, rem));
+				}
+				(chunks, None)
+			};
+		drop(reader);
 
 		Ok(Self {
 			chunks,
@@ -88,7 +116,7 @@ impl Laz {
 			scale,
 			offset,
 			center,
-			path: path.to_owned(),
+			source,
 
 			min: (min - center).map(|x| x as f32).into(),
 			max: (max - center).map(|x| x as f32).into(),
@@ -105,32 +133,34 @@ impl Laz {
 			.into_iter()
 			.par_bridge()
 			.map_init(
-				|| BufReader::new(std::fs::File::open(&self.path).unwrap()),
+				|| environment::reader(&self.source),
 				|file, (s, l)| {
-					file.seek(SeekFrom::Start(s))?;
-
-					let mut slice = vec![0; l * self.point_length];
-					if let Some(vlr) = &self.vlr {
-						match vlr.items().first().unwrap().version() {
-							1 | 2 => {
-								let mut decompress: SequentialPointRecordDecompressor<
-									'_,
-									&mut BufReader<std::fs::File>,
-								> = SequentialPointRecordDecompressor::new(file);
-								decompress.set_fields_from(vlr.items())?;
-								decompress.decompress_many(&mut slice).unwrap();
-							},
-							3 | 4 => {
-								let mut decompress = LayeredPointRecordDecompressor::new(file);
-								decompress.set_fields_from(vlr.items())?;
-								decompress.decompress_many(&mut slice).unwrap();
-							},
-							v => unimplemented!("Laz version {}", v),
-						}
+					let slice = if l == 0 {
+						Vec::new()
 					} else {
-						file.read_exact(&mut slice)?;
-					}
+						file.seek(SeekFrom::Start(s))?;
 
+						let mut slice = vec![0; l * self.point_length];
+						if let Some(vlr) = &self.vlr {
+							match vlr.items().first().unwrap().version() {
+								1 | 2 => {
+									let mut decompress =
+										SequentialPointRecordDecompressor::new(file);
+									decompress.set_fields_from(vlr.items())?;
+									decompress.decompress_many(&mut slice).unwrap();
+								},
+								3 | 4 => {
+									let mut decompress = LayeredPointRecordDecompressor::new(file);
+									decompress.set_fields_from(vlr.items())?;
+									decompress.decompress_many(&mut slice).unwrap();
+								},
+								v => unimplemented!("Laz version {}", v),
+							}
+						} else {
+							file.read_exact(&mut slice)?;
+						}
+						slice
+					};
 					let chunk = Chunk {
 						slice,
 						current: 0,
@@ -140,7 +170,6 @@ impl Laz {
 						scale: self.scale,
 						center: self.center,
 					};
-
 					cb(chunk);
 					Ok(())
 				},
@@ -175,7 +204,8 @@ impl Chunk {
 		let y = i32::from_le_bytes(slice[4..8].try_into().unwrap());
 		let z = i32::from_le_bytes(slice[8..12].try_into().unwrap());
 		self.current += self.point_length;
-		let v = self.offset + na::vector![x as f64, y as f64, z as f64].zip_map(&self.scale.coords, |a, b| a * b);
+		let v = self.offset
+			+ na::vector![x as f64, y as f64, z as f64].zip_map(&self.scale.coords, |a, b| a * b);
 		(na::vector![v.x, v.z, -v.y] - self.center.coords)
 			.map(|x| x as f32)
 			.into()

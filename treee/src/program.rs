@@ -1,23 +1,37 @@
-use crate::calculations::Calculations;
+use crate::calculations::{Calculations, DisplayModus};
 use crate::camera::Camera;
 use crate::empty::Empty;
-use crate::interactive::{self, Interactive};
+use crate::interactive::{self, Interactive, DELETED_INDEX};
 use crate::loading::Loading;
 use crate::segmenting::{Segmenting, DEFAULT_MAX_DISTANCE};
-use crate::{Error, EventLoop};
-use dashmap::DashMap;
+use crate::{environment, Error, EventLoop};
 use nalgebra as na;
-use pollster::FutureExt;
+use render::PointCloudPass;
+use std::collections::HashMap;
 use std::ops::Not;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 pub enum Event {
 	Done,
-	Lookup(render::Lookup),
-	Load(PathBuf),
+	Lookup {
+		bytes: &'static [u8],
+		max: u32,
+	},
+	ClearPointClouds,
+	PointCloud {
+		idx: Option<u32>,
+		data: Vec<na::Point3<f32>>,
+		segment: Vec<u32>,
+		property: Option<Vec<u32>>,
+	},
+	RemovePointCloud(u32),
+	PointCloudProperty {
+		idx: u32,
+		data: Vec<u32>,
+	},
+	Load(environment::Source),
 	Segmented {
-		segments: DashMap<usize, Vec<na::Point3<f32>>>,
+		segments: HashMap<u32, Vec<na::Point3<f32>>>,
 		world_offset: na::Point3<f64>,
 	},
 }
@@ -26,7 +40,7 @@ pub struct Program {
 	pub world: World,
 	pub receiver: crossbeam::channel::Receiver<Event>,
 
-	pub state: Arc<render::State>,
+	pub state: render::State,
 	pub window: render::Window,
 	pub keyboard: input::Keyboard,
 
@@ -41,9 +55,28 @@ pub struct Program {
 
 	pub eye_dome: render::EyeDome,
 	pub point_cloud_state: render::PointCloudState,
-	pub mesh_state: render::MeshState,
+	pub lines_state: render::LinesState,
 
 	pub display_settings: DisplaySettings,
+
+	chunks: HashMap<u32, Chunk>,
+}
+
+struct Chunk {
+	point_cloud: render::PointCloud,
+	segment: render::PointCloudProperty,
+	property: Option<render::PointCloudProperty>,
+}
+
+impl Chunk {
+	pub fn render<'a>(&'a self, display: DisplayModus, point_cloud_pass: &mut PointCloudPass<'a>) {
+		match display {
+			DisplayModus::Segment => self.point_cloud.render(point_cloud_pass, &self.segment),
+			DisplayModus::Property => self
+				.point_cloud
+				.render(point_cloud_pass, &self.property.as_ref().unwrap()),
+		}
+	}
 }
 
 pub struct DisplaySettings {
@@ -62,19 +95,41 @@ pub enum World {
 }
 
 impl Program {
-	pub fn new(event_loop: &EventLoop) -> Result<Self, Error> {
-		let (state, window) = render::State::new("Treee", event_loop).block_on()?;
+	pub async fn new(event_loop: &EventLoop) -> Result<Self, Error> {
+		let window = winit::window::WindowBuilder::new()
+			.with_title("Treee")
+			.with_min_inner_size(winit::dpi::LogicalSize { width: 10, height: 10 })
+			.build(event_loop)
+			.unwrap();
+
+		#[cfg(target_arch = "wasm32")]
+		{
+			use winit::platform::web::WindowExtWebSys;
+			web_sys::window()
+				.and_then(|win| win.document())
+				.and_then(|doc| {
+					let dst = doc.get_element_by_id("wasm-example")?;
+					let canvas = web_sys::Element::from(window.canvas()?);
+					dst.append_child(&canvas).ok()?;
+					Some(())
+				})
+				.expect("Couldn't append canvas to document body.");
+		}
+		let window = Arc::new(window);
+
+		let (state, window) = render::State::new(window).await?;
 
 		let point_cloud_environment = render::PointCloudEnvironment::new(&state, 0, u32::MAX, 0.1);
 		let point_cloud_state = render::PointCloudState::new(&state);
-		// let mesh_state = render::MeshState::new(&state);
-		let mesh_state = render::MeshState::new_as_lines(&state);
-		let lookup = render::Lookup::new_png(&state, include_bytes!("../assets/grad_warm.png"), u32::MAX);
+		let lines_state = render::LinesState::new(&state);
+		let lookup =
+			render::Lookup::new_png(&state, include_bytes!("../assets/grad_warm.png"), u32::MAX);
 		let camera = Camera::new(&state, window.get_aspect());
 		let eye_dome = render::EyeDome::new(&state, window.config(), window.depth_texture(), 0.7);
 
 		let egui = egui::Context::default();
-		let egui_winit = egui_winit::State::new(egui.clone(), egui.viewport_id(), window.inner(), None, None);
+		let egui_winit =
+			egui_winit::State::new(egui.clone(), egui.viewport_id(), window.inner(), None, None);
 		let egui_wgpu = egui_wgpu::Renderer::new(state.device(), state.surface_format(), None, 1);
 
 		let (empty, receiver) = Empty::new();
@@ -82,7 +137,7 @@ impl Program {
 			world: World::Empty(empty),
 			receiver,
 
-			state: Arc::new(state),
+			state,
 			window,
 			egui,
 			egui_winit,
@@ -96,14 +151,16 @@ impl Program {
 
 			eye_dome,
 			point_cloud_state,
-			mesh_state,
+			lines_state,
 
 			display_settings: DisplaySettings {
-				background: na::point![0.1, 0.2, 0.3],
+				background: na::point![0.3, 0.5, 0.7],
 				point_cloud_environment,
 				lookup,
 				camera,
 			},
+
+			chunks: HashMap::new(),
 		})
 	}
 
@@ -132,7 +189,7 @@ impl Program {
 						World::Loading(loading) => loading.ui(ui),
 						World::Segmenting(segmenting) => segmenting.ui(ui),
 						World::Calculations(calculations) => calculations.ui(ui),
-						World::Interactive(interactive) => interactive.ui(ui),
+						World::Interactive(interactive) => interactive.ui(ui, &self.state),
 					}
 				});
 		});
@@ -157,7 +214,7 @@ impl Program {
 		}
 
 		match &self.world {
-			World::Empty(_empty) => {
+			World::Empty(_) | World::Loading(_) | World::Segmenting(_) => {
 				self.window.render(&self.state, |context| {
 					let command_encoder = context.encoder();
 					let commands = self.egui_wgpu.update_buffers(
@@ -168,26 +225,6 @@ impl Program {
 						screen,
 					);
 					self.state.queue.submit(commands);
-					let _ = context.render_pass(self.display_settings.background);
-
-					let mut render_pass = context.post_process_pass();
-					self.egui_wgpu.render(&mut render_pass, &paint_jobs, screen);
-					drop(render_pass);
-				});
-			},
-			World::Loading(loading) => {
-				let point_clouds = loading.shared.chunks.lock().unwrap();
-				self.window.render(&self.state, |context| {
-					let command_encoder = context.encoder();
-					let commands = self.egui_wgpu.update_buffers(
-						&self.state.device,
-						&self.state.queue,
-						command_encoder,
-						&paint_jobs,
-						screen,
-					);
-					self.state.queue.submit(commands);
-
 					let mut render_pass = context.render_pass(self.display_settings.background);
 					let point_cloud_pass = self.point_cloud_state.render(
 						&mut render_pass,
@@ -195,8 +232,9 @@ impl Program {
 						&self.display_settings.lookup,
 						&self.display_settings.point_cloud_environment,
 					);
-					for (_, seg) in point_clouds.iter() {
-						seg.point_cloud.render(point_cloud_pass, &seg.property);
+
+					for (_, chunk) in self.chunks.iter() {
+						chunk.render(DisplayModus::Segment, point_cloud_pass);
 					}
 					drop(render_pass);
 
@@ -206,39 +244,7 @@ impl Program {
 					drop(render_pass);
 				});
 			},
-			World::Segmenting(segmenting) => {
-				let point_clouds = segmenting.shared.point_clouds.lock().unwrap();
-				self.window.render(&self.state, |context| {
-					let command_encoder = context.encoder();
-					let commands = self.egui_wgpu.update_buffers(
-						&self.state.device,
-						&self.state.queue,
-						command_encoder,
-						&paint_jobs,
-						screen,
-					);
-					self.state.queue.submit(commands);
-
-					let mut render_pass = context.render_pass(self.display_settings.background);
-					let point_cloud_pass = self.point_cloud_state.render(
-						&mut render_pass,
-						self.display_settings.camera.gpu(),
-						&self.display_settings.lookup,
-						&self.display_settings.point_cloud_environment,
-					);
-					for (point_cloud, property) in point_clouds.iter() {
-						point_cloud.render(point_cloud_pass, property);
-					}
-					drop(render_pass);
-
-					let mut render_pass = context.post_process_pass();
-					self.eye_dome.render(&mut render_pass);
-					self.egui_wgpu.render(&mut render_pass, &paint_jobs, screen);
-					drop(render_pass);
-				});
-			},
-			World::Calculations(calculations) => {
-				let segments = calculations.shared.segments.lock().unwrap();
+			&World::Calculations(Calculations { display, .. }) => {
 				self.window.render(&self.state, |context| {
 					let command_encoder = context.encoder();
 					let commands = self.egui_wgpu.update_buffers(
@@ -258,11 +264,8 @@ impl Program {
 						&self.display_settings.point_cloud_environment,
 					);
 
-					for (_, seg) in segments.iter() {
-						let Some(render) = &seg.render else {
-							continue;
-						};
-						render.render(calculations.display, point_cloud_pass);
+					for (_, chunk) in self.chunks.iter() {
+						chunk.render(display, point_cloud_pass);
 					}
 					drop(render_pass);
 
@@ -292,35 +295,29 @@ impl Program {
 						&self.display_settings.point_cloud_environment,
 					);
 					if interactive.show_deleted {
-						if let Some(render) = &interactive.deleted.render {
+						if let Some(chunk) = self.chunks.get(&DELETED_INDEX) {
 							point_cloud_pass.lookup(&interactive.white_lookup);
-							render.render(interactive.display, point_cloud_pass);
+							chunk.point_cloud.render(point_cloud_pass, &chunk.segment);
 							point_cloud_pass.lookup(&self.display_settings.lookup);
 						}
 					}
 					if let interactive::Modus::View(idx, _) = interactive.modus {
-						let seg = interactive.segments.get(&idx).unwrap();
-						if let Some(render) = &seg.render {
-							render.render(interactive.display, point_cloud_pass);
-						}
+						let chunk = self.chunks.get(&idx).unwrap();
+						chunk.render(interactive.display, point_cloud_pass);
 					} else {
-						for (_, seg) in interactive.segments.iter() {
-							let Some(render) = &seg.render else {
-								continue;
-							};
-							render.render(interactive.display, point_cloud_pass);
+						for (_, chunk) in
+							self.chunks.iter().filter(|&(&idx, _)| idx != DELETED_INDEX)
+						{
+							chunk.render(interactive.display, point_cloud_pass);
 						}
 					}
 					if let interactive::Modus::View(idx, mesh) = &interactive.modus {
-						let seg = interactive.segments.get(idx).unwrap();
-						let mesh_pass = self.mesh_state.render(
-							&mut render_pass,
-							self.display_settings.camera.gpu(),
-							// &self.display_settings.lookup,
-						);
-						if let (Some(render), Some(mesh)) = (&seg.render, mesh) {
-							// mesh.render(mesh_pass, &render.point_cloud, &render.property);
-							mesh.render(mesh_pass, &render.point_cloud);
+						if let Some(mesh) = mesh {
+							let lines_pass = self
+								.lines_state
+								.render(&mut render_pass, self.display_settings.camera.gpu());
+							let seg = self.chunks.get(idx).unwrap();
+							mesh.render(&seg.point_cloud, lines_pass);
 						};
 					}
 
@@ -338,16 +335,24 @@ impl Program {
 	pub fn update(&mut self) -> Result<(), Error> {
 		let delta = self.time.elapsed().as_secs_f32();
 		let mut direction = na::vector![0.0, 0.0];
-		if self.keyboard.pressed(input::KeyCode::KeyD) || self.keyboard.pressed(input::KeyCode::ArrowRight) {
+		if self.keyboard.pressed(input::KeyCode::KeyD)
+			|| self.keyboard.pressed(input::KeyCode::ArrowRight)
+		{
 			direction.x += 1.0;
 		}
-		if self.keyboard.pressed(input::KeyCode::KeyS) || self.keyboard.pressed(input::KeyCode::ArrowDown) {
+		if self.keyboard.pressed(input::KeyCode::KeyS)
+			|| self.keyboard.pressed(input::KeyCode::ArrowDown)
+		{
 			direction.y += 1.0;
 		}
-		if self.keyboard.pressed(input::KeyCode::KeyA) || self.keyboard.pressed(input::KeyCode::ArrowLeft) {
+		if self.keyboard.pressed(input::KeyCode::KeyA)
+			|| self.keyboard.pressed(input::KeyCode::ArrowLeft)
+		{
 			direction.x -= 1.0;
 		}
-		if self.keyboard.pressed(input::KeyCode::KeyW) || self.keyboard.pressed(input::KeyCode::ArrowUp) {
+		if self.keyboard.pressed(input::KeyCode::KeyW)
+			|| self.keyboard.pressed(input::KeyCode::ArrowUp)
+		{
 			direction.y -= 1.0;
 		}
 		let l = direction.norm();
@@ -368,27 +373,34 @@ impl Program {
 				.vertical_movement(delta * 10.0, &self.state);
 		}
 
+		let mut work = self.receiver.len();
 		while let Ok(event) = self.receiver.try_recv() {
 			match event {
-				Event::Load(path) => match path.extension().unwrap().to_str().unwrap() {
-					"laz" | "las" => {
-						let (loading, receiver) = Loading::new(path, self.state.clone());
-						self.world = World::Loading(loading);
-						self.receiver = receiver;
+				Event::Load(source) => match environment::extension(&source) {
+					"laz" | "las" => match &mut self.world {
+						World::Loading(loading) => loading.add(source),
+						_ => {
+							let (loading, receiver) = Loading::new(source);
+							self.world = World::Loading(loading);
+							self.receiver = receiver;
+						},
 					},
+
 					"ipc" => {
-						let (interactive, receiver) = Interactive::load(path, self.state.clone());
+						let (interactive, receiver) = Interactive::load(source, &self.state);
 						self.world = World::Interactive(interactive);
 						self.receiver = receiver;
 					},
 					_ => panic!("invalid file format"),
 				},
-				Event::Lookup(lookup) => self.display_settings.lookup = lookup,
+				Event::Lookup { bytes, max } => {
+					self.display_settings.lookup = render::Lookup::new_png(&self.state, &bytes, max)
+				},
 				Event::Done => {
 					match std::mem::replace(&mut self.world, World::Empty(Empty::new().0)) {
 						World::Loading(loading) => {
 							let (segmenting, receiver) =
-								Segmenting::new(loading, self.state.clone(), DEFAULT_MAX_DISTANCE);
+								Segmenting::new(loading, DEFAULT_MAX_DISTANCE);
 							self.world = World::Segmenting(segmenting);
 							self.receiver = receiver;
 						},
@@ -396,7 +408,7 @@ impl Program {
 							let shared = Arc::try_unwrap(calculations.shared).unwrap();
 							let (interactive, receiver) = Interactive::new(
 								shared.segments.into_inner().unwrap(),
-								self.state.clone(),
+								&self.state,
 								calculations.display,
 								calculations.world_offset,
 							);
@@ -407,10 +419,46 @@ impl Program {
 					};
 				},
 				Event::Segmented { segments, world_offset } => {
-					let (calculations, receiver) = Calculations::new(segments, self.state.clone(), world_offset);
+					let (calculations, receiver) = Calculations::new(segments, world_offset);
 					self.world = World::Calculations(calculations);
 					self.receiver = receiver;
 				},
+
+				Event::ClearPointClouds => {
+					self.chunks.clear();
+				},
+
+				Event::PointCloud { idx, data, segment, property } => {
+					let idx = idx.unwrap_or_else(|| {
+						let mut idx = rand::random();
+						while self.chunks.contains_key(&idx) {
+							idx = rand::random();
+						}
+						idx
+					});
+					self.chunks.insert(
+						idx,
+						Chunk {
+							point_cloud: render::PointCloud::new(&self.state, &data),
+							segment: render::PointCloudProperty::new(&self.state, &segment),
+							property: property.map(|property| {
+								render::PointCloudProperty::new(&self.state, &property)
+							}),
+						},
+					);
+				},
+				Event::PointCloudProperty { idx, data } => {
+					if let Some(chunk) = self.chunks.get_mut(&idx) {
+						chunk.property = Some(render::PointCloudProperty::new(&self.state, &data));
+					}
+				},
+				Event::RemovePointCloud(idx) => {
+					self.chunks.remove(&idx);
+				},
+			}
+			work -= 1;
+			if work == 0 {
+				break;
 			}
 		}
 
@@ -466,6 +514,7 @@ impl Program {
 					self.display_settings
 						.camera
 						.ray_direction(self.mouse.position(), self.window.get_size()),
+					&self.state,
 				);
 			},
 			_ => {},
@@ -490,23 +539,25 @@ impl Program {
 				self.display_settings
 					.camera
 					.ray_direction(self.mouse.position(), self.window.get_size()),
+				&self.state,
 			);
 		}
 	}
 }
 
 struct Time {
-	last: std::time::Instant,
+	now: web_time::Instant,
 }
 
 impl Time {
 	pub fn new() -> Self {
-		Self { last: std::time::Instant::now() }
+		Self { now: web_time::Instant::now() }
 	}
 
-	pub fn elapsed(&mut self) -> std::time::Duration {
-		let delta = self.last.elapsed();
-		self.last = std::time::Instant::now();
+	pub fn elapsed(&mut self) -> web_time::Duration {
+		let now = web_time::Instant::now();
+		let delta = now - self.now;
+		self.now = now;
 		delta
 	}
 }

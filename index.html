@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="icon.png">
+    <title>Treee</title>
+    <style>
+        html,
+        body {
+            padding: 0pt;
+            margin: 0pt;
+            overflow: hidden;
+            width: 100%;
+            height: 100%;
+        }
+
+        canvas {
+            background: pink;
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+
+<body id="wasm-example">
+</body>
+
+<script src="coi-serviceworker.js"></script>
+<script type="module">
+    import init, { initThreadPool, treee } from "./treee-wasm/pkg/treee_wasm.js";
+    await init();
+    await initThreadPool(navigator.hardwareConcurrency);
+    await treee();
+</script>
+
+</html>

@@ -1,42 +1,42 @@
 use nalgebra as na;
 use std::{
 	collections::{HashMap, HashSet},
-	fs::File,
 	hash::Hash,
-	io::{BufReader, BufWriter},
 	ops::Not,
-	path::PathBuf,
-	sync::Arc,
 };
 
 use crate::{
-	calculations::{DisplayModus, Segment, SegmentData, SegmentRender},
+	calculations::{DisplayModus, SegmentData},
+	environment,
 	program::Event,
 };
 
+pub const DELETED_INDEX: u32 = 0;
+
 pub struct Interactive {
-	state: Arc<render::State>,
-	pub segments: HashMap<usize, Segment>,
-	pub deleted: Segment,
+	pub segments: HashMap<u32, SegmentData>,
+	pub deleted: SegmentData,
 	pub display: DisplayModus,
-	_sender: crossbeam::channel::Sender<Event>,
+	sender: crossbeam::channel::Sender<Event>,
 
 	pub modus: Modus,
 	pub show_deleted: bool,
 	draw_radius: f32,
 	pub white_lookup: render::Lookup,
 
+	#[cfg(not(target_arch = "wasm32"))]
 	pub source_location: String,
 	world_offset: na::Point3<f64>,
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
-struct InteractiveSave {
-	pub segments: HashMap<usize, SegmentData>,
+pub struct InteractiveSave {
+	pub segments: HashMap<u32, SegmentData>,
 	pub deleted: SegmentData,
 	pub world_offset: na::Point3<f64>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 const DEFAULT_LOCATION: &str = "+proj=utm\n+ellps=GRS80\n+zone=32";
 
 impl SegmentData {
@@ -124,6 +124,7 @@ impl SegmentData {
 		}
 	}
 
+	#[cfg(not(target_arch = "wasm32"))]
 	fn update_location(&mut self, world_offset: na::Point3<f64>, proj: &proj4rs::Proj) {
 		let to = proj4rs::Proj::from_proj_string("+proj=latlong +ellps=GRS80").unwrap();
 		let mut point = (
@@ -139,32 +140,26 @@ impl SegmentData {
 	}
 }
 
-impl Segment {
-	pub fn update_render(&mut self, idx: usize, state: &render::State) {
-		self.render = SegmentRender::new(&self.data.points, idx, self.data.info, state);
-	}
-}
-
 impl Interactive {
 	pub fn new(
-		segments: HashMap<usize, Segment>,
-		state: Arc<render::State>,
+		segments: HashMap<u32, SegmentData>,
+		state: &render::State,
 		display: DisplayModus,
 		world_offset: na::Point3<f64>,
 	) -> (Self, crossbeam::channel::Receiver<Event>) {
 		let (sender, receiver) = crossbeam::channel::unbounded();
-		let deleted = Segment::new(Vec::new(), 0, &state);
-		let white_lookup = render::Lookup::new_png(&state, include_bytes!("../assets/white.png"), u32::MAX);
+		let deleted = SegmentData::new(Vec::new());
+		let white_lookup = render::Lookup::new_png(state, include_bytes!("../assets/white.png"), u32::MAX);
 
 		let interactive = Self {
-			state,
 			segments,
 			modus: Modus::SelectView,
 			deleted,
 			draw_radius: 0.5,
 			display,
-			_sender: sender,
+			sender,
 			show_deleted: false,
+			#[cfg(not(target_arch = "wasm32"))]
 			source_location: DEFAULT_LOCATION.into(),
 			world_offset,
 			white_lookup,
@@ -173,35 +168,35 @@ impl Interactive {
 		(interactive, receiver)
 	}
 
-	pub fn load(path: PathBuf, state: Arc<render::State>) -> (Self, crossbeam::channel::Receiver<Event>) {
+	pub fn load(source: environment::Source, state: &render::State) -> (Self, crossbeam::channel::Receiver<Event>) {
 		let (sender, receiver) = crossbeam::channel::unbounded();
 		sender
-			.send(Event::Lookup(render::Lookup::new_png(
-				&state,
-				include_bytes!("../assets/grad_turbo.png"),
-				u32::MAX,
-			)))
+			.send(Event::Lookup {
+				bytes: include_bytes!("../assets/grad_turbo.png"),
+				max: u32::MAX,
+			})
 			.unwrap();
 
-		let file = File::open(path).unwrap();
-		let save = bincode::deserialize_from::<_, InteractiveSave>(BufReader::new(file)).unwrap();
+		let reader = environment::reader(&source);
+		let save = bincode::deserialize_from::<_, InteractiveSave>(reader).unwrap();
 		let white_lookup = render::Lookup::new_png(&state, include_bytes!("../assets/white.png"), u32::MAX);
 
-		let deleted = Segment::from_data(0, save.deleted, &state);
 		let mut segments = HashMap::new();
 		for (idx, data) in save.segments {
-			segments.insert(idx, Segment::from_data(idx, data, &state));
+			data.update_render(idx, &sender);
+			segments.insert(idx, data);
 		}
+		save.deleted.update_render(DELETED_INDEX, &sender);
 
 		let interactive = Self {
-			state,
 			segments,
 			modus: Modus::SelectView,
-			_sender: sender,
-			deleted,
+			sender,
+			deleted: save.deleted,
 			draw_radius: 0.5,
-			display: DisplayModus::Solid,
+			display: DisplayModus::Segment,
 			show_deleted: false,
+			#[cfg(not(target_arch = "wasm32"))]
 			source_location: DEFAULT_LOCATION.into(),
 			world_offset: save.world_offset,
 			white_lookup,
@@ -210,32 +205,23 @@ impl Interactive {
 		(interactive, receiver)
 	}
 
-	pub fn ui(&mut self, ui: &mut egui::Ui) {
+	pub fn ui(&mut self, ui: &mut egui::Ui, state: &render::State) {
 		ui.separator();
 		if ui
 			.add_sized([ui.available_width(), 0.0], egui::Button::new("Save"))
 			.clicked()
 		{
-			let path = rfd::FileDialog::new()
-				.add_filter("Pointcloud", &["ipc"])
-				.save_file();
-			if let Some(path) = path {
-				let mut segments = HashMap::new();
-				for (&idx, segment) in self.segments.iter() {
-					segments.insert(idx, segment.data.clone());
-				}
-				let save = InteractiveSave {
-					segments,
-					deleted: self.deleted.data.clone(),
-					world_offset: self.world_offset,
-				};
-				let file = File::create(path).unwrap();
-				bincode::serialize_into(BufWriter::new(file), &save).unwrap();
+			let mut segments = HashMap::new();
+			for (&idx, segment) in self.segments.iter() {
+				segments.insert(idx, segment.clone());
 			}
+			let save = InteractiveSave {
+				segments,
+				deleted: self.deleted.clone(),
+				world_offset: self.world_offset,
+			};
+			environment::save(save);
 		}
-
-		ui.separator();
-		ui.checkbox(&mut self.show_deleted, "Show Deleted");
 
 		self.display.ui(ui);
 
@@ -292,7 +278,7 @@ impl Interactive {
 		}
 
 		ui.separator();
-		ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Remove"));
+		ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Settings"));
 		egui::Grid::new("remove grid")
 			.num_columns(2)
 			.show(ui, |ui| {
@@ -305,24 +291,28 @@ impl Interactive {
 				);
 				ui.end_row();
 			});
+		ui.checkbox(&mut self.show_deleted, "Show Deleted");
 
-		ui.separator();
-		ui.add_sized(
-			[ui.available_width(), 0.0],
-			egui::Label::new("Source Region"),
-		);
-		if ui
-			.text_edit_multiline(&mut self.source_location)
-			.lost_focus()
+		#[cfg(not(target_arch = "wasm32"))]
 		{
-			if let Modus::View(idx, _) = self.modus {
-				let seg = self.segments.get_mut(&idx).unwrap();
-				match proj4rs::Proj::from_proj_string(&self.source_location) {
-					Ok(proj) => seg.data.update_location(self.world_offset, &proj),
-					Err(err) => eprintln!("{}", err),
+			ui.separator();
+			ui.add_sized(
+				[ui.available_width(), 0.0],
+				egui::Label::new("Source Region"),
+			);
+			if ui
+				.text_edit_multiline(&mut self.source_location)
+				.lost_focus()
+			{
+				if let Modus::View(idx, _) = self.modus {
+					let seg = self.segments.get_mut(&idx).unwrap();
+					match proj4rs::Proj::from_proj_string(&self.source_location) {
+						Ok(proj) => seg.update_location(self.world_offset, &proj),
+						Err(err) => eprintln!("{}", err),
+					}
 				}
-			}
-		};
+			};
+		}
 
 		if let Modus::View(..) = self.modus {
 			ui.separator();
@@ -351,42 +341,34 @@ impl Interactive {
 				egui::Grid::new("sep grid").num_columns(2).show(ui, |ui| {
 					let mut changed = false;
 					let mut stopped = false;
-					let mut rel_ground = segment.data.info.ground_sep - segment.data.min.y;
+					let mut rel_ground = segment.info.ground_sep - segment.min.y;
 					ui.label("Ground");
 					let res = ui.add(
-						egui::Slider::new(&mut rel_ground, 0.0..=segment.data.height())
+						egui::Slider::new(&mut rel_ground, 0.0..=segment.height())
 							.suffix("m")
 							.fixed_decimals(2),
 					);
 					if res.changed() {
 						changed = true;
-						segment.data.info.ground_sep = segment.data.min.y + rel_ground;
-						segment.data.info.crown_sep = segment
-							.data
-							.info
-							.crown_sep
-							.max(segment.data.info.ground_sep);
+						segment.info.ground_sep = segment.min.y + rel_ground;
+						segment.info.crown_sep = segment.info.crown_sep.max(segment.info.ground_sep);
 					}
 					if res.drag_stopped() {
 						stopped = true;
 					}
 					ui.end_row();
 
-					let mut rel_crown = segment.data.info.crown_sep - segment.data.min.y;
+					let mut rel_crown = segment.info.crown_sep - segment.min.y;
 					ui.label("Crown");
 					let res = ui.add(
-						egui::Slider::new(&mut rel_crown, 0.0..=segment.data.height())
+						egui::Slider::new(&mut rel_crown, 0.0..=segment.height())
 							.suffix("m")
 							.fixed_decimals(2),
 					);
 					if res.changed() {
 						changed = true;
-						segment.data.info.crown_sep = segment.data.min.y + rel_crown;
-						segment.data.info.ground_sep = segment
-							.data
-							.info
-							.ground_sep
-							.min(segment.data.info.crown_sep);
+						segment.info.crown_sep = segment.min.y + rel_crown;
+						segment.info.ground_sep = segment.info.ground_sep.min(segment.info.crown_sep);
 					}
 					if res.drag_stopped() {
 						stopped = true;
@@ -395,17 +377,12 @@ impl Interactive {
 
 					if changed {
 						segment
-							.data
 							.info
-							.redo_diameters(&segment.data.points, segment.data.min.y, segment.data.max.y);
-						segment.update_render(idx, &self.state);
+							.redo_diameters(&segment.points, segment.min.y, segment.max.y);
+						segment.update_render(idx, &self.sender);
 					}
 					if let (true, Some(mesh)) = (stopped, mesh.as_mut()) {
-						*mesh = convex_hull(
-							&segment.data.points,
-							segment.data.info.crown_sep,
-							&self.state,
-						);
+						*mesh = convex_hull(&segment.points, segment.info.crown_sep, state);
 					}
 				});
 
@@ -415,17 +392,17 @@ impl Interactive {
 					.num_columns(2)
 					.show(ui, |ui| {
 						ui.label("Trunk");
-						ui.label(format!("{}m", segment.data.info.trunk_diameter));
+						ui.label(format!("{}m", segment.info.trunk_diameter));
 						ui.end_row();
 
 						ui.label("Crown");
-						ui.label(format!("{}m", segment.data.info.crown_diameter));
+						ui.label(format!("{}m", segment.info.crown_diameter));
 						ui.end_row();
 					});
 
-				ui.separator();
-				ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Coordinates"));
-				if let Some((long, lat)) = segment.data.coords {
+				if let Some((long, lat)) = segment.coords {
+					ui.separator();
+					ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Coordinates"));
 					egui::Grid::new("coords grid")
 						.num_columns(2)
 						.show(ui, |ui| {
@@ -443,11 +420,7 @@ impl Interactive {
 				let mut render_mesh = mesh.is_some();
 				if ui.checkbox(&mut render_mesh, "Convex Hull").changed() {
 					*mesh = if render_mesh {
-						Some(convex_hull(
-							&segment.data.points,
-							segment.data.info.crown_sep,
-							&self.state,
-						))
+						Some(convex_hull(&segment.points, segment.info.crown_sep, state))
 					} else {
 						None
 					};
@@ -467,10 +440,10 @@ impl Interactive {
 		};
 	}
 
-	fn select(&self, start: na::Point3<f32>, direction: na::Vector3<f32>) -> Option<(usize, f32)> {
+	fn select(&self, start: na::Point3<f32>, direction: na::Vector3<f32>) -> Option<(u32, f32)> {
 		let mut potential = Vec::new();
 		for (&idx, segment) in self.segments.iter() {
-			let Some(distance) = segment.data.raycast_distance(start, direction) else {
+			let Some(distance) = segment.raycast_distance(start, direction) else {
 				continue;
 			};
 			potential.push((idx, distance));
@@ -482,7 +455,7 @@ impl Interactive {
 			if min > distance {
 				break;
 			}
-			let Some(d) = self.segments[&idx].data.exact_distance(start, direction) else {
+			let Some(d) = self.segments[&idx].exact_distance(start, direction) else {
 				continue;
 			};
 			if d < distance {
@@ -515,16 +488,17 @@ impl Interactive {
 				};
 				let hit = start + direction * distance;
 				let mut points = Vec::new();
-				let mut empty: Vec<usize> = Vec::new();
+				let mut empty = Vec::new();
 				for (&other, segment) in self.segments.iter_mut() {
-					let seg_changed = segment.data.remove(hit, self.draw_radius, &mut points);
-					if segment.data.points.is_empty() {
+					let seg_changed = segment.remove(hit, self.draw_radius, &mut points);
+					if segment.points.is_empty() {
 						empty.push(other);
 					} else if seg_changed {
-						segment.update_render(other, &self.state);
+						segment.update_render(other, &self.sender);
 					}
 				}
 				for empty in empty {
+					self.sender.send(Event::RemovePointCloud(empty)).unwrap();
 					self.segments.remove(&empty);
 				}
 				if points.is_empty() {
@@ -532,10 +506,11 @@ impl Interactive {
 				}
 
 				let mut idx = rand::random();
-				while self.segments.contains_key(&idx) {
+				while idx == DELETED_INDEX || self.segments.contains_key(&idx) {
 					idx = rand::random();
 				}
-				let segment = Segment::new(points, idx, &self.state);
+				let segment = SegmentData::new(points);
+				// todo: crate render data
 				self.segments.insert(idx, segment);
 				self.modus = Modus::Draw(idx);
 			},
@@ -546,12 +521,11 @@ impl Interactive {
 					return;
 				};
 				let seg = self.segments.get_mut(&idx).unwrap();
-				seg.data
-					.info
-					.redo_diameters(&seg.data.points, seg.data.min.y, seg.data.max.y);
+				seg.info.redo_diameters(&seg.points, seg.min.y, seg.max.y);
 
+				#[cfg(not(target_arch = "wasm32"))]
 				match proj4rs::Proj::from_proj_string(&self.source_location) {
-					Ok(proj) => seg.data.update_location(self.world_offset, &proj),
+					Ok(proj) => seg.update_location(self.world_offset, &proj),
 					Err(err) => eprintln!("{}", err),
 				}
 
@@ -562,7 +536,7 @@ impl Interactive {
 		}
 	}
 
-	pub fn drag(&mut self, start: na::Point3<f32>, direction: na::Vector3<f32>) {
+	pub fn drag(&mut self, start: na::Point3<f32>, direction: na::Vector3<f32>, state: &render::State) {
 		match self.modus {
 			Modus::Delete => {
 				let Some((_, distance)) = self.select(start, direction) else {
@@ -572,24 +546,22 @@ impl Interactive {
 				let mut changed = false;
 				let mut empty = Vec::new();
 				for (&other, segment) in self.segments.iter_mut() {
-					if segment
-						.data
-						.remove(hit, self.draw_radius, &mut self.deleted.data.points)
-					{
-						segment.update_render(other, &self.state);
-						segment.data.update_min_max();
+					if segment.remove(hit, self.draw_radius, &mut self.deleted.points) {
+						segment.update_render(other, &self.sender);
+						segment.update_min_max();
 						changed = true;
 					}
-					if segment.data.points.is_empty() {
+					if segment.points.is_empty() {
 						empty.push(other);
 					}
 				}
 				for empty in empty {
+					self.sender.send(Event::RemovePointCloud(empty)).unwrap();
 					self.segments.remove(&empty);
 				}
 				if changed {
-					self.deleted.data.update_min_max();
-					self.deleted.update_render(0, &self.state);
+					self.deleted.update_min_max();
+					self.deleted.update_render(DELETED_INDEX, &self.sender);
 				}
 			},
 			Modus::Draw(idx) => {
@@ -600,8 +572,8 @@ impl Interactive {
 						if self.show_deleted.not() {
 							return None;
 						}
-						self.deleted.data.raycast_distance(start, direction)?;
-						self.deleted.data.exact_distance(start, direction)
+						self.deleted.raycast_distance(start, direction)?;
+						self.deleted.exact_distance(start, direction)
 					})
 				else {
 					return;
@@ -611,36 +583,33 @@ impl Interactive {
 				let mut changed = false;
 				let mut empty = Vec::new();
 				for (&other, segment) in self.segments.iter_mut() {
-					if segment
-						.data
-						.remove(hit, self.draw_radius, &mut target.data.points)
-					{
-						segment.update_render(other, &self.state);
-						segment.data.update_min_max();
+					if segment.remove(hit, self.draw_radius, &mut target.points) {
+						segment.update_render(other, &self.sender);
+						segment.update_min_max();
 						changed = true;
 					}
-					if segment.data.points.is_empty() {
+					if segment.points.is_empty() {
 						empty.push(other);
 					}
 				}
 				if self.show_deleted {
 					if self
 						.deleted
-						.data
-						.remove(hit, self.draw_radius, &mut target.data.points)
+						.remove(hit, self.draw_radius, &mut target.points)
 					{
-						self.deleted.update_render(0, &self.state);
-						self.deleted.data.update_min_max();
+						self.deleted.update_render(DELETED_INDEX, &self.sender);
+						self.deleted.update_min_max();
 						changed = true;
 					}
 				}
 
 				if changed {
-					target.update_render(idx, &self.state);
-					target.data.update_min_max();
+					target.update_render(idx, &self.sender);
+					target.update_min_max();
 				}
 				self.segments.insert(idx, target);
 				for empty in empty {
+					self.sender.send(Event::RemovePointCloud(empty)).unwrap();
 					self.segments.remove(&empty);
 				}
 			},
@@ -649,46 +618,38 @@ impl Interactive {
 				if self.show_deleted {
 					let Some(distance) = self
 						.deleted
-						.data
 						.exact_distance(start, direction)
-						.or_else(|| seg.data.exact_distance(start, direction))
+						.or_else(|| seg.exact_distance(start, direction))
 					else {
 						return;
 					};
 					let hit = start + direction * distance;
 
-					if self
-						.deleted
-						.data
-						.remove(hit, self.draw_radius, &mut seg.data.points)
-					{
-						seg.update_render(idx, &self.state);
-						seg.data.update_min_max();
+					if self.deleted.remove(hit, self.draw_radius, &mut seg.points) {
+						seg.update_render(idx, &self.sender);
+						seg.update_min_max();
 						if let Some(mesh) = mesh {
-							*mesh = convex_hull(&seg.data.points, seg.data.info.crown_sep, &self.state);
+							*mesh = convex_hull(&seg.points, seg.info.crown_sep, state);
 						}
-						self.deleted.update_render(0, &self.state);
-						self.deleted.data.update_min_max();
+						self.deleted.update_render(DELETED_INDEX, &self.sender);
+						self.deleted.update_min_max();
 					}
 				} else {
-					let Some(distance) = seg.data.exact_distance(start, direction) else {
+					let Some(distance) = seg.exact_distance(start, direction) else {
 						return;
 					};
 
 					let hit = start + direction * distance;
 
-					if seg
-						.data
-						.remove(hit, self.draw_radius, &mut self.deleted.data.points)
-					{
-						seg.update_render(idx, &self.state);
-						seg.data.update_min_max();
+					if seg.remove(hit, self.draw_radius, &mut self.deleted.points) {
+						seg.update_render(idx, &self.sender);
+						seg.update_min_max();
 						if let Some(mesh) = mesh {
-							*mesh = convex_hull(&seg.data.points, seg.data.info.crown_sep, &self.state);
+							*mesh = convex_hull(&seg.points, seg.info.crown_sep, state);
 						}
 
-						self.deleted.update_render(0, &self.state);
-						self.deleted.data.update_min_max();
+						self.deleted.update_render(DELETED_INDEX, &self.sender);
+						self.deleted.update_min_max();
 					}
 				}
 			},
@@ -699,11 +660,12 @@ impl Interactive {
 				if other == idx {
 					return;
 				}
+				self.sender.send(Event::RemovePointCloud(other)).unwrap();
 				let mut other = self.segments.remove(&other).unwrap();
 				let target = self.segments.get_mut(&idx).unwrap();
-				target.data.points.append(&mut other.data.points);
-				target.update_render(idx, &self.state);
-				target.data.update_min_max();
+				target.points.append(&mut other.points);
+				target.update_render(idx, &self.sender);
+				target.update_min_max();
 			},
 			_ => {},
 		}
@@ -714,16 +676,16 @@ impl Interactive {
 pub enum Modus {
 	SelectView,
 	SelectDraw,
-	Draw(usize),
+	Draw(u32),
 	SelectCombine,
-	Combine(usize),
+	Combine(u32),
 	Spawn,
 	Delete,
-	View(usize, Option<render::Mesh>),
+	View(u32, Option<render::Lines>),
 }
 
 // https://tildesites.bowdoin.edu/~ltoma/teaching/cs3250-CompGeom/spring17/Lectures/cg-hull3d.pdf
-fn convex_hull(points: &[na::Point3<f32>], min_height: f32, state: &render::State) -> render::Mesh {
+fn convex_hull(points: &[na::Point3<f32>], min_height: f32, state: &render::State) -> render::Lines {
 	#[derive(Debug, Clone, Copy)]
 	struct Point {
 		idx: usize,
@@ -752,7 +714,7 @@ fn convex_hull(points: &[na::Point3<f32>], min_height: f32, state: &render::Stat
 		vec
 	};
 	if points.len() < 10 {
-		return render::Mesh::new(state, &[0, 0, 0]);
+		return render::Lines::new(state, &[0, 0]);
 	}
 
 	let mut first = points[0];
@@ -795,7 +757,14 @@ fn convex_hull(points: &[na::Point3<f32>], min_height: f32, state: &render::Stat
 	}
 
 	let mut indices = Vec::new();
-	indices.extend_from_slice(&[first.idx as u32, second.idx as u32, third.idx as u32]);
+	indices.extend_from_slice(&[
+		first.idx as u32,
+		second.idx as u32,
+		second.idx as u32,
+		third.idx as u32,
+		third.idx as u32,
+		first.idx as u32,
+	]);
 	let mut edges = [(second, first), (third, second), (first, third)]
 		.into_iter()
 		.collect::<HashSet<_>>();
@@ -819,15 +788,15 @@ fn convex_hull(points: &[na::Point3<f32>], min_height: f32, state: &render::Stat
 
 		if edges.remove(&(third, first)).not() {
 			edges.insert((first, third));
+			indices.extend_from_slice(&[first.idx as u32, third.idx as u32]);
 		}
 		if edges.remove(&(second, third)).not() {
 			edges.insert((third, second));
+			indices.extend_from_slice(&[third.idx as u32, second.idx as u32]);
 		}
-
-		indices.extend_from_slice(&[first.idx as u32, second.idx as u32, third.idx as u32]);
 	}
 
-	render::Mesh::new(state, &indices)
+	render::Lines::new(state, &indices)
 }
 
 fn format_degrees(val: f64) -> String {

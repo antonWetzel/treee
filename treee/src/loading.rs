@@ -1,20 +1,19 @@
 use nalgebra as na;
 use std::{
 	collections::HashMap,
-	path::PathBuf,
+	ops::Not,
 	sync::{
 		atomic::{AtomicUsize, Ordering},
 		Arc, Mutex,
 	},
 };
 
-use crate::{laz::Laz, program::Event};
+use crate::{environment, laz::Laz, program::Event};
 
 #[derive(Debug)]
 pub struct Loading {
 	pub min: na::Point3<f32>,
 	pub max: na::Point3<f32>,
-	sender: crossbeam::channel::Sender<Event>,
 	pub total: usize,
 	pub shared: Arc<Shared>,
 }
@@ -22,55 +21,37 @@ pub struct Loading {
 #[derive(Debug)]
 pub struct Shared {
 	progress: AtomicUsize,
-	pub state: Arc<render::State>,
+	sender: crossbeam::channel::Sender<Event>,
 	pub world_offset: na::Point3<f64>,
-
-	pub chunks: Mutex<HashMap<usize, LoadingChunk>>,
 	pub slices: Mutex<HashMap<isize, Vec<na::Point3<f32>>>>,
 }
 
-#[derive(Debug)]
-pub struct LoadingChunk {
-	pub point_cloud: render::PointCloud,
-	pub property: render::PointCloudProperty,
-}
-
-impl LoadingChunk {
-	pub fn new(points: &[na::Point3<f32>], state: &render::State) -> Self {
-		let point_cloud = render::PointCloud::new(state, points);
-		let property = render::PointCloudProperty::new(state, &vec![0; points.len()]);
-		Self { point_cloud, property }
-	}
-}
-
 impl Loading {
-	pub fn new(path: PathBuf, state: Arc<render::State>) -> (Self, crossbeam::channel::Receiver<Event>) {
-		let (sender, receiver) = crossbeam::channel::unbounded();
+	pub fn new(source: environment::Source) -> (Self, crossbeam::channel::Receiver<Event>) {
+		let (sender, receiver) = crossbeam::channel::bounded(8);
 		sender
-			.send(Event::Lookup(render::Lookup::new_png(
-				&state,
-				include_bytes!("../assets/white.png"),
-				u32::MAX,
-			)))
+			.send(Event::Lookup {
+				bytes: include_bytes!("../assets/white.png"),
+				max: u32::MAX,
+			})
 			.unwrap();
-		let point_clouds = Mutex::new(HashMap::new());
 
-		let laz = Laz::new(&path, None).unwrap();
+		let laz = Laz::new(source, None).unwrap();
 		let (min, max) = (laz.min, laz.max);
 		let total = laz.total();
 
 		let shared = Shared {
-			state: state.clone(),
 			slices: Mutex::new(HashMap::new()),
-			chunks: point_clouds,
 			progress: AtomicUsize::new(0),
 			world_offset: laz.world_offset,
+			sender,
 		};
 		let shared = Arc::new(shared);
 
 		spawn_load_worker(laz, shared.clone());
 
-		let loading = Self { sender, min, max, total, shared };
+		shared.sender.send(Event::ClearPointClouds).unwrap();
+		let loading = Self { min, max, total, shared };
 
 		(loading, receiver)
 	}
@@ -86,52 +67,55 @@ impl Loading {
 				.add_sized([ui.available_width(), 0.0], egui::Button::new("Add"))
 				.clicked()
 			{
-				let path = rfd::FileDialog::new()
-					.set_title("Load")
-					.add_filter("Pointcloud", &["las", "laz"])
-					.pick_file();
-				if let Some(path) = path {
-					let laz = Laz::new(&path, Some(self.shared.world_offset)).unwrap();
-					for dim in 0..3 {
-						self.min[dim] = self.min[dim].min(laz.min[dim]);
-						self.max[dim] = self.max[dim].max(laz.max[dim]);
-					}
-					self.total = laz.total();
-					self.shared.progress.store(0, Ordering::Relaxed);
-					spawn_load_worker(laz, self.shared.clone());
-				}
+				environment::get_source(&self.shared.sender);
 			}
 
 			if ui
 				.add_sized([ui.available_width(), 0.0], egui::Button::new("Continue"))
 				.clicked()
 			{
-				self.sender.send(Event::Done).unwrap();
+				self.shared.sender.send(Event::Done).unwrap();
 			}
 		}
+	}
+
+	pub fn add(&mut self, source: environment::Source) {
+		let laz = Laz::new(source, Some(self.shared.world_offset)).unwrap();
+		for dim in 0..3 {
+			self.min[dim] = self.min[dim].min(laz.min[dim]);
+			self.max[dim] = self.max[dim].max(laz.max[dim]);
+		}
+		self.total = laz.total();
+		self.shared.progress.store(0, Ordering::Relaxed);
+		spawn_load_worker(laz, self.shared.clone());
 	}
 }
 
 fn spawn_load_worker(laz: Laz, shared: Arc<Shared>) {
-	std::thread::spawn(move || {
+	rayon::spawn(move || {
 		laz.read(|chunk| {
 			let points = chunk.read();
 
-			let segment = LoadingChunk::new(&points, &shared.state);
-			let mut point_clouds = shared.chunks.lock().unwrap();
-			let mut idx = rand::random();
-			while point_clouds.contains_key(&idx) {
-				idx = rand::random();
-			}
-			point_clouds.insert(idx, segment);
-			drop(point_clouds);
+			if points.is_empty().not() {
+				let mut slices = shared.slices.lock().unwrap();
+				for &p in points.iter() {
+					let idx = p.y.floor() as isize;
+					slices.entry(idx).or_default().push(p);
+				}
+				drop(slices);
 
-			let mut slices = shared.slices.lock().unwrap();
-			for p in points {
-				let idx = p.y.floor() as isize;
-				slices.entry(idx).or_default().push(p);
+				let segment = vec![0; points.len()];
+				shared
+					.sender
+					.send(Event::PointCloud {
+						idx: None,
+						data: points,
+						segment,
+						property: None,
+					})
+					.unwrap();
 			}
-			drop(slices);
+
 			shared.progress.fetch_add(1, Ordering::Relaxed);
 		})
 		.unwrap();

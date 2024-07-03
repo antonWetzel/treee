@@ -26,10 +26,19 @@ rfd.workspace = true
 laz.workspace = true
 bytemuck.workspace = true
 static_assertions.workspace = true
-dashmap.workspace = true
 rayon.workspace = true
 rand.workspace = true
 voronator.workspace = true
 serde.workspace = true
 bincode.workspace = true
+web-time.workspace = true
+log.workspace = true
+simple_logger.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 proj4rs.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-sys.workspace = true
+wasm-bindgen-futures.workspace = true
+wasm-bindgen.workspace = true

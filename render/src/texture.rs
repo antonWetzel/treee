@@ -11,15 +11,15 @@ pub struct Texture {
 pub type TextureDimension = wgpu::TextureDimension;
 
 impl Texture {
-	pub fn new(state: &State, data: &[u8]) -> Self {
-		Self::new_xd(state, data, wgpu::TextureDimension::D2)
+	pub fn new(state: &State, data: &[u8], format: wgpu::TextureFormat) -> Self {
+		Self::new_xd(state, data, wgpu::TextureDimension::D2, format)
 	}
 
-	pub fn new_1d(state: &State, data: &[u8]) -> Self {
-		Self::new_xd(state, data, wgpu::TextureDimension::D1)
+	pub fn new_1d(state: &State, data: &[u8], format: wgpu::TextureFormat) -> Self {
+		Self::new_xd(state, data, wgpu::TextureDimension::D1, format)
 	}
 
-	fn new_xd(state: &State, data: &[u8], dimension: TextureDimension) -> Self {
+	fn new_xd(state: &State, data: &[u8], dimension: TextureDimension, format: wgpu::TextureFormat) -> Self {
 		let img = image::load_from_memory(data).unwrap();
 		let dimensions = img.dimensions();
 
@@ -33,7 +33,7 @@ impl Texture {
 			mip_level_count: 1,
 			sample_count: 1,
 			dimension,
-			format: wgpu::TextureFormat::Rgba8UnormSrgb,
+			format,
 			usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
 			label: Some("lookup texture"),
 			view_formats: &[],
