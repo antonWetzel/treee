@@ -93,13 +93,10 @@ impl Segmenting {
 				.add_sized([ui.available_width(), 0.0], egui::Button::new("Continue"))
 				.clicked()
 			{
-				self.shared
-					.sender
-					.send(Event::Segmented {
-						segments,
-						world_offset: self.world_offset,
-					})
-					.unwrap();
+				_ = self.shared.sender.send(Event::Segmented {
+					segments,
+					world_offset: self.world_offset,
+				});
 			} else {
 				self.shared.done.store(Some(segments));
 			}
@@ -116,15 +113,12 @@ fn segmentation(
 	segmenting: &Shared,
 	reciever: &crossbeam::channel::Receiver<f32>,
 ) {
-	segmenting.sender.send(Event::ClearPointClouds).unwrap();
+	_ = segmenting.sender.send(Event::ClearPointClouds);
 
-	segmenting
-		.sender
-		.send(Event::Lookup {
-			bytes: include_bytes!("../assets/grad_turbo.png"),
-			max: 128,
-		})
-		.unwrap();
+	_ = segmenting.sender.send(Event::Lookup {
+		bytes: include_bytes!("../assets/grad_turbo.png"),
+		max: 128,
+	});
 	segmenting.progress.store(0, Ordering::Relaxed);
 
 	let mut source_slices = loading.shared.slices.lock().unwrap();
@@ -224,15 +218,12 @@ fn segmentation(
 			drop(segments);
 
 			if slice.is_empty().not() {
-				segmenting
-					.sender
-					.send(Event::PointCloud {
-						idx: None,
-						data: slice.to_vec(),
-						segment: segment_data,
-						property: None,
-					})
-					.unwrap();
+				_ = segmenting.sender.send(Event::PointCloud {
+					idx: None,
+					data: slice.to_vec(),
+					segment: segment_data,
+					property: None,
+				});
 			}
 			segmenting
 				.progress

@@ -74,14 +74,12 @@ impl Calculations {
 		let total = segments.len();
 
 		let (sender, reciever) = crossbeam::channel::bounded(SENDER_CAPACITY);
-		sender.send(Event::ClearPointClouds).unwrap();
+		_ = sender.send(Event::ClearPointClouds);
 
-		sender
-			.send(Event::Lookup {
-				bytes: include_bytes!("../assets/grad_turbo.png"),
-				max: u32::MAX,
-			})
-			.unwrap();
+		_ = sender.send(Event::Lookup {
+			bytes: include_bytes!("../assets/grad_turbo.png"),
+			max: u32::MAX,
+		});
 
 		{
 			let shared = shared.clone();
@@ -109,7 +107,7 @@ impl Calculations {
 					loop {
 						match sender.try_send(event) {
 							Ok(_) => break,
-							Err(TrySendError::Disconnected(_)) => panic!(),
+							Err(TrySendError::Disconnected(_)) => break,
 							Err(TrySendError::Full(v)) => event = v,
 						}
 					}
@@ -117,7 +115,7 @@ impl Calculations {
 					shared.segments.lock().unwrap().insert(idx, seg);
 					shared.progress.fetch_add(1, Ordering::Relaxed);
 				});
-				sender.send(Event::Done).unwrap();
+				_ = sender.send(Event::Done);
 			});
 		}
 
@@ -176,17 +174,15 @@ impl SegmentData {
 
 	pub fn update_render(&self, idx: u32, sender: &crossbeam::channel::Sender<Event>) {
 		if self.points.is_empty() {
-			sender.send(Event::RemovePointCloud(idx)).unwrap();
+			_ = sender.send(Event::RemovePointCloud(idx));
 			return;
 		}
-		sender
-			.send(Event::PointCloud {
-				idx: Some(idx),
-				data: self.points.clone(),
-				segment: vec![idx as u32; self.points.len()],
-				property: Some(self.property()),
-			})
-			.unwrap();
+		_ = sender.send(Event::PointCloud {
+			idx: Some(idx),
+			data: self.points.clone(),
+			segment: vec![idx as u32; self.points.len()],
+			property: Some(self.property()),
+		});
 	}
 }
 

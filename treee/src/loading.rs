@@ -29,12 +29,10 @@ pub struct Shared {
 impl Loading {
 	pub fn new(source: environment::Source) -> (Self, crossbeam::channel::Receiver<Event>) {
 		let (sender, receiver) = crossbeam::channel::bounded(8);
-		sender
-			.send(Event::Lookup {
-				bytes: include_bytes!("../assets/white.png"),
-				max: u32::MAX,
-			})
-			.unwrap();
+		_ = sender.send(Event::Lookup {
+			bytes: include_bytes!("../assets/white.png"),
+			max: u32::MAX,
+		});
 
 		let laz = Laz::new(source, None).unwrap();
 		let (min, max) = (laz.min, laz.max);
@@ -50,7 +48,7 @@ impl Loading {
 
 		spawn_load_worker(laz, shared.clone());
 
-		shared.sender.send(Event::ClearPointClouds).unwrap();
+		_ = shared.sender.send(Event::ClearPointClouds);
 		let loading = Self { min, max, total, shared };
 
 		(loading, receiver)
@@ -75,7 +73,7 @@ impl Loading {
 				.add_sized([ui.available_width(), 0.0], egui::Button::new("Continue"))
 				.clicked()
 			{
-				self.shared.sender.send(Event::Done).unwrap();
+				_ = self.shared.sender.send(Event::Done);
 			}
 		}
 	}
@@ -106,15 +104,12 @@ fn spawn_load_worker(laz: Laz, shared: Arc<Shared>) {
 				drop(slices);
 
 				let segment = vec![0; points.len()];
-				shared
-					.sender
-					.send(Event::PointCloud {
-						idx: None,
-						data: points,
-						segment,
-						property: None,
-					})
-					.unwrap();
+				_ = shared.sender.send(Event::PointCloud {
+					idx: None,
+					data: points,
+					segment,
+					property: None,
+				});
 			}
 
 			shared.progress.fetch_add(1, Ordering::Relaxed);

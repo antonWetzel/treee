@@ -10,7 +10,7 @@ pub struct Empty {
 impl Empty {
 	pub fn new() -> (Self, crossbeam::channel::Receiver<Event>) {
 		let (sender, receiver) = crossbeam::channel::unbounded();
-		sender.send(Event::ClearPointClouds).unwrap();
+		_ = sender.send(Event::ClearPointClouds);
 		(Self { sender }, receiver)
 	}
 
@@ -64,9 +64,7 @@ async fn fetch_example(sender: crossbeam::channel::Sender<Event>) -> Result<(), 
 	let data = array.to_vec();
 
 	// log::warn!("{:?}", data);
-	sender
-		.send(Event::Load((data, "example.laz".into())))
-		.unwrap();
+	_ = sender.send(Event::Load((data, "example.laz".into())));
 
 	Ok(())
 }

@@ -189,7 +189,7 @@ pub mod environment {
 			.add_filter("Pointcloud", &["las", "laz", "ipc"])
 			.pick_file();
 		if let Some(path) = path {
-			sender.send(Event::Load(path)).unwrap();
+			_ = sender.send(Event::Load(path));
 		}
 	}
 
@@ -232,7 +232,7 @@ pub mod environment {
 			if let Some(handle) = handle {
 				let data = handle.read().await;
 				let name = handle.file_name();
-				sender.send(Event::Load((data, name))).unwrap();
+				_ = sender.send(Event::Load((data, name)));
 			}
 		});
 	}

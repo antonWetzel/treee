@@ -41,7 +41,11 @@ const DEFAULT_LOCATION: &str = "+proj=utm\n+ellps=GRS80\n+zone=32";
 
 impl SegmentData {
 	//https://tavianator.com/2011/ray_box.html
-	pub fn raycast_distance(&self, start: na::Point3<f32>, direction: na::Vector3<f32>) -> Option<(f32, f32)> {
+	pub fn raycast_distance(
+		&self,
+		start: na::Point3<f32>,
+		direction: na::Vector3<f32>,
+	) -> Option<(f32, f32)> {
 		let mut t_min = f32::NEG_INFINITY;
 		let mut t_max = f32::INFINITY;
 
@@ -58,7 +62,11 @@ impl SegmentData {
 		(t_max >= t_min && t_max >= 0.0).then_some((t_min, t_max))
 	}
 
-	pub fn exact_distance(&self, start: na::Point3<f32>, direction: na::Vector3<f32>) -> Option<f32> {
+	pub fn exact_distance(
+		&self,
+		start: na::Point3<f32>,
+		direction: na::Vector3<f32>,
+	) -> Option<f32> {
 		let mut found = false;
 		let mut best_dist = f32::MAX;
 
@@ -85,7 +93,12 @@ impl SegmentData {
 		found.then_some(best_dist)
 	}
 
-	pub fn remove(&mut self, center: na::Point3<f32>, radius: f32, target: &mut Vec<na::Point3<f32>>) -> bool {
+	pub fn remove(
+		&mut self,
+		center: na::Point3<f32>,
+		radius: f32,
+		target: &mut Vec<na::Point3<f32>>,
+	) -> bool {
 		for dim in 0..3 {
 			if ((self.min[dim] - radius)..(self.max[dim] + radius))
 				.contains(&center[dim])
@@ -149,7 +162,8 @@ impl Interactive {
 	) -> (Self, crossbeam::channel::Receiver<Event>) {
 		let (sender, receiver) = crossbeam::channel::unbounded();
 		let deleted = SegmentData::new(Vec::new());
-		let white_lookup = render::Lookup::new_png(state, include_bytes!("../assets/white.png"), u32::MAX);
+		let white_lookup =
+			render::Lookup::new_png(state, include_bytes!("../assets/white.png"), u32::MAX);
 
 		let interactive = Self {
 			segments,
@@ -168,18 +182,20 @@ impl Interactive {
 		(interactive, receiver)
 	}
 
-	pub fn load(source: environment::Source, state: &render::State) -> (Self, crossbeam::channel::Receiver<Event>) {
+	pub fn load(
+		source: environment::Source,
+		state: &render::State,
+	) -> (Self, crossbeam::channel::Receiver<Event>) {
 		let (sender, receiver) = crossbeam::channel::unbounded();
-		sender
-			.send(Event::Lookup {
-				bytes: include_bytes!("../assets/grad_turbo.png"),
-				max: u32::MAX,
-			})
-			.unwrap();
+		_ = sender.send(Event::Lookup {
+			bytes: include_bytes!("../assets/grad_turbo.png"),
+			max: u32::MAX,
+		});
 
 		let reader = environment::reader(&source);
 		let save = bincode::deserialize_from::<_, InteractiveSave>(reader).unwrap();
-		let white_lookup = render::Lookup::new_png(&state, include_bytes!("../assets/white.png"), u32::MAX);
+		let white_lookup =
+			render::Lookup::new_png(&state, include_bytes!("../assets/white.png"), u32::MAX);
 
 		let mut segments = HashMap::new();
 		for (idx, data) in save.segments {
@@ -351,7 +367,8 @@ impl Interactive {
 					if res.changed() {
 						changed = true;
 						segment.info.ground_sep = segment.min.y + rel_ground;
-						segment.info.crown_sep = segment.info.crown_sep.max(segment.info.ground_sep);
+						segment.info.crown_sep =
+							segment.info.crown_sep.max(segment.info.ground_sep);
 					}
 					if res.drag_stopped() {
 						stopped = true;
@@ -368,7 +385,8 @@ impl Interactive {
 					if res.changed() {
 						changed = true;
 						segment.info.crown_sep = segment.min.y + rel_crown;
-						segment.info.ground_sep = segment.info.ground_sep.min(segment.info.crown_sep);
+						segment.info.ground_sep =
+							segment.info.ground_sep.min(segment.info.crown_sep);
 					}
 					if res.drag_stopped() {
 						stopped = true;
@@ -498,7 +516,7 @@ impl Interactive {
 					}
 				}
 				for empty in empty {
-					self.sender.send(Event::RemovePointCloud(empty)).unwrap();
+					_ = self.sender.send(Event::RemovePointCloud(empty));
 					self.segments.remove(&empty);
 				}
 				if points.is_empty() {
@@ -536,7 +554,12 @@ impl Interactive {
 		}
 	}
 
-	pub fn drag(&mut self, start: na::Point3<f32>, direction: na::Vector3<f32>, state: &render::State) {
+	pub fn drag(
+		&mut self,
+		start: na::Point3<f32>,
+		direction: na::Vector3<f32>,
+		state: &render::State,
+	) {
 		match self.modus {
 			Modus::Delete => {
 				let Some((_, distance)) = self.select(start, direction) else {
@@ -556,7 +579,7 @@ impl Interactive {
 					}
 				}
 				for empty in empty {
-					self.sender.send(Event::RemovePointCloud(empty)).unwrap();
+					_ = self.sender.send(Event::RemovePointCloud(empty));
 					self.segments.remove(&empty);
 				}
 				if changed {
@@ -609,7 +632,7 @@ impl Interactive {
 				}
 				self.segments.insert(idx, target);
 				for empty in empty {
-					self.sender.send(Event::RemovePointCloud(empty)).unwrap();
+					_ = self.sender.send(Event::RemovePointCloud(empty));
 					self.segments.remove(&empty);
 				}
 			},
@@ -660,7 +683,7 @@ impl Interactive {
 				if other == idx {
 					return;
 				}
-				self.sender.send(Event::RemovePointCloud(other)).unwrap();
+				_ = self.sender.send(Event::RemovePointCloud(other));
 				let mut other = self.segments.remove(&other).unwrap();
 				let target = self.segments.get_mut(&idx).unwrap();
 				target.points.append(&mut other.points);
@@ -685,7 +708,11 @@ pub enum Modus {
 }
 
 // https://tildesites.bowdoin.edu/~ltoma/teaching/cs3250-CompGeom/spring17/Lectures/cg-hull3d.pdf
-fn convex_hull(points: &[na::Point3<f32>], min_height: f32, state: &render::State) -> render::Lines {
+fn convex_hull(
+	points: &[na::Point3<f32>],
+	min_height: f32,
+	state: &render::State,
+) -> render::Lines {
 	#[derive(Debug, Clone, Copy)]
 	struct Point {
 		idx: usize,
