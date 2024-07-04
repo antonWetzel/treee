@@ -63,6 +63,7 @@ impl Loading {
 			let progress = progress as f32 / self.total as f32;
 			ui.add(egui::ProgressBar::new(progress).rounding(egui::Rounding::ZERO));
 		} else {
+			#[cfg(not(target_arch = "wasm32"))]
 			if ui
 				.add_sized([ui.available_width(), 0.0], egui::Button::new("Add"))
 				.clicked()

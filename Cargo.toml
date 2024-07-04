@@ -54,7 +54,17 @@ egui-winit = { version = "0.27", default-features = false }
 bincode = "1.3.3"
 web-time = "1.1"
 simple_logger = "5.0"
-web-sys = { version = "0.3", features = ["Document", "Window", "Element"] }
+web-sys = { version = "0.3", features = [
+	"Document",
+	"Window",
+	"Element",
+	'Headers',
+	'Request',
+	'RequestInit',
+	'RequestMode',
+	'Response',
+] }
+js-sys = "0.3"
 wasm-bindgen-futures = "0.4.30"
 wasm-bindgen = "0.2"
 proj4rs = "0.1.2"

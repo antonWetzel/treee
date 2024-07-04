@@ -59,7 +59,7 @@ pub struct SegmentData {
 	pub coords: Option<(f64, f64)>,
 }
 
-const SENDER_CAPACITY: usize = 256;
+const SENDER_CAPACITY: usize = 128;
 
 impl Calculations {
 	pub fn new(

@@ -2588,6 +2588,7 @@ dependencies = [
  "egui-wgpu",
  "egui-winit",
  "input",
+ "js-sys",
  "laz",
  "log",
  "nalgebra",
