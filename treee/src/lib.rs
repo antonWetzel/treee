@@ -7,11 +7,10 @@ mod loading;
 mod program;
 mod segmenting;
 
-use interactive::InteractiveSave;
 use nalgebra as na;
 use program::Event;
 use program::Program;
-use std::io::{BufReader, Read, Seek};
+use std::io::{BufReader, Read, Seek, Write};
 use std::{fs::File, io::BufWriter};
 
 pub async fn try_main() -> Result<(), Error> {
@@ -181,37 +180,52 @@ pub mod environment {
 
 	use super::*;
 
-	pub type Source = std::path::PathBuf;
+	pub struct Source {
+		path: std::path::PathBuf,
+	}
 
-	pub fn get_source(sender: &crossbeam::channel::Sender<Event>) {
-		let path = rfd::FileDialog::new()
-			.set_title("Load")
-			.add_filter("Pointcloud", &["las", "laz", "ipc"])
-			.pick_file();
-		if let Some(path) = path {
-			_ = sender.send(Event::Load(path));
+	impl Source {
+		pub fn new(sender: &crossbeam::channel::Sender<Event>) {
+			let path = rfd::FileDialog::new()
+				.add_filter("Pointcloud", &["las", "laz", "ipc"])
+				.pick_file();
+			if let Some(path) = path {
+				_ = sender.send(Event::Load(Self { path }));
+			}
+		}
+
+		pub fn reader<'a>(&'a self) -> impl Read + Seek + 'a {
+			BufReader::new(std::fs::File::open(&self.path).unwrap())
+		}
+
+		pub fn extension(&self) -> &str {
+			self.path.extension().unwrap().to_str().unwrap()
 		}
 	}
 
-	pub fn save(data: InteractiveSave) {
-		rayon::spawn(move || {
-			let path = rfd::FileDialog::new()
-				.set_title("Save")
-				.add_filter("Pointcloud", &["ipc"])
-				.save_file();
-			if let Some(path) = path {
-				let file = File::create(path).unwrap();
-				bincode::serialize_into(BufWriter::new(file), &data).unwrap();
-			}
-		});
+	pub struct Saver {
+		file: BufWriter<File>,
 	}
 
-	pub fn reader<'a>(source: &'a Source) -> impl Read + Seek + 'a {
-		BufReader::new(std::fs::File::open(source).unwrap())
-	}
+	impl Saver {
+		pub fn new(
+			file_name: impl Into<String> + Send + 'static,
+			action: impl FnOnce(Saver) + Send + 'static,
+		) {
+			rayon::spawn(move || {
+				let path = rfd::FileDialog::new().set_file_name(file_name).save_file();
+				if let Some(path) = path {
+					let file = BufWriter::new(File::create(path).unwrap());
+					action(Self { file });
+				}
+			});
+		}
 
-	pub fn extension(source: &Source) -> &str {
-		source.extension().unwrap().to_str().unwrap()
+		pub fn inner<'a>(&'a mut self) -> impl Write + 'a {
+			&mut self.file
+		}
+
+		pub fn save(self) {}
 	}
 }
 
@@ -219,44 +233,65 @@ pub mod environment {
 pub mod environment {
 	use super::*;
 
-	pub type Source = (Vec<u8>, String);
-
-	pub fn get_source(sender: &crossbeam::channel::Sender<Event>) {
-		let sender = sender.clone();
-		wasm_bindgen_futures::spawn_local(async move {
-			let handle = rfd::AsyncFileDialog::new()
-				.set_title("Load")
-				.add_filter("Pointcloud", &["las", "laz", "ipc"])
-				.pick_file()
-				.await;
-			if let Some(handle) = handle {
-				let data = handle.read().await;
-				let name = handle.file_name();
-				_ = sender.send(Event::Load((data, name)));
-			}
-		});
+	pub struct Source {
+		data: Vec<u8>,
+		name: String,
 	}
 
-	pub fn save(data: InteractiveSave) {
-		wasm_bindgen_futures::spawn_local(async move {
-			let handle = rfd::AsyncFileDialog::new()
-				.set_file_name("pointcloud.ipc")
-				.set_title("Save")
-				.save_file()
-				.await;
-			if let Some(handle) = handle {
-				let mut binary = Vec::new();
-				bincode::serialize_into(&mut binary, &data).unwrap();
-				handle.write(&binary).await.unwrap();
-			}
-		});
+	impl Source {
+		pub fn new(sender: &crossbeam::channel::Sender<Event>) {
+			let sender = sender.clone();
+			wasm_bindgen_futures::spawn_local(async move {
+				let handle = rfd::AsyncFileDialog::new()
+					.add_filter("Pointcloud", &["las", "laz", "ipc"])
+					.pick_file()
+					.await;
+				if let Some(handle) = handle {
+					let data = handle.read().await;
+					let name = handle.file_name();
+					_ = sender.send(Event::Load(Self { data, name }));
+				}
+			});
+		}
+
+		pub fn reader<'a>(&'a self) -> impl Read + Seek + 'a {
+			std::io::Cursor::new(&self.data)
+		}
+
+		pub fn extension(&self) -> &str {
+			self.name.split(".").last().unwrap()
+		}
 	}
 
-	pub fn reader<'a>(source: &'a Source) -> impl Read + Seek + 'a {
-		std::io::Cursor::new(&source.0)
+	pub struct Saver {
+		handle: rfd::FileHandle,
+		data: Vec<u8>,
 	}
 
-	pub fn extension(source: &Source) -> &str {
-		source.1.split(".").last().unwrap()
+	impl Saver {
+		pub fn new(
+			file_name: impl Into<String> + Send + 'static,
+			action: impl FnOnce(Saver) + Send + 'static,
+		) {
+			wasm_bindgen_futures::spawn_local(async move {
+				let handle = rfd::AsyncFileDialog::new()
+					.set_file_name(file_name)
+					.save_file()
+					.await;
+				if let Some(handle) = handle {
+					action(Self { data: Vec::new(), handle });
+				}
+			});
+		}
+
+		pub fn inner<'a>(&'a mut self) -> impl Write + 'a {
+			&mut self.data
+		}
+
+		pub fn save(self) {
+			wasm_bindgen_futures::spawn_local(async move {
+				self.handle.write(&self.data).await.unwrap();
+			});
+		}
 	}
 }

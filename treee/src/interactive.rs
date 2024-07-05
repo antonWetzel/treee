@@ -6,8 +6,8 @@ use std::{
 };
 
 use crate::{
-	calculations::{DisplayModus, SegmentData},
-	environment,
+	calculations::{DisplayModus, SegmentData, SegmentSave},
+	environment::{self, Saver},
 	program::Event,
 };
 
@@ -192,7 +192,7 @@ impl Interactive {
 			max: u32::MAX,
 		});
 
-		let reader = environment::reader(&source);
+		let reader = source.reader();
 		let save = bincode::deserialize_from::<_, InteractiveSave>(reader).unwrap();
 		let white_lookup =
 			render::Lookup::new_png(&state, include_bytes!("../assets/white.png"), u32::MAX);
@@ -236,7 +236,10 @@ impl Interactive {
 				deleted: self.deleted.clone(),
 				world_offset: self.world_offset,
 			};
-			environment::save(save);
+			environment::Saver::new("pointcloud.ipc", move |mut saver| {
+				bincode::serialize_into(saver.inner(), &save).unwrap();
+				saver.save();
+			});
 		}
 
 		self.display.ui(ui);
@@ -349,7 +352,7 @@ impl Interactive {
 			Modus::SelectDraw | Modus::Draw(_) => {},
 			Modus::SelectCombine | Modus::Combine(_) => {},
 			Modus::Delete => {},
-			Modus::View(idx, ref mut mesh) => {
+			Modus::View(idx, ref mut hull) => {
 				let segment = self.segments.get_mut(&idx).unwrap();
 
 				ui.separator();
@@ -399,8 +402,8 @@ impl Interactive {
 							.redo_diameters(&segment.points, segment.min.y, segment.max.y);
 						segment.update_render(idx, &self.sender);
 					}
-					if let (true, Some(mesh)) = (stopped, mesh.as_mut()) {
-						*mesh = convex_hull(&segment.points, segment.info.crown_sep, state);
+					if let (true, Some(hull)) = (stopped, hull.as_mut()) {
+						*hull = ConvexHull::new(&segment.points, segment.info.crown_sep, state);
 					}
 				});
 
@@ -435,24 +438,67 @@ impl Interactive {
 				}
 
 				ui.separator();
-				let mut render_mesh = mesh.is_some();
-				if ui.checkbox(&mut render_mesh, "Convex Hull").changed() {
-					*mesh = if render_mesh {
-						Some(convex_hull(&segment.points, segment.info.crown_sep, state))
+				let mut render_hull = hull.is_some();
+				if ui.checkbox(&mut render_hull, "Convex Hull").changed() {
+					*hull = if render_hull {
+						Some(ConvexHull::new(
+							&segment.points,
+							segment.info.crown_sep,
+							state,
+						))
 					} else {
 						None
 					};
 				}
 
 				ui.separator();
+				ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Export"));
+				if ui
+					.add_sized([ui.available_width(), 0.0], egui::Button::new("Points"))
+					.clicked()
+				{
+					let points = self.segments.get(&idx).unwrap().points.clone();
+					environment::Saver::new("points.ply", move |mut saver| {
+						save_points(&mut saver, &points).unwrap();
+						saver.save();
+					})
+				}
 				if ui
 					.add_sized(
 						[ui.available_width(), 0.0],
-						egui::Button::new("Export (Todo)"),
+						egui::Button::new("Information"),
 					)
 					.clicked()
 				{
-					println!("todo");
+					let seg = self.segments.get(&idx).unwrap();
+					let save = SegmentSave {
+						info: seg.info,
+						min: seg.min,
+						max: seg.max,
+						offset: self.world_offset,
+						longitude: seg.coords.map(|c| c.0.to_degrees()),
+						latitude: seg.coords.map(|c| c.1.to_degrees()),
+					};
+					environment::Saver::new("segment.json", move |mut saver| {
+						serde_json::to_writer_pretty(saver.inner(), &save).unwrap();
+						saver.save();
+					});
+				}
+				if let Some(hull) = hull {
+					if ui
+						.add_sized(
+							[ui.available_width(), 0.0],
+							egui::Button::new("Convex Hull"),
+						)
+						.clicked()
+					{
+						let points = self.segments.get(&idx).unwrap().points.clone();
+						let faces = hull.faces.clone();
+						environment::Saver::new("convex_hull.ply", move |mut saver| {
+							ConvexHull::save(&mut saver, &points, &faces).unwrap();
+							saver.save();
+						})
+					}
 				}
 			},
 		};
@@ -636,7 +682,7 @@ impl Interactive {
 					self.segments.remove(&empty);
 				}
 			},
-			Modus::View(idx, ref mut mesh) => {
+			Modus::View(idx, ref mut hull) => {
 				let seg = self.segments.get_mut(&idx).unwrap();
 				if self.show_deleted {
 					let Some(distance) = self
@@ -651,8 +697,8 @@ impl Interactive {
 					if self.deleted.remove(hit, self.draw_radius, &mut seg.points) {
 						seg.update_render(idx, &self.sender);
 						seg.update_min_max();
-						if let Some(mesh) = mesh {
-							*mesh = convex_hull(&seg.points, seg.info.crown_sep, state);
+						if let Some(hull) = hull {
+							*hull = ConvexHull::new(&seg.points, seg.info.crown_sep, state);
 						}
 						self.deleted.update_render(DELETED_INDEX, &self.sender);
 						self.deleted.update_min_max();
@@ -667,8 +713,8 @@ impl Interactive {
 					if seg.remove(hit, self.draw_radius, &mut self.deleted.points) {
 						seg.update_render(idx, &self.sender);
 						seg.update_min_max();
-						if let Some(mesh) = mesh {
-							*mesh = convex_hull(&seg.points, seg.info.crown_sep, state);
+						if let Some(hull) = hull {
+							*hull = ConvexHull::new(&seg.points, seg.info.crown_sep, state);
 						}
 
 						self.deleted.update_render(DELETED_INDEX, &self.sender);
@@ -704,100 +750,76 @@ pub enum Modus {
 	Combine(u32),
 	Spawn,
 	Delete,
-	View(u32, Option<render::Lines>),
+	View(u32, Option<ConvexHull>),
 }
 
-// https://tildesites.bowdoin.edu/~ltoma/teaching/cs3250-CompGeom/spring17/Lectures/cg-hull3d.pdf
-fn convex_hull(
-	points: &[na::Point3<f32>],
-	min_height: f32,
-	state: &render::State,
-) -> render::Lines {
-	#[derive(Debug, Clone, Copy)]
-	struct Point {
-		idx: usize,
-		pos: na::Point3<f32>,
-	}
+#[derive(Debug)]
+pub struct ConvexHull {
+	faces: Vec<[u32; 3]>,
+	pub lines: render::Lines,
+}
 
-	impl PartialEq for Point {
-		fn eq(&self, other: &Self) -> bool {
-			self.idx == other.idx
+impl ConvexHull {
+	// https://tildesites.bowdoin.edu/~ltoma/teaching/cs3250-CompGeom/spring17/Lectures/cg-hull3d.pdf
+	fn new(points: &[na::Point3<f32>], min_height: f32, state: &render::State) -> Self {
+		#[derive(Debug, Clone, Copy)]
+		struct Point {
+			idx: usize,
+			pos: na::Point3<f32>,
 		}
-	}
-	impl Eq for Point {}
-	impl Hash for Point {
-		fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-			self.idx.hash(state)
-		}
-	}
 
-	let points = {
-		let mut vec = Vec::new();
-		for (idx, &p) in points.iter().enumerate() {
-			if p.y >= min_height {
-				vec.push(Point { idx, pos: p });
+		impl PartialEq for Point {
+			fn eq(&self, other: &Self) -> bool {
+				self.idx == other.idx
 			}
 		}
-		vec
-	};
-	if points.len() < 10 {
-		return render::Lines::new(state, &[0, 0]);
-	}
-
-	let mut first = points[0];
-	for &p in points.iter() {
-		if p.pos.y < first.pos.y {
-			first = p;
+		impl Eq for Point {}
+		impl Hash for Point {
+			fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+				self.idx.hash(state)
+			}
 		}
-	}
 
-	let mut best_value = f32::MAX;
-	let mut second = None;
-	for &p in points.iter() {
-		if first.idx == p.idx {
-			continue;
+		let points = {
+			let mut vec = Vec::new();
+			for (idx, &p) in points.iter().enumerate() {
+				if p.y >= min_height {
+					vec.push(Point { idx, pos: p });
+				}
+			}
+			vec
+		};
+		if points.len() < 10 {
+			return Self {
+				faces: Vec::new(),
+				lines: render::Lines::new(state, &[0, 0]),
+			};
 		}
-		let v = p.pos - first.pos;
-		let x = v.dot(&na::vector![1.0, 0.0, 0.0]);
-		let y = v.dot(&na::vector![0.0, 1.0, 0.0]);
-		let angle = y.atan2(x);
-		assert!(angle >= 0.0);
-		if angle < best_value {
-			best_value = angle;
-			second = Some(p);
+
+		let mut first = points[0];
+		for &p in points.iter() {
+			if p.pos.y < first.pos.y {
+				first = p;
+			}
 		}
-	}
-	let second = second.unwrap();
 
-	let mut iter = points
-		.iter()
-		.copied()
-		.filter(|&p| p != first && p != second);
-	let mut third = iter.next().unwrap();
-	for p in iter {
-		let out = (second.pos - first.pos)
-			.normalize()
-			.cross(&(third.pos - first.pos).normalize());
-		if out.dot(&(p.pos - first.pos).normalize()) < 0.0 {
-			third = p;
+		let mut best_value = f32::MAX;
+		let mut second = None;
+		for &p in points.iter() {
+			if first.idx == p.idx {
+				continue;
+			}
+			let v = p.pos - first.pos;
+			let x = v.dot(&na::vector![1.0, 0.0, 0.0]);
+			let y = v.dot(&na::vector![0.0, 1.0, 0.0]);
+			let angle = y.atan2(x);
+			assert!(angle >= 0.0);
+			if angle < best_value {
+				best_value = angle;
+				second = Some(p);
+			}
 		}
-	}
-
-	let mut indices = Vec::new();
-	indices.extend_from_slice(&[
-		first.idx as u32,
-		second.idx as u32,
-		second.idx as u32,
-		third.idx as u32,
-		third.idx as u32,
-		first.idx as u32,
-	]);
-	let mut edges = [(second, first), (third, second), (first, third)]
-		.into_iter()
-		.collect::<HashSet<_>>();
-
-	while let Some(&(first, second)) = edges.iter().next() {
-		edges.remove(&(first, second));
+		let second = second.unwrap();
 
 		let mut iter = points
 			.iter()
@@ -813,17 +835,99 @@ fn convex_hull(
 			}
 		}
 
-		if edges.remove(&(third, first)).not() {
-			edges.insert((first, third));
-			indices.extend_from_slice(&[first.idx as u32, third.idx as u32]);
+		let mut indices = Vec::new();
+		let mut faces = Vec::new();
+		indices.extend_from_slice(&[
+			first.idx as u32,
+			second.idx as u32,
+			second.idx as u32,
+			third.idx as u32,
+			third.idx as u32,
+			first.idx as u32,
+		]);
+		faces.push([first.idx as u32, second.idx as u32, third.idx as u32]);
+
+		let mut edges = [(second, first), (third, second), (first, third)]
+			.into_iter()
+			.collect::<HashSet<_>>();
+
+		while let Some(&(first, second)) = edges.iter().next() {
+			edges.remove(&(first, second));
+
+			let mut iter = points
+				.iter()
+				.copied()
+				.filter(|&p| p != first && p != second);
+			let mut third = iter.next().unwrap();
+			for p in iter {
+				let out = (second.pos - first.pos)
+					.normalize()
+					.cross(&(third.pos - first.pos).normalize());
+				if out.dot(&(p.pos - first.pos).normalize()) < 0.0 {
+					third = p;
+				}
+			}
+
+			faces.push([first.idx as u32, second.idx as u32, third.idx as u32]);
+
+			if edges.remove(&(third, first)).not() {
+				edges.insert((first, third));
+				indices.extend_from_slice(&[first.idx as u32, third.idx as u32]);
+			}
+			if edges.remove(&(second, third)).not() {
+				edges.insert((third, second));
+				indices.extend_from_slice(&[third.idx as u32, second.idx as u32]);
+			}
 		}
-		if edges.remove(&(second, third)).not() {
-			edges.insert((third, second));
-			indices.extend_from_slice(&[third.idx as u32, second.idx as u32]);
+
+		Self {
+			lines: render::Lines::new(state, &indices),
+			faces,
 		}
 	}
 
-	render::Lines::new(state, &indices)
+	pub fn save(
+		saver: &mut Saver,
+		points: &[na::Point3<f32>],
+		faces: &[[u32; 3]],
+	) -> Result<(), std::io::Error> {
+		use std::io::Write;
+
+		let mut mapping = HashMap::new();
+		let mut used_points = Vec::new();
+		for &face in faces {
+			for idx in face.into_iter() {
+				if mapping.contains_key(&idx) {
+					continue;
+				}
+				mapping.insert(idx, used_points.len());
+				used_points.push(idx);
+			}
+		}
+
+		let mut writer = saver.inner();
+		writeln!(writer, "ply")?;
+		writeln!(writer, "format ascii 1.0")?;
+		writeln!(writer, "element vertex {}", used_points.len())?;
+		writeln!(writer, "property float x")?;
+		writeln!(writer, "property float y")?;
+		writeln!(writer, "property float z")?;
+		writeln!(writer, "element face {}", faces.len())?;
+		writeln!(writer, "property list uchar uint vertex_indices")?;
+		writeln!(writer, "end_header")?;
+		for idx in used_points {
+			let p = points[idx as usize];
+			writeln!(writer, "{} {} {}", p.x, -p.z, p.y)?;
+		}
+		for face in faces {
+			writeln!(
+				writer,
+				"3 {} {} {}",
+				mapping[&face[0]], mapping[&face[2]], mapping[&face[1]]
+			)?;
+		}
+		Ok(())
+	}
 }
 
 fn format_degrees(val: f64) -> String {
@@ -832,4 +936,21 @@ fn format_degrees(val: f64) -> String {
 	let deg = deg.trunc() as isize;
 	let (min, sec) = (min.trunc() as isize, min.fract() * 60.0);
 	format!("{:0>2}°{:0>2}'{:0>4.1}\"", deg, min, sec)
+}
+
+pub fn save_points(saver: &mut Saver, points: &[na::Point3<f32>]) -> Result<(), std::io::Error> {
+	use std::io::Write;
+
+	let mut writer = saver.inner();
+	writeln!(writer, "ply")?;
+	writeln!(writer, "format ascii 1.0")?;
+	writeln!(writer, "element vertex {}", points.len())?;
+	writeln!(writer, "property float x")?;
+	writeln!(writer, "property float y")?;
+	writeln!(writer, "property float z")?;
+	writeln!(writer, "end_header")?;
+	for &p in points {
+		writeln!(writer, "{} {} {}", p.x, -p.z, p.y)?;
+	}
+	Ok(())
 }

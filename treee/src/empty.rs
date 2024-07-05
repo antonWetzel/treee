@@ -16,7 +16,7 @@ impl Empty {
 			.add_sized([ui.available_width(), 0.0], egui::Button::new("Load"))
 			.clicked()
 		{
-			environment::get_source(&self.sender);
+			environment::Source::new(&self.sender);
 		}
 	}
 }

@@ -30,6 +30,7 @@ rayon.workspace = true
 rand.workspace = true
 voronator.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 bincode.workspace = true
 web-time.workspace = true
 log.workspace = true

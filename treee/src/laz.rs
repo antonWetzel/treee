@@ -33,7 +33,7 @@ impl Laz {
 		source: environment::Source,
 		center: Option<na::Point3<f64>>,
 	) -> Result<Self, Error> {
-		let mut reader = environment::reader(&source);
+		let mut reader = source.reader();
 
 		let header = Header::new(&mut reader)?;
 
@@ -133,7 +133,7 @@ impl Laz {
 			.into_iter()
 			.par_bridge()
 			.map_init(
-				|| environment::reader(&self.source),
+				|| self.source.reader(),
 				|file, (s, l)| {
 					let slice = if l == 0 {
 						Vec::new()

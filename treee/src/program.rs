@@ -322,7 +322,7 @@ impl Program {
 								.lines_state
 								.render(&mut render_pass, self.display_settings.camera.gpu());
 							let seg = self.chunks.get(idx).unwrap();
-							mesh.render(&seg.point_cloud, lines_pass);
+							mesh.lines.render(&seg.point_cloud, lines_pass);
 						};
 					}
 
@@ -381,7 +381,7 @@ impl Program {
 		let mut work = self.receiver.len();
 		while let Ok(event) = self.receiver.try_recv() {
 			match event {
-				Event::Load(source) => match environment::extension(&source) {
+				Event::Load(source) => match source.extension() {
 					"laz" | "las" => match &mut self.world {
 						World::Loading(loading) => loading.add(source),
 						_ => {

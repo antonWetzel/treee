@@ -59,6 +59,19 @@ pub struct SegmentData {
 	pub coords: Option<(f64, f64)>,
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SegmentSave {
+	#[serde(flatten)]
+	pub info: SegmentInformation,
+	pub min: na::Point3<f32>,
+	pub max: na::Point3<f32>,
+	pub offset: na::Point3<f64>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub latitude: Option<f64>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub longitude: Option<f64>,
+}
+
 const SENDER_CAPACITY: usize = 128;
 
 impl Calculations {
