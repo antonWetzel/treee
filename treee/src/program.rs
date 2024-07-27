@@ -99,8 +99,7 @@ impl Program {
 		let window = winit::window::WindowBuilder::new()
 			.with_title("Treee")
 			.with_min_inner_size(winit::dpi::LogicalSize { width: 10, height: 10 })
-			.build(event_loop)
-			.unwrap();
+			.build(event_loop)?;
 
 		#[cfg(target_arch = "wasm32")]
 		{

@@ -2136,6 +2136,7 @@ dependencies = [
  "input",
  "log",
  "nalgebra",
+ "thiserror",
  "wgpu",
  "winit",
 ]
@@ -2641,6 +2642,7 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-rayon",
+ "web-sys",
 ]
 
 [[package]]

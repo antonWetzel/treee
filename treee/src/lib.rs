@@ -59,10 +59,16 @@ pub enum Error {
 	EventLoop(#[from] winit::error::EventLoopError),
 
 	#[error(transparent)]
+	OsError(#[from] winit::error::OsError),
+
+	#[error(transparent)]
 	IO(#[from] std::io::Error),
 
 	#[error(transparent)]
 	LasZip(#[from] ::laz::LasZipError),
+
+	#[error(transparent)]
+	Render(#[from] render::RenderError),
 
 	#[error("Corrupt file")]
 	CorruptFile,

@@ -9,7 +9,20 @@ pub struct State {
 	pub surface_format: wgpu::TextureFormat,
 }
 
-pub type RenderError = winit::error::EventLoopError;
+#[derive(thiserror::Error, Debug)]
+pub enum RenderError {
+	#[error(transparent)]
+	RenderError(#[from] winit::error::EventLoopError),
+
+	#[error(transparent)]
+	CreateSurfaceError(#[from] wgpu::CreateSurfaceError),
+
+	#[error("No WebGPU support")]
+	NoWebGPUSupport,
+
+	#[error("Failed to get WebGPU device")]
+	RequestDeviceError,
+}
 
 impl State {
 	pub async fn new(window: Arc<winit::window::Window>) -> Result<(Self, Window), RenderError> {
@@ -20,7 +33,7 @@ impl State {
 			gles_minor_version: wgpu::Gles3MinorVersion::default(),
 		});
 
-		let surface = instance.create_surface(window.clone()).unwrap();
+		let surface = instance.create_surface(window.clone())?;
 
 		let adapter = instance
 			.request_adapter(&wgpu::RequestAdapterOptions {
@@ -29,7 +42,7 @@ impl State {
 				force_fallback_adapter: false,
 			})
 			.await
-			.unwrap();
+			.ok_or(RenderError::NoWebGPUSupport)?;
 
 		let (device, queue) = adapter
 			.request_device(
@@ -41,10 +54,9 @@ impl State {
 				None,
 			)
 			.await
-			.unwrap();
+			.map_err(|_| RenderError::RequestDeviceError)?;
 
 		let size = window.inner_size();
-		let surface = instance.create_surface(window.clone()).unwrap();
 		let surface_caps = surface.get_capabilities(&adapter);
 		let surface_format = surface_caps
 			.formats
