@@ -1,8 +1,4 @@
 {
-	"files.exclude": {
-		"**/.git": true,
-		"**/target/**": true,
-	},
 	"lldb.displayFormat": "auto",
 	"lldb.showDisassembly": "never",
 	"lldb.dereferencePointers": true,

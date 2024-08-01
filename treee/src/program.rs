@@ -118,6 +118,12 @@ impl Program {
 
 		let (state, window) = render::State::new(window).await?;
 
+		#[cfg(not(target_arch = "wasm32"))]
+		window.set_window_icon(include_bytes!("../assets/png/tree-fill-big.png"));
+
+		#[cfg(windows)]
+		window.set_taskbar_icon(include_bytes!("../assets/png/tree-fill-big.png"));
+
 		let point_cloud_environment = render::PointCloudEnvironment::new(&state, 0, u32::MAX, 0.1);
 		let point_cloud_state = render::PointCloudState::new(&state);
 		let lines_state = render::LinesState::new(&state);
