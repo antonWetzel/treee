@@ -260,6 +260,10 @@ pub mod environment {
 			});
 		}
 
+		pub fn from_data(data: Vec<u8>, name: String) -> Self {
+			Self { data, name }
+		}
+
 		pub fn reader<'a>(&'a self) -> impl Read + Seek + 'a {
 			std::io::Cursor::new(&self.data)
 		}

@@ -40,7 +40,7 @@ impl Loading {
 
 		let shared = Shared {
 			slices: Mutex::new(HashMap::new()),
-			progress: AtomicUsize::new(0),
+			progress: AtomicUsize::new(1000),
 			world_offset: laz.world_offset,
 			sender,
 		};
