@@ -13,35 +13,9 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use crate::{interactive::DELETED_INDEX, program::Event, segmenting::Tree};
 
 pub struct Calculations {
-	pub display: DisplayModus,
 	pub shared: Arc<Shared>,
 	pub total: usize,
 	pub world_offset: na::Point3<f64>,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum DisplayModus {
-	Segment,
-	Property,
-}
-
-impl DisplayModus {
-	pub fn ui(&mut self, ui: &mut egui::Ui) {
-		ui.separator();
-		ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Display"));
-		if ui
-			.radio(matches!(self, DisplayModus::Segment), "Segment")
-			.clicked()
-		{
-			*self = DisplayModus::Segment;
-		}
-		if ui
-			.radio(matches!(self, DisplayModus::Property), "Classification")
-			.clicked()
-		{
-			*self = DisplayModus::Property;
-		}
-	}
 }
 
 #[derive(Debug)]
@@ -53,10 +27,27 @@ pub struct Shared {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SegmentData {
 	pub points: Vec<na::Point3<f32>>,
+	pub classifications: Vec<Classification>,
 	pub info: SegmentInformation,
+
 	pub min: na::Point3<f32>,
 	pub max: na::Point3<f32>,
 	pub coords: Option<(f64, f64)>,
+}
+
+#[derive(
+	Debug,
+	Clone,
+	Copy,
+	serde::Serialize,
+	serde::Deserialize,
+	PartialEq,
+	Eq
+)]
+pub enum Classification {
+	Ground,
+	Trunk,
+	Crown,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -132,21 +123,10 @@ impl Calculations {
 			});
 		}
 
-		(
-			Self {
-				shared,
-				display: DisplayModus::Segment,
-				total,
-				world_offset,
-			},
-			reciever,
-		)
+		(Self { shared, total, world_offset }, reciever)
 	}
 
 	pub fn ui(&mut self, ui: &mut egui::Ui) {
-		self.display.ui(ui);
-
-		ui.separator();
 		let progress = self.shared.progress.load(Ordering::Relaxed) as f32 / self.total as f32;
 		ui.add(egui::ProgressBar::new(progress).rounding(egui::Rounding::ZERO));
 	}
@@ -168,21 +148,40 @@ impl SegmentData {
 		};
 
 		let info = SegmentInformation::new(&points, min.y, max.y);
-		Self { points, info, min, max, coords: None }
+		let crown_sep = max.y - info.crown_height;
+		let ground_sep = crown_sep - info.trunk_height;
+		let classifications = points
+			.iter()
+			.map(|&p| {
+				if p.y < ground_sep {
+					Classification::Ground
+				} else if p.y < crown_sep {
+					Classification::Trunk
+				} else {
+					Classification::Crown
+				}
+			})
+			.collect();
+
+		Self {
+			points,
+			classifications,
+			info,
+			min,
+			max,
+			coords: None,
+		}
 	}
 
 	pub fn property(&self) -> Vec<u32> {
-		let mut property = vec![0u32; self.points.len()];
-		for (idx, p) in self.points.iter().enumerate() {
-			property[idx] = if p.y < self.info.ground_sep {
-				u32::MAX / 8 * 1
-			} else if p.y < self.info.crown_sep {
-				u32::MAX / 8 * 3
-			} else {
-				u32::MAX / 8 * 6
-			};
-		}
-		property
+		self.classifications
+			.iter()
+			.map(|c| match c {
+				Classification::Ground => u32::MAX / 8 * 1,
+				Classification::Trunk => u32::MAX / 8 * 3,
+				Classification::Crown => u32::MAX / 8 * 6,
+			})
+			.collect()
 	}
 
 	pub fn update_render(&self, idx: u32, sender: &crossbeam::channel::Sender<Event>) {
@@ -201,17 +200,19 @@ impl SegmentData {
 
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct SegmentInformation {
-	pub ground_sep: f32,
-	pub crown_sep: f32,
+	pub trunk_height: f32,
+	pub crown_height: f32,
 	pub trunk_diameter: f32,
 	pub crown_diameter: f32,
+
+	pub ground_sep: f32,
+	pub crown_sep: f32,
 }
 
 impl SegmentInformation {
 	pub fn new(data: &[na::Point3<f32>], min: f32, max: f32) -> Self {
 		let height = max - min;
 
-		// let slice_width = settings.calculations_slice_width;
 		let slice_width = 0.1;
 		let ground_max_search_height = 1.0;
 		let ground_min_area_scale = 1.5;
@@ -306,47 +307,36 @@ impl SegmentInformation {
 			.map(|(index, _)| index)
 			.unwrap_or(0);
 
-		let crown_area = areas
-			.iter()
-			.copied()
-			.skip(crown_sep)
-			.max_by(|a, b| a.total_cmp(b))
-			.unwrap_or(0.0);
+		let ground_sep = min + ground_sep as f32 * slice_width;
+		let crown_sep = min + crown_sep as f32 * slice_width;
 
 		Self {
-			ground_sep: min + ground_sep as f32 * slice_width,
-			crown_sep: min + crown_sep as f32 * slice_width,
-			trunk_diameter,
-			crown_diameter: approximate_diameter(crown_area),
+			trunk_height: crown_sep - ground_sep,
+			crown_height: max - crown_sep,
+			ground_sep,
+			crown_sep,
+			trunk_diameter: 0.0,
+			crown_diameter: 0.0,
 		}
 	}
 
-	pub fn redo_diameters(&mut self, data: &[na::Point3<f32>], min: f32, max: f32) {
-		let height = max - min;
-
+	pub fn redo_diameters(
+		&mut self,
+		data: &[na::Point3<f32>],
+		classifications: &[Classification],
+		min: f32,
+		max: f32,
+	) {
 		let slice_width = 0.1;
 		let trunk_diameter_range = 0.2;
 
-		let slices = ((height / slice_width) as usize) + 1;
-		let mut sets = vec![<Option<Tree>>::None; slices];
-		for pos in data.iter().copied() {
-			let idx = ((pos.y - min) / slice_width) as usize;
-			match &mut sets[idx] {
-				Some(tree) => tree.insert(na::vector![pos.x, pos.z].into()),
-				x @ None => *x = Some(Tree::new(na::vector![pos.x, pos.z].into())),
-			}
-		}
-
-		let areas = sets
-			.into_iter()
-			.map(|set| set.map(|set| set.statistics().area).unwrap_or(0.0))
-			.collect::<Vec<_>>();
-
-		let trunk_diameter = {
+		self.trunk_diameter = {
 			let trunk_min = self.ground_sep - 0.5 * trunk_diameter_range;
 			let trunk_max = trunk_min + trunk_diameter_range;
 			let slice_trunk = data
 				.iter()
+				.zip(classifications)
+				.filter_map(|(&p, &c)| (c == Classification::Trunk).then_some(p))
 				.filter(|p| (trunk_min..trunk_max).contains(&(p.y)))
 				.map(|p| na::Point2::new(p.x, p.y))
 				.collect::<Vec<_>>();
@@ -375,13 +365,34 @@ impl SegmentInformation {
 			best_circle.0
 		};
 
+		let height = max - min;
+
+		let slices = ((height / slice_width) as usize) + 1;
+		let mut sets = vec![<Option<Tree>>::None; slices];
+		for pos in data
+			.iter()
+			.zip(classifications)
+			.filter_map(|(&p, &c)| (c == Classification::Crown).then_some(p))
+		{
+			let idx = ((pos.y - min) / slice_width) as usize;
+			match &mut sets[idx] {
+				Some(tree) => tree.insert(na::vector![pos.x, pos.z].into()),
+				x @ None => *x = Some(Tree::new(na::vector![pos.x, pos.z].into())),
+			}
+		}
+
+		let areas = sets
+			.into_iter()
+			.map(|set| set.map(|set| set.statistics().area).unwrap_or(0.0))
+			.collect::<Vec<_>>();
+
 		let crown_area = areas
 			.iter()
 			.copied()
 			.skip(((self.crown_sep - min) / slice_width) as usize)
 			.max_by(|a, b| a.total_cmp(b))
 			.unwrap_or(0.0);
-		self.trunk_diameter = trunk_diameter;
+
 		self.crown_diameter = approximate_diameter(crown_area);
 	}
 }

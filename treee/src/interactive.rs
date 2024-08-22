@@ -6,17 +6,22 @@ use std::{
 };
 
 use crate::{
-	calculations::{DisplayModus, SegmentData, SegmentSave},
+	calculations::{Classification, SegmentData, SegmentSave},
 	environment::{self, Saver},
-	program::Event,
+	program::{DisplaySettings, Event},
 };
 
 pub const DELETED_INDEX: u32 = 0;
 
+macro_rules! id {
+	() => {
+		(line!(), column!())
+	};
+}
+
 pub struct Interactive {
 	pub segments: HashMap<u32, SegmentData>,
 	pub deleted: SegmentData,
-	pub display: DisplayModus,
 	sender: crossbeam::channel::Sender<Event>,
 
 	pub modus: Modus,
@@ -66,6 +71,7 @@ impl SegmentData {
 		&self,
 		start: na::Point3<f32>,
 		direction: na::Vector3<f32>,
+		display_settings: &DisplaySettings,
 	) -> Option<f32> {
 		let mut found = false;
 		let mut best_dist = f32::MAX;
@@ -79,8 +85,7 @@ impl SegmentData {
 			let cos = direction.dot(&diff.normalize());
 			let sin = (1.0 - cos * cos).sqrt();
 			let distance = sin * diff_length;
-			// todo: replace 0.1 with real point size
-			if distance > 0.1 {
+			if distance > display_settings.point_cloud_environment.scale {
 				continue;
 			}
 			let l = cos * diff_length;
@@ -93,11 +98,46 @@ impl SegmentData {
 		found.then_some(best_dist)
 	}
 
-	pub fn remove(
+	pub fn remove(&mut self, center: na::Point3<f32>, radius: f32, target: &mut Self) -> bool {
+		for dim in 0..3 {
+			if ((self.min[dim] - radius)..(self.max[dim] + radius))
+				.contains(&center[dim])
+				.not()
+			{
+				return false;
+			}
+		}
+		let r2 = radius * radius;
+		let mut changed = false;
+
+		let len = self.points.len();
+		let mut del = 0;
+		{
+			let p = self.points.as_mut_slice();
+			let c = self.classifications.as_mut_slice();
+
+			for i in 0..len {
+				if (p[i] - center).norm_squared() <= r2 {
+					del += 1;
+					target.points.push(p[i]);
+					target.classifications.push(c[i]);
+					changed = true;
+				} else {
+					p.swap(i - del, i);
+					c.swap(i - del, i);
+				}
+			}
+			self.points.truncate(len - del);
+			self.classifications.truncate(len - del);
+		}
+		changed
+	}
+
+	pub fn change_classification(
 		&mut self,
 		center: na::Point3<f32>,
 		radius: f32,
-		target: &mut Vec<na::Point3<f32>>,
+		classification: Classification,
 	) -> bool {
 		for dim in 0..3 {
 			if ((self.min[dim] - radius)..(self.max[dim] + radius))
@@ -109,32 +149,63 @@ impl SegmentData {
 		}
 		let r2 = radius * radius;
 		let mut changed = false;
-		self.points.retain(|&p| {
-			if (p - center).norm_squared() > r2 {
-				return true;
-			}
-			target.push(p);
-			changed = true;
-			false
-		});
-
-		if changed {
-			self.update_min_max();
-		}
+		self.points
+			.iter()
+			.zip(self.classifications.as_mut_slice())
+			.for_each(|(&p, c)| {
+				if (p - center).norm_squared() > r2 {
+					return;
+				}
+				*c = classification;
+				changed = true;
+			});
 		changed
 	}
 
-	fn update_min_max(&mut self) {
+	fn changed(&mut self, idx: u32, sender: &crossbeam::channel::Sender<Event>) {
 		if self.points.is_empty() {
 			return;
 		}
+
 		(self.min, self.max) = (self.points[0], self.points[0]);
-		for &p in self.points.iter() {
+		let (mut trunk_min, mut trunk_max) = (f32::MAX, f32::MIN);
+		let (mut crown_min, mut crown_max) = (f32::MAX, f32::MIN);
+
+		for (&p, &c) in self.points.iter().zip(&self.classifications) {
 			for dim in 0..3 {
 				self.min[dim] = self.min[dim].min(p[dim]);
 				self.max[dim] = self.max[dim].max(p[dim]);
 			}
+			match c {
+				Classification::Ground => {},
+				Classification::Trunk => {
+					trunk_min = trunk_min.min(p.y);
+					trunk_max = trunk_max.max(p.y);
+				},
+				Classification::Crown => {
+					crown_min = crown_min.min(p.y);
+					crown_max = crown_max.max(p.y);
+				},
+			}
 		}
+		if trunk_min > trunk_max {
+			self.info.trunk_height = 0.0;
+		} else {
+			self.info.trunk_height = trunk_max - trunk_min;
+			self.info.ground_sep = trunk_min;
+		}
+		if crown_min > crown_max {
+			self.info.crown_height = 0.0;
+		} else {
+			self.info.crown_height = crown_max - crown_min;
+			self.info.crown_sep = crown_min;
+		}
+		self.update_render(idx, sender)
+	}
+
+	fn redo_diameters(&mut self) {
+		self.info
+			.redo_diameters(&self.points, &self.classifications, self.min.y, self.max.y);
 	}
 
 	#[cfg(not(target_arch = "wasm32"))]
@@ -147,17 +218,12 @@ impl SegmentData {
 		proj4rs::transform::transform(proj, &to, &mut point).unwrap();
 		self.coords = Some(point);
 	}
-
-	pub fn height(&self) -> f32 {
-		self.max.y - self.min.y
-	}
 }
 
 impl Interactive {
 	pub fn new(
 		segments: HashMap<u32, SegmentData>,
 		state: &render::State,
-		display: DisplayModus,
 		world_offset: na::Point3<f64>,
 	) -> (Self, crossbeam::channel::Receiver<Event>) {
 		let (sender, receiver) = crossbeam::channel::unbounded();
@@ -170,7 +236,6 @@ impl Interactive {
 			modus: Modus::SelectView,
 			deleted,
 			draw_radius: 0.5,
-			display,
 			sender,
 			show_deleted: false,
 			#[cfg(not(target_arch = "wasm32"))]
@@ -210,7 +275,6 @@ impl Interactive {
 			sender,
 			deleted: save.deleted,
 			draw_radius: 0.5,
-			display: DisplayModus::Segment,
 			show_deleted: false,
 			#[cfg(not(target_arch = "wasm32"))]
 			source_location: DEFAULT_LOCATION.into(),
@@ -242,9 +306,7 @@ impl Interactive {
 			});
 		}
 
-		self.display.ui(ui);
-
-		if let Modus::View(..) = self.modus {
+		if let Modus::View { .. } = self.modus {
 			// skip
 		} else {
 			ui.separator();
@@ -298,18 +360,16 @@ impl Interactive {
 
 		ui.separator();
 		ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Settings"));
-		egui::Grid::new("remove grid")
-			.num_columns(2)
-			.show(ui, |ui| {
-				ui.label("Radius");
-				ui.add(
-					egui::Slider::new(&mut self.draw_radius, 0.1..=10.0)
-						.logarithmic(true)
-						.fixed_decimals(2)
-						.suffix("m"),
-				);
-				ui.end_row();
-			});
+		egui::Grid::new(id!()).num_columns(2).show(ui, |ui| {
+			ui.label("Radius");
+			ui.add(
+				egui::Slider::new(&mut self.draw_radius, 0.1..=10.0)
+					.logarithmic(true)
+					.fixed_decimals(2)
+					.suffix("m"),
+			);
+			ui.end_row();
+		});
 		ui.checkbox(&mut self.show_deleted, "Show Deleted");
 
 		#[cfg(not(target_arch = "wasm32"))]
@@ -323,7 +383,7 @@ impl Interactive {
 				.text_edit_multiline(&mut self.source_location)
 				.lost_focus()
 			{
-				if let Modus::View(idx, _) = self.modus {
+				if let Modus::View { idx, .. } = self.modus {
 					let seg = self.segments.get_mut(&idx).unwrap();
 					match proj4rs::Proj::from_proj_string(&self.source_location) {
 						Ok(proj) => seg.update_location(self.world_offset, &proj),
@@ -333,7 +393,7 @@ impl Interactive {
 			};
 		}
 
-		if let Modus::View(..) = self.modus {
+		if let Modus::View { .. } = self.modus {
 			ui.separator();
 			ui.add_sized(
 				[ui.available_width(), 0.0],
@@ -352,103 +412,66 @@ impl Interactive {
 			Modus::SelectDraw | Modus::Draw(_) => {},
 			Modus::SelectCombine | Modus::Combine(_) => {},
 			Modus::Delete => {},
-			Modus::View(idx, ref mut hull) => {
+			Modus::View { idx, ref mut convex_hull, ref mut modus } => {
 				let segment = self.segments.get_mut(&idx).unwrap();
 
 				ui.separator();
-				ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Seperation"));
-				egui::Grid::new("sep grid").num_columns(2).show(ui, |ui| {
-					let mut changed = false;
-					let mut stopped = false;
-					let mut rel_ground = segment.info.ground_sep - segment.min.y;
-					ui.label("Ground");
-					let res = ui.add(
-						egui::Slider::new(&mut rel_ground, 0.0..=segment.height())
-							.suffix("m")
-							.fixed_decimals(2),
-					);
-					if res.changed() {
-						changed = true;
-						segment.info.ground_sep = segment.min.y + rel_ground;
-						segment.info.crown_sep =
-							segment.info.crown_sep.max(segment.info.ground_sep);
-					}
-					if res.drag_stopped() {
-						stopped = true;
-					}
-					ui.end_row();
-
-					let mut rel_crown = segment.info.crown_sep - segment.min.y;
-					ui.label("Crown");
-					let res = ui.add(
-						egui::Slider::new(&mut rel_crown, 0.0..=segment.height())
-							.suffix("m")
-							.fixed_decimals(2),
-					);
-					if res.changed() {
-						changed = true;
-						segment.info.crown_sep = segment.min.y + rel_crown;
-						segment.info.ground_sep =
-							segment.info.ground_sep.min(segment.info.crown_sep);
-					}
-					if res.drag_stopped() {
-						stopped = true;
-					}
-					ui.end_row();
-
-					if changed {
-						segment
-							.info
-							.redo_diameters(&segment.points, segment.min.y, segment.max.y);
-						segment.update_render(idx, &self.sender);
-					}
-					if let (true, Some(hull)) = (stopped, hull.as_mut()) {
-						*hull = ConvexHull::new(&segment.points, segment.info.crown_sep, state);
-					}
-				});
+				ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Modus"));
+				ui.radio_value(modus, ViewModus::Delete, "Delete");
+				ui.radio_value(modus, ViewModus::Ground, "Ground");
+				ui.radio_value(modus, ViewModus::Trunk, "Trunk");
+				ui.radio_value(modus, ViewModus::Crown, "Crown");
 
 				ui.separator();
-				ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Diameter"));
-				egui::Grid::new("diameter grid")
-					.num_columns(2)
-					.show(ui, |ui| {
-						ui.label("Trunk");
-						ui.label(format!("{}m", segment.info.trunk_diameter));
-						ui.end_row();
-
-						ui.label("Crown");
-						ui.label(format!("{}m", segment.info.crown_diameter));
-						ui.end_row();
-					});
-
-				if let Some((long, lat)) = segment.coords {
-					ui.separator();
-					ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Coordinates"));
-					egui::Grid::new("coords grid")
-						.num_columns(2)
-						.show(ui, |ui| {
-							ui.label("Lat");
-							ui.label(format_degrees(lat));
-							ui.end_row();
-
-							ui.label("Long");
-							ui.label(format_degrees(long));
-							ui.end_row();
-						});
-				}
-
-				ui.separator();
-				let mut render_hull = hull.is_some();
+				let mut render_hull = convex_hull.is_some();
 				if ui.checkbox(&mut render_hull, "Convex Hull").changed() {
-					*hull = if render_hull {
+					*convex_hull = if render_hull {
 						Some(ConvexHull::new(
 							&segment.points,
-							segment.info.crown_sep,
+							&segment.classifications,
 							state,
 						))
 					} else {
 						None
 					};
+				}
+
+				ui.separator();
+				ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Trunk"));
+				egui::Grid::new(id!()).num_columns(2).show(ui, |ui| {
+					ui.label("Height");
+					ui.label(format!("{:.2}m", segment.info.trunk_height));
+					ui.end_row();
+
+					ui.label("Diameter");
+					ui.label(format!("{:.2}m", segment.info.trunk_diameter));
+					ui.end_row();
+				});
+
+				ui.separator();
+				ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Crown"));
+				egui::Grid::new(id!()).num_columns(2).show(ui, |ui| {
+					ui.label("Height");
+					ui.label(format!("{:.2}m", segment.info.crown_height));
+					ui.end_row();
+
+					ui.label("Diameter");
+					ui.label(format!("{:.2}m", segment.info.crown_diameter));
+					ui.end_row();
+				});
+
+				if let Some((long, lat)) = segment.coords {
+					ui.separator();
+					ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Coordinates"));
+					egui::Grid::new(id!()).num_columns(2).show(ui, |ui| {
+						ui.label("Lat");
+						ui.label(format_degrees(lat));
+						ui.end_row();
+
+						ui.label("Long");
+						ui.label(format_degrees(long));
+						ui.end_row();
+					});
 				}
 
 				ui.separator();
@@ -484,7 +507,7 @@ impl Interactive {
 						saver.save();
 					});
 				}
-				if let Some(hull) = hull {
+				if let Some(hull) = convex_hull {
 					if ui
 						.add_sized(
 							[ui.available_width(), 0.0],
@@ -504,7 +527,12 @@ impl Interactive {
 		};
 	}
 
-	fn select(&self, start: na::Point3<f32>, direction: na::Vector3<f32>) -> Option<(u32, f32)> {
+	fn select(
+		&self,
+		start: na::Point3<f32>,
+		direction: na::Vector3<f32>,
+		display_settings: &DisplaySettings,
+	) -> Option<(u32, f32)> {
 		let mut potential = Vec::new();
 		for (&idx, segment) in self.segments.iter() {
 			let Some(distance) = segment.raycast_distance(start, direction) else {
@@ -519,7 +547,8 @@ impl Interactive {
 			if min > distance {
 				break;
 			}
-			let Some(d) = self.segments[&idx].exact_distance(start, direction) else {
+			let Some(d) = self.segments[&idx].exact_distance(start, direction, display_settings)
+			else {
 				continue;
 			};
 			if d < distance {
@@ -530,31 +559,38 @@ impl Interactive {
 		best.map(|idx| (idx, distance))
 	}
 
-	pub fn click(&mut self, start: na::Point3<f32>, direction: na::Vector3<f32>) {
+	pub fn click(
+		&mut self,
+		start: na::Point3<f32>,
+		direction: na::Vector3<f32>,
+		display_settings: &DisplaySettings,
+	) {
 		match &mut self.modus {
 			Modus::SelectDraw | Modus::Draw(_) => {
-				self.modus = if let Some((idx, _)) = self.select(start, direction) {
+				self.modus = if let Some((idx, _)) = self.select(start, direction, display_settings)
+				{
 					Modus::Draw(idx)
 				} else {
 					Modus::SelectDraw
 				};
 			},
 			Modus::SelectCombine | Modus::Combine(_) => {
-				self.modus = if let Some((idx, _)) = self.select(start, direction) {
+				self.modus = if let Some((idx, _)) = self.select(start, direction, display_settings)
+				{
 					Modus::Combine(idx)
 				} else {
 					Modus::SelectCombine
 				};
 			},
 			Modus::Spawn => {
-				let Some((_, distance)) = self.select(start, direction) else {
+				let Some((_, distance)) = self.select(start, direction, display_settings) else {
 					return;
 				};
 				let hit = start + direction * distance;
-				let mut points = Vec::new();
+				let mut new_segment = SegmentData::new(Vec::new());
 				let mut empty = Vec::new();
 				for (&other, segment) in self.segments.iter_mut() {
-					let seg_changed = segment.remove(hit, self.draw_radius, &mut points);
+					let seg_changed = segment.remove(hit, self.draw_radius, &mut new_segment);
 					if segment.points.is_empty() {
 						empty.push(other);
 					} else if seg_changed {
@@ -565,7 +601,7 @@ impl Interactive {
 					_ = self.sender.send(Event::RemovePointCloud(empty));
 					self.segments.remove(&empty);
 				}
-				if points.is_empty() {
+				if new_segment.points.is_empty() {
 					return;
 				}
 
@@ -573,19 +609,18 @@ impl Interactive {
 				while idx == DELETED_INDEX || self.segments.contains_key(&idx) {
 					idx = rand::random();
 				}
-				let segment = SegmentData::new(points);
-				// todo: crate render data
-				self.segments.insert(idx, segment);
+				new_segment.update_render(idx, &self.sender);
+				self.segments.insert(idx, new_segment);
 				self.modus = Modus::Draw(idx);
 			},
 			Modus::Delete => {},
 
 			Modus::SelectView => {
-				let Some((idx, _)) = self.select(start, direction) else {
+				let Some((idx, _)) = self.select(start, direction, display_settings) else {
 					return;
 				};
 				let seg = self.segments.get_mut(&idx).unwrap();
-				seg.info.redo_diameters(&seg.points, seg.min.y, seg.max.y);
+				seg.redo_diameters();
 
 				#[cfg(not(target_arch = "wasm32"))]
 				match proj4rs::Proj::from_proj_string(&self.source_location) {
@@ -593,10 +628,14 @@ impl Interactive {
 					Err(err) => eprintln!("{}", err),
 				}
 
-				self.modus = Modus::View(idx, None);
+				self.modus = Modus::View {
+					idx,
+					convex_hull: None,
+					modus: ViewModus::Delete,
+				}
 			},
 
-			Modus::View(..) => {},
+			Modus::View { .. } => {},
 		}
 	}
 
@@ -605,19 +644,19 @@ impl Interactive {
 		start: na::Point3<f32>,
 		direction: na::Vector3<f32>,
 		state: &render::State,
+		display_settings: &DisplaySettings,
 	) {
 		match self.modus {
 			Modus::Delete => {
-				let Some((_, distance)) = self.select(start, direction) else {
+				let Some((_, distance)) = self.select(start, direction, display_settings) else {
 					return;
 				};
 				let hit = start + direction * distance;
 				let mut changed = false;
 				let mut empty = Vec::new();
 				for (&other, segment) in self.segments.iter_mut() {
-					if segment.remove(hit, self.draw_radius, &mut self.deleted.points) {
-						segment.update_render(other, &self.sender);
-						segment.update_min_max();
+					if segment.remove(hit, self.draw_radius, &mut self.deleted) {
+						segment.changed(other, &self.sender);
 						changed = true;
 					}
 					if segment.points.is_empty() {
@@ -625,24 +664,23 @@ impl Interactive {
 					}
 				}
 				for empty in empty {
-					_ = self.sender.send(Event::RemovePointCloud(empty));
 					self.segments.remove(&empty);
 				}
 				if changed {
-					self.deleted.update_min_max();
-					self.deleted.update_render(DELETED_INDEX, &self.sender);
+					self.deleted.changed(DELETED_INDEX, &self.sender);
 				}
 			},
 			Modus::Draw(idx) => {
 				let Some(distance) = self
-					.select(start, direction)
+					.select(start, direction, display_settings)
 					.map(|(_, distance)| distance)
 					.or_else(|| {
 						if self.show_deleted.not() {
 							return None;
 						}
 						self.deleted.raycast_distance(start, direction)?;
-						self.deleted.exact_distance(start, direction)
+						self.deleted
+							.exact_distance(start, direction, display_settings)
 					})
 				else {
 					return;
@@ -652,9 +690,8 @@ impl Interactive {
 				let mut changed = false;
 				let mut empty = Vec::new();
 				for (&other, segment) in self.segments.iter_mut() {
-					if segment.remove(hit, self.draw_radius, &mut target.points) {
-						segment.update_render(other, &self.sender);
-						segment.update_min_max();
+					if segment.remove(hit, self.draw_radius, &mut target) {
+						segment.changed(other, &self.sender);
 						changed = true;
 					}
 					if segment.points.is_empty() {
@@ -662,68 +699,69 @@ impl Interactive {
 					}
 				}
 				if self.show_deleted {
-					if self
-						.deleted
-						.remove(hit, self.draw_radius, &mut target.points)
-					{
-						self.deleted.update_render(DELETED_INDEX, &self.sender);
-						self.deleted.update_min_max();
+					if self.deleted.remove(hit, self.draw_radius, &mut target) {
+						self.deleted.changed(DELETED_INDEX, &self.sender);
 						changed = true;
 					}
 				}
 
 				if changed {
-					target.update_render(idx, &self.sender);
-					target.update_min_max();
+					target.changed(idx, &self.sender);
 				}
 				self.segments.insert(idx, target);
 				for empty in empty {
-					_ = self.sender.send(Event::RemovePointCloud(empty));
 					self.segments.remove(&empty);
 				}
 			},
-			Modus::View(idx, ref mut hull) => {
+			Modus::View { idx, convex_hull: ref mut hull, modus } => {
 				let seg = self.segments.get_mut(&idx).unwrap();
+				let mut distance = seg.exact_distance(start, direction, display_settings);
+
 				if self.show_deleted {
-					let Some(distance) = self
+					if let Some(del_distance) = self
 						.deleted
-						.exact_distance(start, direction)
-						.or_else(|| seg.exact_distance(start, direction))
-					else {
-						return;
-					};
-					let hit = start + direction * distance;
-
-					if self.deleted.remove(hit, self.draw_radius, &mut seg.points) {
-						seg.update_render(idx, &self.sender);
-						seg.update_min_max();
-						if let Some(hull) = hull {
-							*hull = ConvexHull::new(&seg.points, seg.info.crown_sep, state);
+						.exact_distance(start, direction, display_settings)
+						.or_else(|| seg.exact_distance(start, direction, display_settings))
+					{
+						if distance.map(|d| d > del_distance).unwrap_or(true) {
+							distance = Some(del_distance);
 						}
-						self.deleted.update_render(DELETED_INDEX, &self.sender);
-						self.deleted.update_min_max();
-					}
-				} else {
-					let Some(distance) = seg.exact_distance(start, direction) else {
-						return;
 					};
+				}
+				let Some(distance) = distance else {
+					return;
+				};
+				let hit = start + direction * distance;
 
-					let hit = start + direction * distance;
-
-					if seg.remove(hit, self.draw_radius, &mut self.deleted.points) {
-						seg.update_render(idx, &self.sender);
-						seg.update_min_max();
-						if let Some(hull) = hull {
-							*hull = ConvexHull::new(&seg.points, seg.info.crown_sep, state);
+				let changed = match modus {
+					ViewModus::Delete => {
+						if seg.remove(hit, self.draw_radius, &mut self.deleted) {
+							self.deleted.changed(DELETED_INDEX, &self.sender);
+							true
+						} else {
+							false
 						}
-
-						self.deleted.update_render(DELETED_INDEX, &self.sender);
-						self.deleted.update_min_max();
+					},
+					ViewModus::Ground => {
+						seg.change_classification(hit, self.draw_radius, Classification::Ground)
+					},
+					ViewModus::Trunk => {
+						seg.change_classification(hit, self.draw_radius, Classification::Trunk)
+					},
+					ViewModus::Crown => {
+						seg.change_classification(hit, self.draw_radius, Classification::Crown)
+					},
+				};
+				if changed {
+					seg.changed(idx, &self.sender);
+					seg.redo_diameters();
+					if let Some(hull) = hull {
+						*hull = ConvexHull::new(&seg.points, &seg.classifications, state);
 					}
 				}
 			},
 			Modus::Combine(idx) => {
-				let Some((other, _)) = self.select(start, direction) else {
+				let Some((other, _)) = self.select(start, direction, display_settings) else {
 					return;
 				};
 				if other == idx {
@@ -733,8 +771,7 @@ impl Interactive {
 				let mut other = self.segments.remove(&other).unwrap();
 				let target = self.segments.get_mut(&idx).unwrap();
 				target.points.append(&mut other.points);
-				target.update_render(idx, &self.sender);
-				target.update_min_max();
+				target.changed(idx, &self.sender);
 			},
 			_ => {},
 		}
@@ -750,7 +787,19 @@ pub enum Modus {
 	Combine(u32),
 	Spawn,
 	Delete,
-	View(u32, Option<ConvexHull>),
+	View {
+		idx: u32,
+		modus: ViewModus,
+		convex_hull: Option<ConvexHull>,
+	},
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ViewModus {
+	Delete,
+	Ground,
+	Trunk,
+	Crown,
 }
 
 #[derive(Debug)]
@@ -761,7 +810,11 @@ pub struct ConvexHull {
 
 impl ConvexHull {
 	// https://tildesites.bowdoin.edu/~ltoma/teaching/cs3250-CompGeom/spring17/Lectures/cg-hull3d.pdf
-	fn new(points: &[na::Point3<f32>], min_height: f32, state: &render::State) -> Self {
+	fn new(
+		points: &[na::Point3<f32>],
+		classifications: &[Classification],
+		state: &render::State,
+	) -> Self {
 		#[derive(Debug, Clone, Copy)]
 		struct Point {
 			idx: usize,
@@ -780,15 +833,16 @@ impl ConvexHull {
 			}
 		}
 
-		let points = {
-			let mut vec = Vec::new();
-			for (idx, &p) in points.iter().enumerate() {
-				if p.y >= min_height {
-					vec.push(Point { idx, pos: p });
-				}
-			}
-			vec
-		};
+		let points = points
+			.iter()
+			.copied()
+			.enumerate()
+			.zip(classifications)
+			.filter_map(|((idx, pos), &c)| {
+				(c == Classification::Crown).then_some(Point { idx, pos })
+			})
+			.collect::<Vec<_>>();
+
 		if points.len() < 10 {
 			return Self {
 				faces: Vec::new(),

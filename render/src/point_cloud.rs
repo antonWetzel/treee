@@ -2,8 +2,8 @@ use nalgebra as na;
 use wgpu::util::DeviceExt;
 
 use crate::{
-	depth_texture::DepthTexture, point_base_description, point_description, point_property_description, Camera3DGPU,
-	Lookup, PointEdge, RenderPass, State,
+	depth_texture::DepthTexture, point_base_description, point_description,
+	point_property_description, Camera3DGPU, Lookup, PointEdge, RenderPass, State,
 };
 
 #[derive(Debug)]
@@ -26,17 +26,18 @@ impl PointCloudState {
 		let shader = state
 			.device
 			.create_shader_module(wgpu::include_wgsl!("point_cloud.wgsl"));
-		let render_pipeline_layout = state
-			.device
-			.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-				label: Some("Render Pipeline Layout"),
-				bind_group_layouts: &[
-					&Camera3DGPU::get_layout(state),
-					&PointCloudEnvironment::get_layout(state),
-					&Lookup::get_layout(state),
-				],
-				push_constant_ranges: &[],
-			});
+		let render_pipeline_layout =
+			state
+				.device
+				.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+					label: Some("Render Pipeline Layout"),
+					bind_group_layouts: &[
+						&Camera3DGPU::get_layout(state),
+						&PointCloudEnvironment::get_layout(state),
+						&Lookup::get_layout(state),
+					],
+					push_constant_ranges: &[],
+				});
 
 		let pipeline = state
 			.device
@@ -141,15 +142,19 @@ impl PointCloud {
 		Self { buffer, instances: vertices.len() as u32 }
 	}
 
-	pub fn render<'a>(&'a self, point_cloud_pass: &mut PointCloudPass<'a>, property: &'a PointCloudProperty) {
+	pub fn render<'a>(
+		&'a self,
+		point_cloud_pass: &mut PointCloudPass<'a>,
+		property: &'a PointCloudProperty,
+	) {
 		point_cloud_pass
 			.0
 			.set_vertex_buffer(1, self.buffer.slice(..));
 		point_cloud_pass.0.set_vertex_buffer(
 			2,
-			property
-				.buffer
-				.slice(0..(self.instances * std::mem::size_of::<u32>() as u32) as wgpu::BufferAddress),
+			property.buffer.slice(
+				0..(self.instances * std::mem::size_of::<u32>() as u32) as wgpu::BufferAddress,
+			),
 		);
 		if property.length != 0 {
 			assert!(

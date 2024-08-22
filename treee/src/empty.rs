@@ -5,6 +5,7 @@ use wasm_bindgen::prelude::*;
 
 pub struct Empty {
 	sender: crossbeam::channel::Sender<Event>,
+	#[cfg(target_arch = "wasm32")]
 	progress: std::sync::Arc<std::sync::atomic::AtomicUsize>,
 }
 
@@ -12,10 +13,14 @@ impl Empty {
 	pub fn new() -> (Self, crossbeam::channel::Receiver<Event>) {
 		let (sender, receiver) = crossbeam::channel::unbounded();
 		_ = sender.send(Event::ClearPointClouds);
-		(Self {
-			sender,
-			progress: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(1000)),
-		}, receiver)
+		(
+			Self {
+				sender,
+				#[cfg(target_arch = "wasm32")]
+				progress: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(1000)),
+			},
+			receiver,
+		)
 	}
 
 	pub fn ui(&self, ui: &mut egui::Ui) {
@@ -29,8 +34,7 @@ impl Empty {
 		#[cfg(target_arch = "wasm32")]
 		{
 			ui.separator();
-			let load  = ui.add_sized([ui.available_width(), 0.0], egui::Button::new("Example"));
-
+			let load = ui.add_sized([ui.available_width(), 0.0], egui::Button::new("Example"));
 
 			if load.clicked() {
 				let sender = self.sender.clone();
@@ -72,7 +76,13 @@ async fn fetch_example(
 
 	let resp: Response = resp_value.dyn_into().unwrap();
 	let headers = resp.headers();
-	let length: usize = headers.get("Content-Length").unwrap().as_ref().map_or("0s", |v| v).parse().unwrap();
+	let length: usize = headers
+		.get("Content-Length")
+		.unwrap()
+		.as_ref()
+		.map_or("0s", |v| v)
+		.parse()
+		.unwrap();
 	let data = if length == 0 {
 		let blob = JsFuture::from(resp.blob()?).await?;
 		let blob: web_sys::Blob = blob.dyn_into().unwrap();
@@ -80,11 +90,15 @@ async fn fetch_example(
 		let array = Uint8Array::new(&array);
 		array.to_vec()
 	} else {
-		let reader: ReadableStreamDefaultReader = resp.body().unwrap().get_reader().dyn_into().unwrap();
+		let reader: ReadableStreamDefaultReader =
+			resp.body().unwrap().get_reader().dyn_into().unwrap();
 		let mut data = Vec::with_capacity(length);
 		loop {
 			let chunk = JsFuture::from(reader.read()).await?;
-			let done = js_sys::Reflect::get(&chunk, &JsValue::from_str("done")).unwrap().as_bool().unwrap();
+			let done = js_sys::Reflect::get(&chunk, &JsValue::from_str("done"))
+				.unwrap()
+				.as_bool()
+				.unwrap();
 			if done {
 				break;
 			}
@@ -97,13 +111,11 @@ async fn fetch_example(
 		progress.store(1000, std::sync::atomic::Ordering::Relaxed);
 		data
 	};
-	
+
 	_ = sender.send(Event::Load(environment::Source::from_data(
 		data,
 		"example.laz".into(),
 	)));
 
 	return Ok(());
-
-
 }

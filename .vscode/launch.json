@@ -7,48 +7,22 @@
 		{
 			"type": "lldb",
 			"request": "launch",
-			"name": "Debug import",
-			"program": "${workspaceFolder}/target/debug/importer",
+			"name": "Debug",
+			"program": "${workspaceFolder}/target/debug/treee",
 			"sourceLanguages": [
 				"rust"
 			],
-			"cwd": "${workspaceFolder}/cwd",
-			"preLaunchTask": "cargo debug importer",
-		},
-		{
-			"type": "lldb",
-			"request": "launch",
-			"name": "Debug viewer",
-			"program": "${workspaceFolder}/target/debug/viewer",
-			"sourceLanguages": [
-				"rust"
-			],
-			"cwd": "${workspaceFolder}/cwd",
-			"args": [],
-			"preLaunchTask": "cargo debug viewer",
+			"preLaunchTask": "cargo debug",
 		},
 		{
 			"type": "lldb",
 			"request": "launch",
 			"name": "Release import",
-			"program": "${workspaceFolder}/target/release/importer",
+			"program": "${workspaceFolder}/target/release/treee",
 			"sourceLanguages": [
 				"rust"
 			],
-			"cwd": "${workspaceFolder}/cwd",
-			"preLaunchTask": "cargo release importer",
-		},
-		{
-			"type": "lldb",
-			"request": "launch",
-			"name": "Release viewer",
-			"program": "${workspaceFolder}/target/release/viewer",
-			"sourceLanguages": [
-				"rust"
-			],
-			"cwd": "${workspaceFolder}/cwd",
-			"args": [],
-			"preLaunchTask": "cargo release viewer",
+			"preLaunchTask": "cargo release",
 		},
 	],
 }

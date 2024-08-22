@@ -9,10 +9,10 @@
 			],
 			"args": [
 				"build",
-				"--package=viewer"
+				"--package=treee"
 			],
 			"group": "build",
-			"label": "cargo debug viewer"
+			"label": "cargo debug"
 		},
 		{
 			"type": "shell",
@@ -23,37 +23,10 @@
 			"args": [
 				"build",
 				"--release",
-				"--package=viewer"
+				"--package=treee"
 			],
 			"group": "build",
-			"label": "cargo release viewer"
-		},
-		{
-			"type": "shell",
-			"command": "cargo",
-			"problemMatcher": [
-				"$rustc"
-			],
-			"args": [
-				"build",
-				"--package=importer"
-			],
-			"group": "build",
-			"label": "cargo debug importer"
-		},
-		{
-			"type": "shell",
-			"command": "cargo",
-			"problemMatcher": [
-				"$rustc"
-			],
-			"args": [
-				"build",
-				"--release",
-				"--package=importer"
-			],
-			"group": "build",
-			"label": "cargo release importer"
+			"label": "cargo release"
 		},
 	]
 }

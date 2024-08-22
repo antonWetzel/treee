@@ -1,4 +1,4 @@
-use crate::calculations::{Calculations, DisplayModus};
+use crate::calculations::Calculations;
 use crate::camera::Camera;
 use crate::empty::Empty;
 use crate::interactive::{self, Interactive, DELETED_INDEX};
@@ -69,12 +69,12 @@ struct Chunk {
 }
 
 impl Chunk {
-	pub fn render<'a>(&'a self, display: DisplayModus, point_cloud_pass: &mut PointCloudPass<'a>) {
-		match display {
-			DisplayModus::Segment => self.point_cloud.render(point_cloud_pass, &self.segment),
-			DisplayModus::Property => self
-				.point_cloud
-				.render(point_cloud_pass, &self.property.as_ref().unwrap()),
+	pub fn render<'a>(&'a self, class: bool, point_cloud_pass: &mut PointCloudPass<'a>) {
+		if class {
+			self.point_cloud
+				.render(point_cloud_pass, &self.property.as_ref().unwrap());
+		} else {
+			self.point_cloud.render(point_cloud_pass, &self.segment);
 		}
 	}
 }
@@ -244,7 +244,7 @@ impl Program {
 					);
 
 					for (_, chunk) in self.chunks.iter() {
-						chunk.render(DisplayModus::Segment, point_cloud_pass);
+						chunk.render(false, point_cloud_pass);
 					}
 					drop(render_pass);
 
@@ -254,7 +254,7 @@ impl Program {
 					drop(render_pass);
 				});
 			},
-			&World::Calculations(Calculations { display, .. }) => {
+			&World::Calculations(Calculations { .. }) => {
 				self.window.render(&self.state, |context| {
 					let command_encoder = context.encoder();
 					let commands = self.egui_wgpu.update_buffers(
@@ -275,7 +275,7 @@ impl Program {
 					);
 
 					for (_, chunk) in self.chunks.iter() {
-						chunk.render(display, point_cloud_pass);
+						chunk.render(false, point_cloud_pass);
 					}
 					drop(render_pass);
 
@@ -311,17 +311,19 @@ impl Program {
 							point_cloud_pass.lookup(&self.display_settings.lookup);
 						}
 					}
-					if let interactive::Modus::View(idx, _) = interactive.modus {
+					if let interactive::Modus::View { idx, .. } = interactive.modus {
 						let chunk = self.chunks.get(&idx).unwrap();
-						chunk.render(interactive.display, point_cloud_pass);
+						chunk.render(true, point_cloud_pass);
 					} else {
 						for (_, chunk) in
 							self.chunks.iter().filter(|&(&idx, _)| idx != DELETED_INDEX)
 						{
-							chunk.render(interactive.display, point_cloud_pass);
+							chunk.render(false, point_cloud_pass);
 						}
 					}
-					if let interactive::Modus::View(idx, mesh) = &interactive.modus {
+					if let interactive::Modus::View { idx, convex_hull: mesh, .. } =
+						&interactive.modus
+					{
 						if let Some(mesh) = mesh {
 							let lines_pass = self
 								.lines_state
@@ -419,7 +421,6 @@ impl Program {
 							let (interactive, receiver) = Interactive::new(
 								shared.segments.into_inner().unwrap(),
 								&self.state,
-								calculations.display,
 								calculations.world_offset,
 							);
 							self.world = World::Interactive(interactive);
@@ -513,6 +514,7 @@ impl Program {
 					self.display_settings
 						.camera
 						.ray_direction(self.mouse.position(), self.window.get_size()),
+					&self.display_settings,
 				);
 			},
 			(input::MouseButton::Right, input::State::Pressed) => {
@@ -525,6 +527,7 @@ impl Program {
 						.camera
 						.ray_direction(self.mouse.position(), self.window.get_size()),
 					&self.state,
+					&self.display_settings,
 				);
 			},
 			_ => {},
@@ -550,6 +553,7 @@ impl Program {
 					.camera
 					.ray_direction(self.mouse.position(), self.window.get_size()),
 				&self.state,
+				&self.display_settings,
 			);
 		}
 	}
