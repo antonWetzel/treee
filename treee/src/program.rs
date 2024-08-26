@@ -86,6 +86,32 @@ pub struct DisplaySettings {
 	pub camera: Camera,
 }
 
+impl DisplaySettings {
+	pub fn ui(&mut self, ui: &mut egui::Ui, state: &render::State) {
+		ui.add_sized(
+			[ui.available_width(), 0.0],
+			egui::Label::new("Display Settings"),
+		);
+		egui::Grid::new("display grid").show(ui, |ui| {
+			let mut changed = false;
+			ui.label("Point Size");
+			changed |= ui
+				.add(
+					egui::Slider::new(&mut self.point_cloud_environment.scale, 0.01..=1.0)
+						.logarithmic(true)
+						.max_decimals(2),
+				)
+				.changed();
+
+			ui.end_row();
+
+			if changed {
+				self.point_cloud_environment.update(state);
+			}
+		});
+	}
+}
+
 pub enum World {
 	Empty(Empty),
 	Loading(Loading),
@@ -201,6 +227,8 @@ impl Program {
 						World::Calculations(calculations) => calculations.ui(ui),
 						World::Interactive(interactive) => interactive.ui(ui, &self.state),
 					}
+					ui.separator();
+					self.display_settings.ui(ui, &self.state);
 				});
 		});
 		self.egui_winit

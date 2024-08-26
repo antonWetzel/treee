@@ -112,24 +112,23 @@ impl SegmentData {
 
 		let len = self.points.len();
 		let mut del = 0;
-		{
-			let p = self.points.as_mut_slice();
-			let c = self.classifications.as_mut_slice();
+		let p = self.points.as_mut_slice();
+		let c = self.classifications.as_mut_slice();
 
-			for i in 0..len {
-				if (p[i] - center).norm_squared() <= r2 {
-					del += 1;
-					target.points.push(p[i]);
-					target.classifications.push(c[i]);
-					changed = true;
-				} else {
-					p.swap(i - del, i);
-					c.swap(i - del, i);
-				}
+		for i in 0..len {
+			if (p[i] - center).norm_squared() <= r2 {
+				del += 1;
+				target.points.push(p[i]);
+				target.classifications.push(c[i]);
+				changed = true;
+			} else {
+				p.swap(i - del, i);
+				c.swap(i - del, i);
 			}
-			self.points.truncate(len - del);
-			self.classifications.truncate(len - del);
 		}
+		self.points.truncate(len - del);
+		self.classifications.truncate(len - del);
+
 		changed
 	}
 
@@ -480,9 +479,11 @@ impl Interactive {
 					.add_sized([ui.available_width(), 0.0], egui::Button::new("Points"))
 					.clicked()
 				{
-					let points = self.segments.get(&idx).unwrap().points.clone();
+					let seg = self.segments.get(&idx).unwrap();
+					let points = seg.points.clone();
+					let classifications = seg.classifications.clone();
 					environment::Saver::new("points.ply", move |mut saver| {
-						save_points(&mut saver, &points).unwrap();
+						save_points(&mut saver, &points, &classifications, |_| true).unwrap();
 						saver.save();
 					})
 				}
@@ -519,6 +520,27 @@ impl Interactive {
 						let faces = hull.faces.clone();
 						environment::Saver::new("convex_hull.ply", move |mut saver| {
 							ConvexHull::save(&mut saver, &points, &faces).unwrap();
+							saver.save();
+						})
+					}
+				}
+				for (name, file, classification) in [
+					("Crown", "crown.ply", Classification::Crown),
+					("Trunk", "trunk.ply", Classification::Trunk),
+					("Ground", "ground.ply", Classification::Ground),
+				] {
+					if ui
+						.add_sized([ui.available_width(), 0.0], egui::Button::new(name))
+						.clicked()
+					{
+						let seg = self.segments.get(&idx).unwrap();
+						let points = seg.points.clone();
+						let classifications = seg.classifications.clone();
+						environment::Saver::new(file, move |mut saver| {
+							save_points(&mut saver, &points, &classifications, |c| {
+								c == classification
+							})
+							.unwrap();
 							saver.save();
 						})
 					}
@@ -733,7 +755,16 @@ impl Interactive {
 				};
 				let hit = start + direction * distance;
 
-				let changed = match modus {
+				let mut changed = false;
+
+				if self.show_deleted && modus != ViewModus::Delete {
+					if self.deleted.remove(hit, self.draw_radius, seg) {
+						self.deleted.changed(DELETED_INDEX, &self.sender);
+						changed = true;
+					}
+				}
+
+				changed |= match modus {
 					ViewModus::Delete => {
 						if seg.remove(hit, self.draw_radius, &mut self.deleted) {
 							self.deleted.changed(DELETED_INDEX, &self.sender);
@@ -992,18 +1023,28 @@ fn format_degrees(val: f64) -> String {
 	format!("{:0>2}°{:0>2}'{:0>4.1}\"", deg, min, sec)
 }
 
-pub fn save_points(saver: &mut Saver, points: &[na::Point3<f32>]) -> Result<(), std::io::Error> {
+pub fn save_points(
+	saver: &mut Saver,
+	points: &[na::Point3<f32>],
+	classifications: &[Classification],
+	valid: impl Fn(Classification) -> bool,
+) -> Result<(), std::io::Error> {
 	use std::io::Write;
 
+	let count = classifications.into_iter().filter(|&&c| valid(c)).count();
 	let mut writer = saver.inner();
 	writeln!(writer, "ply")?;
 	writeln!(writer, "format ascii 1.0")?;
-	writeln!(writer, "element vertex {}", points.len())?;
+	writeln!(writer, "element vertex {}", count)?;
 	writeln!(writer, "property float x")?;
 	writeln!(writer, "property float y")?;
 	writeln!(writer, "property float z")?;
 	writeln!(writer, "end_header")?;
-	for &p in points {
+	for p in points
+		.into_iter()
+		.zip(classifications)
+		.filter_map(|(&p, &c)| (valid(c).then_some(p)))
+	{
 		writeln!(writer, "{} {} {}", p.x, -p.z, p.y)?;
 	}
 	Ok(())
