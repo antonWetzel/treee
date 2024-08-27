@@ -128,7 +128,10 @@ impl Laz {
 		self.chunks.len()
 	}
 
-	pub fn read(self, cb: impl Fn(Chunk) + std::marker::Sync) -> Result<(), Error> {
+	pub fn read(
+		self,
+		cb: impl Fn(Chunk) -> Result<(), Error> + std::marker::Sync,
+	) -> Result<(), Error> {
 		self.chunks
 			.into_iter()
 			.par_bridge()
@@ -170,8 +173,7 @@ impl Laz {
 						scale: self.scale,
 						center: self.center,
 					};
-					cb(chunk);
-					Ok(())
+					cb(chunk)
 				},
 			)
 			.find_any(|r| r.is_err())

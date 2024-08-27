@@ -1,3 +1,4 @@
+use crossbeam::channel::SendError;
 use nalgebra as na;
 use std::{
 	collections::HashMap,
@@ -8,7 +9,7 @@ use std::{
 	},
 };
 
-use crate::{environment, laz::Laz, program::Event};
+use crate::{environment, laz::Laz, program::Event, Error};
 
 #[derive(Debug)]
 pub struct Loading {
@@ -40,7 +41,7 @@ impl Loading {
 
 		let shared = Shared {
 			slices: Mutex::new(HashMap::new()),
-			progress: AtomicUsize::new(1000),
+			progress: AtomicUsize::new(0),
 			world_offset: laz.world_offset,
 			sender,
 		};
@@ -92,7 +93,7 @@ impl Loading {
 
 fn spawn_load_worker(laz: Laz, shared: Arc<Shared>) {
 	rayon::spawn(move || {
-		laz.read(|chunk| {
+		_ = laz.read(|chunk| {
 			let points = chunk.read();
 
 			if points.is_empty().not() {
@@ -104,16 +105,14 @@ fn spawn_load_worker(laz: Laz, shared: Arc<Shared>) {
 				drop(slices);
 
 				let segment = vec![0; points.len()];
-				_ = shared.sender.send(Event::PointCloud {
-					idx: None,
-					data: points,
-					segment,
-					property: None,
-				});
+				shared
+					.sender
+					.send(Event::PointCloud { idx: None, data: points, segment })
+					.map_err(|_| Error::CorruptFile)?;
 			}
 
 			shared.progress.fetch_add(1, Ordering::Relaxed);
-		})
-		.unwrap();
+			Ok(())
+		});
 	});
 }

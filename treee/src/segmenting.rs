@@ -222,7 +222,6 @@ fn segmentation(
 					idx: None,
 					data: slice.to_vec(),
 					segment: segment_data,
-					property: None,
 				});
 			}
 			segmenting

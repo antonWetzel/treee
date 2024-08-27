@@ -1,7 +1,7 @@
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [workspace]
-members = ["input", "render", "treee", "treee-wasm"]
+members = ["input", "render", "treee", "treee-wasm", "k-nearest"]
 default-members = ["treee"]
 
 resolver = "2"
@@ -18,6 +18,7 @@ rust-version = "1.73"
 render = { path = "./render" }
 input = { path = "./input" }
 treee = { path = "./treee" }
+k-nearest = { path = "./k-nearest" }
 
 pollster = "0.3"
 rfd = "0.14"

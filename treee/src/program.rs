@@ -1,7 +1,7 @@
 use crate::calculations::Calculations;
 use crate::camera::Camera;
 use crate::empty::Empty;
-use crate::interactive::{self, Interactive, DELETED_INDEX};
+use crate::interactive::{self, Interactive, PropertyDisplay, DELETED_INDEX};
 use crate::loading::Loading;
 use crate::segmenting::{Segmenting, DEFAULT_MAX_DISTANCE};
 use crate::{environment, Error, EventLoop};
@@ -22,13 +22,8 @@ pub enum Event {
 		idx: Option<u32>,
 		data: Vec<na::Point3<f32>>,
 		segment: Vec<u32>,
-		property: Option<Vec<u32>>,
 	},
 	RemovePointCloud(u32),
-	PointCloudProperty {
-		idx: u32,
-		data: Vec<u32>,
-	},
 	Load(environment::Source),
 	Segmented {
 		segments: HashMap<u32, Vec<na::Point3<f32>>>,
@@ -65,17 +60,11 @@ pub struct Program {
 struct Chunk {
 	point_cloud: render::PointCloud,
 	segment: render::PointCloudProperty,
-	property: Option<render::PointCloudProperty>,
 }
 
 impl Chunk {
-	pub fn render<'a>(&'a self, class: bool, point_cloud_pass: &mut PointCloudPass<'a>) {
-		if class {
-			self.point_cloud
-				.render(point_cloud_pass, &self.property.as_ref().unwrap());
-		} else {
-			self.point_cloud.render(point_cloud_pass, &self.segment);
-		}
+	pub fn render<'a>(&'a self, point_cloud_pass: &mut PointCloudPass<'a>) {
+		self.point_cloud.render(point_cloud_pass, &self.segment);
 	}
 }
 
@@ -272,7 +261,7 @@ impl Program {
 					);
 
 					for (_, chunk) in self.chunks.iter() {
-						chunk.render(false, point_cloud_pass);
+						chunk.render(point_cloud_pass);
 					}
 					drop(render_pass);
 
@@ -303,7 +292,7 @@ impl Program {
 					);
 
 					for (_, chunk) in self.chunks.iter() {
-						chunk.render(false, point_cloud_pass);
+						chunk.render(point_cloud_pass);
 					}
 					drop(render_pass);
 
@@ -339,25 +328,27 @@ impl Program {
 							point_cloud_pass.lookup(&self.display_settings.lookup);
 						}
 					}
-					if let interactive::Modus::View { idx, .. } = interactive.modus {
-						let chunk = self.chunks.get(&idx).unwrap();
-						chunk.render(true, point_cloud_pass);
+					if let interactive::Modus::View(ref view) = interactive.modus {
+						let property = match view.display {
+							PropertyDisplay::Classification => &view.properties.classification,
+							PropertyDisplay::Curve => &view.properties.curve,
+							PropertyDisplay::Expansion => &view.properties.expansion,
+							PropertyDisplay::Height => &view.properties.height,
+						};
+						view.cloud.render(point_cloud_pass, property);
 					} else {
 						for (_, chunk) in
 							self.chunks.iter().filter(|&(&idx, _)| idx != DELETED_INDEX)
 						{
-							chunk.render(false, point_cloud_pass);
+							chunk.render(point_cloud_pass);
 						}
 					}
-					if let interactive::Modus::View { idx, convex_hull: mesh, .. } =
-						&interactive.modus
-					{
-						if let Some(mesh) = mesh {
+					if let interactive::Modus::View(view) = &interactive.modus {
+						if let Some(mesh) = &view.convex_hull {
 							let lines_pass = self
 								.lines_state
 								.render(&mut render_pass, self.display_settings.camera.gpu());
-							let seg = self.chunks.get(idx).unwrap();
-							mesh.lines.render(&seg.point_cloud, lines_pass);
+							mesh.lines.render(&view.cloud, lines_pass);
 						};
 					}
 
@@ -467,7 +458,7 @@ impl Program {
 					self.chunks.clear();
 				},
 
-				Event::PointCloud { idx, data, segment, property } => {
+				Event::PointCloud { idx, data, segment } => {
 					let idx = idx.unwrap_or_else(|| {
 						let mut idx = rand::random();
 						while self.chunks.contains_key(&idx) {
@@ -480,16 +471,8 @@ impl Program {
 						Chunk {
 							point_cloud: render::PointCloud::new(&self.state, &data),
 							segment: render::PointCloudProperty::new(&self.state, &segment),
-							property: property.map(|property| {
-								render::PointCloudProperty::new(&self.state, &property)
-							}),
 						},
 					);
-				},
-				Event::PointCloudProperty { idx, data } => {
-					if let Some(chunk) = self.chunks.get_mut(&idx) {
-						chunk.property = Some(render::PointCloudProperty::new(&self.state, &data));
-					}
 				},
 				Event::RemovePointCloud(idx) => {
 					self.chunks.remove(&idx);
@@ -543,6 +526,7 @@ impl Program {
 						.camera
 						.ray_direction(self.mouse.position(), self.window.get_size()),
 					&self.display_settings,
+					&self.state,
 				);
 			},
 			(input::MouseButton::Right, input::State::Pressed) => {

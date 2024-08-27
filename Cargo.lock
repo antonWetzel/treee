@@ -1377,6 +1377,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "k-nearest"
+version = "0.2.0"
+dependencies = [
+ "bytemuck",
+ "nalgebra",
+]
+
+[[package]]
 name = "khronos-egl"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2617,6 +2625,7 @@ dependencies = [
  "egui-winit",
  "input",
  "js-sys",
+ "k-nearest",
  "laz",
  "log",
  "nalgebra",

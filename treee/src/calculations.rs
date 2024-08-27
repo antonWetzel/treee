@@ -1,3 +1,4 @@
+use core::f32;
 use std::{
 	collections::HashMap,
 	sync::{
@@ -11,6 +12,8 @@ use nalgebra as na;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use crate::{interactive::DELETED_INDEX, program::Event, segmenting::Tree};
+
+const SLICE_WIDTH: f32 = 0.1;
 
 pub struct Calculations {
 	pub shared: Arc<Shared>,
@@ -106,7 +109,6 @@ impl Calculations {
 						idx: Some(idx),
 						data: seg.points.clone(),
 						segment: vec![idx as u32; seg.points.len()],
-						property: Some(seg.property()),
 					};
 					loop {
 						match sender.try_send(event) {
@@ -193,7 +195,6 @@ impl SegmentData {
 			idx: Some(idx),
 			data: self.points.clone(),
 			segment: vec![idx as u32; self.points.len()],
-			property: Some(self.property()),
 		});
 	}
 }
@@ -213,32 +214,29 @@ impl SegmentInformation {
 	pub fn new(data: &[na::Point3<f32>], min: f32, max: f32) -> Self {
 		let height = max - min;
 
-		let slice_width = 0.1;
 		let ground_max_search_height = 1.0;
 		let ground_min_area_scale = 1.5;
 		let trunk_diameter_height = 1.3;
 		let trunk_diameter_range = 0.2;
 		let crown_diameter_difference = 1.0;
 
-		let slices = ((height / slice_width) as usize) + 1;
+		let slices = ((height / SLICE_WIDTH) as usize) + 1;
 		let mut sets = vec![<Option<Tree>>::None; slices];
 		for pos in data.iter().copied() {
-			let idx = ((pos.y - min) / slice_width) as usize;
+			let idx = ((pos.y - min) / SLICE_WIDTH) as usize;
 			match &mut sets[idx] {
 				Some(tree) => tree.insert(na::vector![pos.x, pos.z].into()),
 				x @ None => *x = Some(Tree::new(na::vector![pos.x, pos.z].into())),
 			}
 		}
 
-		let areas = sets
-			.into_iter()
-			.map(|set| set.map(|set| set.statistics().area).unwrap_or(0.0))
-			.collect::<Vec<_>>();
+		let areas = get_slices(min, height, data, |_| true);
+
 		let min_area = areas
 			.iter()
 			.copied()
-			.skip((1.0 / slice_width) as usize)
-			.take((10.0 / slice_width) as usize)
+			.skip((1.0 / SLICE_WIDTH) as usize)
+			.take((10.0 / SLICE_WIDTH) as usize)
 			.min_by(|a, b| a.total_cmp(b))
 			.unwrap_or(0.5)
 			.max(0.5);
@@ -246,7 +244,7 @@ impl SegmentInformation {
 			.iter()
 			.copied()
 			.enumerate()
-			.take((ground_max_search_height / slice_width) as usize)
+			.take((ground_max_search_height / SLICE_WIDTH) as usize)
 			.find(|&(_, area)| area > min_area * ground_min_area_scale)
 			.map(|(idx, _)| idx);
 		let ground_sep = if let Some(ground) = ground {
@@ -263,7 +261,7 @@ impl SegmentInformation {
 		};
 
 		let (trunk_diameter, trunk_max) = {
-			let trunk_min = ground_sep as f32 * slice_width + trunk_diameter_height
+			let trunk_min = ground_sep as f32 * SLICE_WIDTH + trunk_diameter_height
 				- 0.5 * trunk_diameter_range;
 			let trunk_max = trunk_min + trunk_diameter_range;
 			let slice_trunk = data
@@ -293,7 +291,7 @@ impl SegmentInformation {
 				}
 			}
 
-			(best_circle.0, (trunk_max / slice_width).ceil() as usize)
+			(best_circle.0, (trunk_max / SLICE_WIDTH).ceil() as usize)
 		};
 
 		let min_crown_area =
@@ -307,8 +305,8 @@ impl SegmentInformation {
 			.map(|(index, _)| index)
 			.unwrap_or(0);
 
-		let ground_sep = min + ground_sep as f32 * slice_width;
-		let crown_sep = min + crown_sep as f32 * slice_width;
+		let ground_sep = min + ground_sep as f32 * SLICE_WIDTH;
+		let crown_sep = min + crown_sep as f32 * SLICE_WIDTH;
 
 		Self {
 			trunk_height: crown_sep - ground_sep,
@@ -326,9 +324,11 @@ impl SegmentInformation {
 		classifications: &[Classification],
 		min: f32,
 		max: f32,
-	) {
-		let slice_width = 0.1;
+		calc_curve: bool,
+	) -> CalculationProperties {
 		let trunk_diameter_range = 0.2;
+		let neighbors_count = 31;
+		let neighbors_max_distance = f32::MAX;
 
 		self.trunk_diameter = {
 			let trunk_min = self.ground_sep - 0.5 * trunk_diameter_range;
@@ -367,34 +367,175 @@ impl SegmentInformation {
 
 		let height = max - min;
 
-		let slices = ((height / slice_width) as usize) + 1;
+		let slices = ((height / SLICE_WIDTH) as usize) + 1;
 		let mut sets = vec![<Option<Tree>>::None; slices];
 		for pos in data
 			.iter()
 			.zip(classifications)
 			.filter_map(|(&p, &c)| (c == Classification::Crown).then_some(p))
 		{
-			let idx = ((pos.y - min) / slice_width) as usize;
+			let idx = ((pos.y - min) / SLICE_WIDTH) as usize;
 			match &mut sets[idx] {
 				Some(tree) => tree.insert(na::vector![pos.x, pos.z].into()),
 				x @ None => *x = Some(Tree::new(na::vector![pos.x, pos.z].into())),
 			}
 		}
 
-		let areas = sets
-			.into_iter()
-			.map(|set| set.map(|set| set.statistics().area).unwrap_or(0.0))
-			.collect::<Vec<_>>();
+		let areas = get_slices(min, height, &data, |idx| {
+			classifications[idx] == Classification::Crown
+		});
 
 		let crown_area = areas
 			.iter()
 			.copied()
-			.skip(((self.crown_sep - min) / slice_width) as usize)
+			.skip(((self.crown_sep - min) / SLICE_WIDTH) as usize)
 			.max_by(|a, b| a.total_cmp(b))
 			.unwrap_or(0.0);
 
 		self.crown_diameter = approximate_diameter(crown_area);
+		let slices = areas
+			.into_iter()
+			.map(|area| approximate_diameter(area) / self.crown_diameter)
+			.collect::<Vec<_>>();
+
+		let expansion = data
+			.iter()
+			.copied()
+			.map(|p| {
+				let idx = ((p.y - min) / SLICE_WIDTH) as usize;
+				slices[idx]
+			})
+			.collect();
+
+		let height = data
+			.iter()
+			.map(|p| (p.y - min) / height)
+			.collect::<Vec<_>>();
+
+		let curve = if calc_curve {
+			let neighbors_tree = NeighborsTree::new(data);
+
+			let mut neighbors_location = bytemuck::zeroed_vec(neighbors_count);
+			data.iter()
+				.enumerate()
+				.map(|(i, _)| {
+					let neighbors = neighbors_tree.get(
+						i,
+						&data,
+						&mut neighbors_location,
+						neighbors_max_distance,
+					);
+
+					let mean = {
+						let mut mean = na::Point3::new(0.0, 0.0, 0.0);
+						for entry in neighbors {
+							mean += data[entry.index].coords;
+						}
+						mean / neighbors.len() as f32
+					};
+					let variance = {
+						let mut variance = na::Matrix3::default();
+						for entry in neighbors {
+							let difference = data[entry.index] - mean;
+							for x in 0..3 {
+								for y in 0..3 {
+									variance[(x, y)] += difference[x] * difference[y];
+								}
+							}
+						}
+						for x in 0..3 {
+							for y in 0..3 {
+								variance[(x, y)] /= neighbors.len() as f32;
+							}
+						}
+						variance
+					};
+
+					let eigen_values = fast_eigenvalues(variance);
+					(3.0 * eigen_values.z) / (eigen_values.x + eigen_values.y + eigen_values.z)
+				})
+				.collect()
+		} else {
+			vec![0.0; data.len()]
+		};
+
+		CalculationProperties { expansion, curve, height }
 	}
+}
+
+pub struct Adapter;
+impl k_nearest::Adapter<3, f32, na::Point3<f32>> for Adapter {
+	fn get(point: &na::Point3<f32>, dimension: usize) -> f32 {
+		point[dimension]
+	}
+
+	fn get_all(point: &na::Point3<f32>) -> [f32; 3] {
+		point.coords.data.0[0]
+	}
+}
+
+pub struct NeighborsTree {
+	tree: k_nearest::KDTree<3, f32, na::Point3<f32>, Adapter, k_nearest::EuclideanDistanceSquared>,
+}
+
+impl NeighborsTree {
+	pub fn new(points: &[na::Point3<f32>]) -> Self {
+		let tree = <k_nearest::KDTree<
+			3,
+			f32,
+			na::Point3<f32>,
+			Adapter,
+			k_nearest::EuclideanDistanceSquared,
+		>>::new(points);
+
+		Self { tree }
+	}
+
+	pub fn get<'a>(
+		&self,
+		index: usize,
+		data: &[na::Point3<f32>],
+		location: &'a mut [k_nearest::Entry<f32>],
+		max_distance: f32,
+	) -> &'a [k_nearest::Entry<f32>] {
+		let l = self.tree.k_nearest(&data[index], location, max_distance);
+		&location[0..l]
+	}
+}
+
+#[derive(Debug, Clone)]
+pub struct CalculationProperties {
+	pub expansion: Vec<f32>,
+	pub curve: Vec<f32>,
+	pub height: Vec<f32>,
+}
+
+pub fn get_slices(
+	min: f32,
+	height: f32,
+	data: &[na::Point3<f32>],
+	valid: impl Fn(usize) -> bool,
+) -> Vec<f32> {
+	let slices = ((height / SLICE_WIDTH) as usize) + 1;
+	let mut sets = vec![<Option<Tree>>::None; slices];
+	for pos in data
+		.iter()
+		.enumerate()
+		.filter_map(|(idx, &p)| valid(idx).then_some(p))
+	{
+		let idx = ((pos.y - min) / SLICE_WIDTH) as usize;
+		match &mut sets[idx] {
+			Some(tree) => tree.insert(na::vector![pos.x, pos.z].into()),
+			x @ None => *x = Some(Tree::new(na::vector![pos.x, pos.z].into())),
+		}
+	}
+	sets.into_iter()
+		.map(|set| set.map(|set| set.statistics().area).unwrap_or(0.0))
+		.collect::<Vec<_>>()
+}
+
+pub fn map_to_u32(value: f32) -> u32 {
+	(value * u32::MAX as f32) as u32
 }
 
 /// https://stackoverflow.com/a/34326390
@@ -424,4 +565,39 @@ fn circle(
 
 fn approximate_diameter(area: f32) -> f32 {
 	2.0 * (area / std::f32::consts::PI).sqrt()
+}
+
+// https://en.wikipedia.org/wiki/Eigenvalue_algorithm#3%C3%973_matrices
+// the matrix must be real and symmetric
+pub fn fast_eigenvalues(mat: na::Matrix3<f32>) -> na::Point3<f32> {
+	fn square(x: f32) -> f32 {
+		x * x
+	}
+
+	// I would choose better names for the variables if I know what they mean
+	let p1 = square(mat[(0, 1)]) + square(mat[(0, 2)]) + square(mat[(1, 2)]);
+	if p1 == 0.0 {
+		return [mat[(0, 0)], mat[(1, 1)], mat[(2, 2)]].into();
+	}
+
+	let q = (mat[(0, 0)] + mat[(1, 1)] + mat[(2, 2)]) / 3.0;
+	let p2 = square(mat[(0, 0)] - q) + square(mat[(1, 1)] - q) + square(mat[(2, 2)] - q) + 2.0 * p1;
+	let p = (p2 / 6.0).sqrt();
+	let mut mat_b = mat;
+	for i in 0..3 {
+		mat_b[(i, i)] -= q;
+	}
+	let r = mat_b.determinant() / 2.0 * p.powi(-3);
+	let phi = if r <= -1.0 {
+		std::f32::consts::PI / 3.0
+	} else if r >= 1.0 {
+		0.0
+	} else {
+		r.acos() / 3.0
+	};
+
+	let eig_1 = q + 2.0 * p * phi.cos();
+	let eig_3 = q + 2.0 * p * (phi + (2.0 * std::f32::consts::PI / 3.0)).cos();
+	let eig_2 = 3.0 * q - eig_1 - eig_3;
+	[eig_1, eig_2, eig_3].into()
 }

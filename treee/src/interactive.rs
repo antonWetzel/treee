@@ -3,10 +3,11 @@ use std::{
 	collections::{HashMap, HashSet},
 	hash::Hash,
 	ops::Not,
+	u32,
 };
 
 use crate::{
-	calculations::{Classification, SegmentData, SegmentSave},
+	calculations::{map_to_u32, CalculationProperties, Classification, SegmentData, SegmentSave},
 	environment::{self, Saver},
 	program::{DisplaySettings, Event},
 };
@@ -115,6 +116,7 @@ impl SegmentData {
 		let p = self.points.as_mut_slice();
 		let c = self.classifications.as_mut_slice();
 
+		// retain with multiple vecs
 		for i in 0..len {
 			if (p[i] - center).norm_squared() <= r2 {
 				del += 1;
@@ -202,9 +204,14 @@ impl SegmentData {
 		self.update_render(idx, sender)
 	}
 
-	fn redo_diameters(&mut self) {
-		self.info
-			.redo_diameters(&self.points, &self.classifications, self.min.y, self.max.y);
+	fn redo_diameters(&mut self, calc_curve: bool) -> CalculationProperties {
+		self.info.redo_diameters(
+			&self.points,
+			&self.classifications,
+			self.min.y,
+			self.max.y,
+			calc_curve,
+		)
 	}
 
 	#[cfg(not(target_arch = "wasm32"))]
@@ -382,8 +389,8 @@ impl Interactive {
 				.text_edit_multiline(&mut self.source_location)
 				.lost_focus()
 			{
-				if let Modus::View { idx, .. } = self.modus {
-					let seg = self.segments.get_mut(&idx).unwrap();
+				if let Modus::View(ref view) = self.modus {
+					let seg = self.segments.get_mut(&view.idx).unwrap();
 					match proj4rs::Proj::from_proj_string(&self.source_location) {
 						Ok(proj) => seg.update_location(self.world_offset, &proj),
 						Err(err) => eprintln!("{}", err),
@@ -411,20 +418,31 @@ impl Interactive {
 			Modus::SelectDraw | Modus::Draw(_) => {},
 			Modus::SelectCombine | Modus::Combine(_) => {},
 			Modus::Delete => {},
-			Modus::View { idx, ref mut convex_hull, ref mut modus } => {
-				let segment = self.segments.get_mut(&idx).unwrap();
+			Modus::View(ref mut view) => {
+				let segment = self.segments.get_mut(&view.idx).unwrap();
 
 				ui.separator();
-				ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Modus"));
-				ui.radio_value(modus, ViewModus::Delete, "Delete");
-				ui.radio_value(modus, ViewModus::Ground, "Ground");
-				ui.radio_value(modus, ViewModus::Trunk, "Trunk");
-				ui.radio_value(modus, ViewModus::Crown, "Crown");
+				ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Edit Points"));
+				ui.radio_value(&mut view.modus, ViewModus::Delete, "Delete");
+				ui.radio_value(&mut view.modus, ViewModus::Ground, "Ground");
+				ui.radio_value(&mut view.modus, ViewModus::Trunk, "Trunk");
+				ui.radio_value(&mut view.modus, ViewModus::Crown, "Crown");
 
 				ui.separator();
-				let mut render_hull = convex_hull.is_some();
+				ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Display"));
+				ui.radio_value(
+					&mut view.display,
+					PropertyDisplay::Classification,
+					"Classification",
+				);
+				ui.radio_value(&mut view.display, PropertyDisplay::Curve, "Curve");
+				ui.radio_value(&mut view.display, PropertyDisplay::Expansion, "Expansion");
+				ui.radio_value(&mut view.display, PropertyDisplay::Height, "Height");
+
+				ui.separator();
+				let mut render_hull = view.convex_hull.is_some();
 				if ui.checkbox(&mut render_hull, "Convex Hull").changed() {
-					*convex_hull = if render_hull {
+					view.convex_hull = if render_hull {
 						Some(ConvexHull::new(
 							&segment.points,
 							&segment.classifications,
@@ -433,6 +451,16 @@ impl Interactive {
 					} else {
 						None
 					};
+				}
+				if ui
+					.add_sized(
+						[ui.available_width(), 0.0],
+						egui::Button::new("Update Curvature"),
+					)
+					.clicked()
+				{
+					view.properties_data = segment.redo_diameters(true);
+					view.properties = Properties::new(state, &segment, &view.properties_data);
 				}
 
 				ui.separator();
@@ -479,11 +507,19 @@ impl Interactive {
 					.add_sized([ui.available_width(), 0.0], egui::Button::new("Points"))
 					.clicked()
 				{
-					let seg = self.segments.get(&idx).unwrap();
+					let seg = self.segments.get(&view.idx).unwrap();
 					let points = seg.points.clone();
 					let classifications = seg.classifications.clone();
+					let properties_data = view.properties_data.clone();
 					environment::Saver::new("points.ply", move |mut saver| {
-						save_points(&mut saver, &points, &classifications, |_| true).unwrap();
+						save_points(
+							&mut saver,
+							&points,
+							&classifications,
+							&properties_data,
+							|_| true,
+						)
+						.unwrap();
 						saver.save();
 					})
 				}
@@ -494,7 +530,7 @@ impl Interactive {
 					)
 					.clicked()
 				{
-					let seg = self.segments.get(&idx).unwrap();
+					let seg = self.segments.get(&view.idx).unwrap();
 					let save = SegmentSave {
 						info: seg.info,
 						min: seg.min,
@@ -508,7 +544,7 @@ impl Interactive {
 						saver.save();
 					});
 				}
-				if let Some(hull) = convex_hull {
+				if let Some(hull) = &view.convex_hull {
 					if ui
 						.add_sized(
 							[ui.available_width(), 0.0],
@@ -516,7 +552,7 @@ impl Interactive {
 						)
 						.clicked()
 					{
-						let points = self.segments.get(&idx).unwrap().points.clone();
+						let points = self.segments.get(&view.idx).unwrap().points.clone();
 						let faces = hull.faces.clone();
 						environment::Saver::new("convex_hull.ply", move |mut saver| {
 							ConvexHull::save(&mut saver, &points, &faces).unwrap();
@@ -533,13 +569,18 @@ impl Interactive {
 						.add_sized([ui.available_width(), 0.0], egui::Button::new(name))
 						.clicked()
 					{
-						let seg = self.segments.get(&idx).unwrap();
+						let seg = self.segments.get(&view.idx).unwrap();
 						let points = seg.points.clone();
 						let classifications = seg.classifications.clone();
+						let properties_data = view.properties_data.clone();
 						environment::Saver::new(file, move |mut saver| {
-							save_points(&mut saver, &points, &classifications, |c| {
-								c == classification
-							})
+							save_points(
+								&mut saver,
+								&points,
+								&classifications,
+								&properties_data,
+								|c| c == classification,
+							)
 							.unwrap();
 							saver.save();
 						})
@@ -586,6 +627,7 @@ impl Interactive {
 		start: na::Point3<f32>,
 		direction: na::Vector3<f32>,
 		display_settings: &DisplaySettings,
+		state: &render::State,
 	) {
 		match &mut self.modus {
 			Modus::SelectDraw | Modus::Draw(_) => {
@@ -642,7 +684,7 @@ impl Interactive {
 					return;
 				};
 				let seg = self.segments.get_mut(&idx).unwrap();
-				seg.redo_diameters();
+				let calc = seg.redo_diameters(true);
 
 				#[cfg(not(target_arch = "wasm32"))]
 				match proj4rs::Proj::from_proj_string(&self.source_location) {
@@ -650,11 +692,17 @@ impl Interactive {
 					Err(err) => eprintln!("{}", err),
 				}
 
-				self.modus = Modus::View {
+				let properties: Properties = Properties::new(state, seg, &calc);
+
+				self.modus = Modus::View(View {
 					idx,
 					convex_hull: None,
+					display: PropertyDisplay::Classification,
 					modus: ViewModus::Delete,
-				}
+					properties,
+					properties_data: calc,
+					cloud: render::PointCloud::new(state, &seg.points),
+				})
 			},
 
 			Modus::View { .. } => {},
@@ -735,8 +783,8 @@ impl Interactive {
 					self.segments.remove(&empty);
 				}
 			},
-			Modus::View { idx, convex_hull: ref mut hull, modus } => {
-				let seg = self.segments.get_mut(&idx).unwrap();
+			Modus::View(ref mut view) => {
+				let seg = self.segments.get_mut(&view.idx).unwrap();
 				let mut distance = seg.exact_distance(start, direction, display_settings);
 
 				if self.show_deleted {
@@ -757,14 +805,14 @@ impl Interactive {
 
 				let mut changed = false;
 
-				if self.show_deleted && modus != ViewModus::Delete {
+				if self.show_deleted && view.modus != ViewModus::Delete {
 					if self.deleted.remove(hit, self.draw_radius, seg) {
 						self.deleted.changed(DELETED_INDEX, &self.sender);
 						changed = true;
 					}
 				}
 
-				changed |= match modus {
+				changed |= match view.modus {
 					ViewModus::Delete => {
 						if seg.remove(hit, self.draw_radius, &mut self.deleted) {
 							self.deleted.changed(DELETED_INDEX, &self.sender);
@@ -784,9 +832,11 @@ impl Interactive {
 					},
 				};
 				if changed {
-					seg.changed(idx, &self.sender);
-					seg.redo_diameters();
-					if let Some(hull) = hull {
+					seg.changed(view.idx, &self.sender);
+					view.properties_data = seg.redo_diameters(false);
+					view.properties = Properties::new(state, seg, &view.properties_data);
+					view.cloud = render::PointCloud::new(state, &seg.points);
+					if let Some(hull) = &mut view.convex_hull {
 						*hull = ConvexHull::new(&seg.points, &seg.classifications, state);
 					}
 				}
@@ -818,11 +868,73 @@ pub enum Modus {
 	Combine(u32),
 	Spawn,
 	Delete,
-	View {
-		idx: u32,
-		modus: ViewModus,
-		convex_hull: Option<ConvexHull>,
-	},
+	View(View),
+}
+
+#[derive(Debug)]
+pub struct View {
+	pub idx: u32,
+	pub modus: ViewModus,
+	pub display: PropertyDisplay,
+	pub cloud: render::PointCloud,
+	pub properties: Properties,
+	pub properties_data: CalculationProperties,
+	pub convex_hull: Option<ConvexHull>,
+}
+
+#[derive(Debug)]
+pub struct Properties {
+	pub classification: render::PointCloudProperty,
+	pub curve: render::PointCloudProperty,
+	pub expansion: render::PointCloudProperty,
+	pub height: render::PointCloudProperty,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PropertyDisplay {
+	Classification,
+	Curve,
+	Expansion,
+	Height,
+}
+
+impl Properties {
+	pub fn new(state: &render::State, seg: &SegmentData, calc: &CalculationProperties) -> Self {
+		let max_expansion = calc
+			.expansion
+			.iter()
+			.copied()
+			.max_by(|a, b| a.total_cmp(b))
+			.unwrap_or_default();
+		let expansion = calc
+			.expansion
+			.iter()
+			.copied()
+			.map(|e| map_to_u32(e / max_expansion))
+			.map(|v| u32::MAX - v)
+			.collect::<Vec<_>>();
+
+		let curve = calc
+			.curve
+			.iter()
+			.copied()
+			.map(map_to_u32)
+			.map(|v| u32::MAX - v)
+			.collect::<Vec<_>>();
+		let height = calc
+			.height
+			.iter()
+			.copied()
+			.map(map_to_u32)
+			.collect::<Vec<_>>();
+
+		Self {
+			classification: render::PointCloudProperty::new(state, &seg.property()),
+			curve: render::PointCloudProperty::new(state, &curve),
+			expansion: render::PointCloudProperty::new(state, &expansion),
+			height: render::PointCloudProperty::new(state, &height),
+		}
+	}
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1027,6 +1139,7 @@ pub fn save_points(
 	saver: &mut Saver,
 	points: &[na::Point3<f32>],
 	classifications: &[Classification],
+	properties_data: &CalculationProperties,
 	valid: impl Fn(Classification) -> bool,
 ) -> Result<(), std::io::Error> {
 	use std::io::Write;
@@ -1039,13 +1152,25 @@ pub fn save_points(
 	writeln!(writer, "property float x")?;
 	writeln!(writer, "property float y")?;
 	writeln!(writer, "property float z")?;
+	writeln!(writer, "property float expansion")?;
+	writeln!(writer, "property float height")?;
+	writeln!(writer, "property float curve")?;
 	writeln!(writer, "end_header")?;
-	for p in points
-		.into_iter()
-		.zip(classifications)
-		.filter_map(|(&p, &c)| (valid(c).then_some(p)))
-	{
-		writeln!(writer, "{} {} {}", p.x, -p.z, p.y)?;
+	for (idx, p) in points.iter().enumerate() {
+		if valid(classifications[idx]).not() {
+			continue;
+		}
+		writeln!(
+			writer,
+			"{} {} {} {} {} {}",
+			p.x,
+			-p.z,
+			p.y,
+			properties_data.expansion[idx],
+			properties_data.height[idx],
+			properties_data.curve[idx]
+		)?;
 	}
+
 	Ok(())
 }

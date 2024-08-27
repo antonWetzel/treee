@@ -37,3 +37,10 @@ Point cloud importer and viewer for forest scans.
     - change trunk starting height
     - change crown starting height
     - calculate convex hull for the crown
+
+## Camera Controls
+
+- <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd>: Move horizontal
+- <kbd>Q</kbd> <kbd>E</kbd>: Move vertical 
+- Left Mouse Button: Select or Pan
+- Right Mouse Button: Edit
