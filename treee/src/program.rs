@@ -14,10 +14,6 @@ use std::sync::Arc;
 /// Events from the current phase to the progam.
 pub enum Event {
 	Done,
-	Lookup {
-		bytes: &'static [u8],
-		max: u32,
-	},
 	ClearPointClouds,
 	PointCloud {
 		idx: Option<u32>,
@@ -75,8 +71,28 @@ impl Chunk {
 pub struct DisplaySettings {
 	pub background: na::Point3<f32>,
 	pub point_cloud_environment: render::PointCloudEnvironment,
-	pub lookup: render::Lookup,
+	pub lookup_render: render::Lookup,
+	pub lookup_white: render::Lookup,
+	pub lookup: Lookup,
 	pub camera: Camera,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Lookup {
+	Turbo,
+	Warm,
+	White,
+}
+
+impl Lookup {
+	pub fn render(self, state: &render::State) -> render::Lookup {
+		let bytes = match self {
+			Self::Turbo => include_bytes!("../assets/grad_turbo.png").as_slice(),
+			Self::Warm => include_bytes!("../assets/grad_warm.png").as_slice(),
+			Self::White => include_bytes!("../assets/white.png").as_slice(),
+		};
+		render::Lookup::new_png(state, bytes, u32::MAX)
+	}
 }
 
 impl DisplaySettings {
@@ -95,12 +111,25 @@ impl DisplaySettings {
 						.max_decimals(2),
 				)
 				.changed();
-
-			ui.end_row();
-
 			if changed {
 				self.point_cloud_environment.update(state);
 			}
+			ui.end_row();
+
+			ui.label("Color");
+			let mut changed = false;
+			ui.horizontal(|ui| {
+				changed |= ui
+					.radio_value(&mut self.lookup, Lookup::Turbo, "Turbo")
+					.changed();
+				changed |= ui
+					.radio_value(&mut self.lookup, Lookup::Warm, "Warm")
+					.changed();
+			});
+			if changed {
+				self.lookup_render = self.lookup.render(state);
+			}
+			ui.end_row();
 		});
 	}
 }
@@ -147,8 +176,6 @@ impl Program {
 		let point_cloud_environment = render::PointCloudEnvironment::new(&state, 0, u32::MAX, 0.1);
 		let point_cloud_state = render::PointCloudState::new(&state);
 		let lines_state = render::LinesState::new(&state);
-		let lookup =
-			render::Lookup::new_png(&state, include_bytes!("../assets/grad_warm.png"), u32::MAX);
 		let camera = Camera::new(&state, window.get_aspect());
 		let eye_dome = render::EyeDome::new(&state, window.config(), window.depth_texture(), 0.7);
 
@@ -161,6 +188,10 @@ impl Program {
 			None,
 		);
 		let egui_wgpu = egui_wgpu::Renderer::new(state.device(), state.surface_format(), None, 1);
+
+		let lookup = Lookup::Turbo;
+		let lookup_render = lookup.render(&state);
+		let white_lookup = Lookup::White.render(&state);
 
 		let (empty, receiver) = Empty::new();
 		Ok(Self {
@@ -187,6 +218,8 @@ impl Program {
 				background: na::point![0.3, 0.5, 0.7],
 				point_cloud_environment,
 				lookup,
+				lookup_render,
+				lookup_white: white_lookup,
 				camera,
 			},
 
@@ -205,26 +238,44 @@ impl Program {
 				.resizable(false)
 				.min_width(200.0)
 				.show(ctx, |ui| {
-					if matches!(self.world, World::Empty(_)).not() {
-						if ui
-							.add_sized([ui.available_width(), 0.0], egui::Button::new("Close"))
-							.clicked()
-						{
-							let (empty, reciever) = Empty::new();
-							self.world = World::Empty(empty);
-							self.receiver = reciever;
+					egui::ScrollArea::vertical().show(ui, |ui| {
+						let phase = match self.world {
+							World::Empty(_) => "Empty",
+							World::Loading(_) => "Loading",
+							World::Segmenting(_) => "Segmenting",
+							World::Calculations(_) => "Calculations",
+							World::Interactive(_) => "Interactive",
+						};
+						ui.add_sized(
+							[ui.available_width(), 0.0],
+							egui::Label::new(egui::RichText::new(phase).heading()),
+						);
+
+						if matches!(self.world, World::Empty(_)).not() {
+							ui.separator();
+							if ui
+								.add_sized([ui.available_width(), 0.0], egui::Button::new("Close"))
+								.clicked()
+							{
+								let (empty, reciever) = Empty::new();
+								self.world = World::Empty(empty);
+								self.receiver = reciever;
+							}
+							self.display_settings.ui(ui, &self.state);
 						}
-					}
-					match &mut self.world {
-						World::Empty(empty) => empty.ui(ui),
-						World::Loading(loading) => loading.ui(ui),
-						World::Segmenting(segmenting) => segmenting.ui(ui),
-						World::Calculations(calculations) => calculations.ui(ui),
-						World::Interactive(interactive) => interactive.ui(ui, &self.state),
-					}
-					ui.separator();
-					self.display_settings.ui(ui, &self.state);
+						ui.separator();
+						match &mut self.world {
+							World::Empty(empty) => empty.ui(ui),
+							World::Loading(loading) => loading.ui(ui),
+							World::Segmenting(segmenting) => segmenting.ui(ui),
+							World::Calculations(calculations) => calculations.ui(ui),
+							World::Interactive(interactive) => interactive.ui(ui),
+						}
+					});
 				});
+			if let World::Interactive(interactive) = &mut self.world {
+				interactive.extra_ui(ctx, &self.state);
+			}
 		});
 		self.egui_winit
 			.handle_platform_output(&self.window, full_output.platform_output);
@@ -258,12 +309,18 @@ impl Program {
 						&paint_jobs,
 						screen,
 					);
+
+					let lookup = match &self.world {
+						World::Segmenting(_) => &self.display_settings.lookup_render,
+						_ => &self.display_settings.lookup_white,
+					};
+
 					self.state.queue.submit(commands);
 					let mut render_pass = context.render_pass(self.display_settings.background);
 					let point_cloud_pass = self.point_cloud_state.render(
 						&mut render_pass,
 						self.display_settings.camera.gpu(),
-						&self.display_settings.lookup,
+						lookup,
 						&self.display_settings.point_cloud_environment,
 					);
 
@@ -294,7 +351,7 @@ impl Program {
 					let point_cloud_pass = self.point_cloud_state.render(
 						&mut render_pass,
 						self.display_settings.camera.gpu(),
-						&self.display_settings.lookup,
+						&self.display_settings.lookup_render,
 						&self.display_settings.point_cloud_environment,
 					);
 
@@ -325,14 +382,14 @@ impl Program {
 					let point_cloud_pass = self.point_cloud_state.render(
 						&mut render_pass,
 						self.display_settings.camera.gpu(),
-						&self.display_settings.lookup,
+						&self.display_settings.lookup_render,
 						&self.display_settings.point_cloud_environment,
 					);
 					if interactive.show_deleted {
 						if let Some(chunk) = self.chunks.get(&DELETED_INDEX) {
-							point_cloud_pass.lookup(&interactive.white_lookup);
+							point_cloud_pass.lookup(&self.display_settings.lookup_white);
 							chunk.point_cloud.render(point_cloud_pass, &chunk.segment);
-							point_cloud_pass.lookup(&self.display_settings.lookup);
+							point_cloud_pass.lookup(&self.display_settings.lookup_render);
 						}
 					}
 					if let interactive::Modus::View(ref view) = interactive.modus {
@@ -431,9 +488,6 @@ impl Program {
 						self.receiver = receiver;
 					},
 					_ => panic!("invalid file format"),
-				},
-				Event::Lookup { bytes, max } => {
-					self.display_settings.lookup = render::Lookup::new_png(&self.state, &bytes, max)
 				},
 				Event::Done => {
 					match std::mem::replace(&mut self.world, World::Empty(Empty::new().0)) {

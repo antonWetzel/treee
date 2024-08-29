@@ -31,7 +31,6 @@ pub struct Interactive {
 	pub modus: Modus,
 	pub show_deleted: bool,
 	draw_radius: f32,
-	pub white_lookup: render::Lookup,
 
 	#[cfg(not(target_arch = "wasm32"))]
 	pub source_location: String,
@@ -251,8 +250,6 @@ impl Interactive {
 	) -> (Self, crossbeam::channel::Receiver<Event>) {
 		let (sender, receiver) = crossbeam::channel::unbounded();
 		let deleted = SegmentData::new(Vec::new());
-		let white_lookup =
-			render::Lookup::new_png(state, include_bytes!("../assets/white.png"), u32::MAX);
 
 		let interactive = Self {
 			segments,
@@ -264,7 +261,6 @@ impl Interactive {
 			#[cfg(not(target_arch = "wasm32"))]
 			source_location: DEFAULT_LOCATION.into(),
 			world_offset,
-			white_lookup,
 		};
 
 		(interactive, receiver)
@@ -276,15 +272,9 @@ impl Interactive {
 		state: &render::State,
 	) -> (Self, crossbeam::channel::Receiver<Event>) {
 		let (sender, receiver) = crossbeam::channel::unbounded();
-		_ = sender.send(Event::Lookup {
-			bytes: include_bytes!("../assets/grad_turbo.png"),
-			max: u32::MAX,
-		});
 
 		let reader = source.reader();
 		let save = bincode::deserialize_from::<_, InteractiveSave>(reader).unwrap();
-		let white_lookup =
-			render::Lookup::new_png(&state, include_bytes!("../assets/white.png"), u32::MAX);
 
 		let mut segments = HashMap::new();
 		for (idx, data) in save.segments {
@@ -303,15 +293,13 @@ impl Interactive {
 			#[cfg(not(target_arch = "wasm32"))]
 			source_location: DEFAULT_LOCATION.into(),
 			world_offset: save.world_offset,
-			white_lookup,
 		};
 
 		(interactive, receiver)
 	}
 
 	/// Draw the UI
-	pub fn ui(&mut self, ui: &mut egui::Ui, state: &render::State) {
-		ui.separator();
+	pub fn ui(&mut self, ui: &mut egui::Ui) {
 		if ui
 			.add_sized([ui.available_width(), 0.0], egui::Button::new("Save"))
 			.clicked()
@@ -330,10 +318,9 @@ impl Interactive {
 				saver.save();
 			});
 		}
+		let enabled = matches!(self.modus, Modus::View(_)).not();
 
-		if let Modus::View { .. } = self.modus {
-			// skip
-		} else {
+		ui.add_enabled_ui(enabled, |ui| {
 			ui.separator();
 			ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Modus"));
 			if ui
@@ -381,7 +368,7 @@ impl Interactive {
 			{
 				self.modus = Modus::Delete;
 			}
-		}
+		});
 
 		ui.separator();
 		ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Settings"));
@@ -417,201 +404,205 @@ impl Interactive {
 				}
 			};
 		}
+	}
 
-		if let Modus::View { .. } = self.modus {
-			ui.separator();
-			ui.add_sized(
-				[ui.available_width(), 0.0],
-				egui::Label::new(egui::RichText::new("View").heading()),
-			);
-			if ui
-				.add_sized([ui.available_width(), 0.0], egui::Button::new("Return"))
-				.clicked()
-			{
-				self.modus = Modus::SelectView;
-			}
-		}
-		match self.modus {
-			Modus::SelectView => {},
-			Modus::Spawn => {},
-			Modus::SelectDraw | Modus::Draw(_) => {},
-			Modus::SelectCombine | Modus::Combine(_) => {},
-			Modus::Delete => {},
-			Modus::View(ref mut view) => {
-				let segment = self.segments.get_mut(&view.idx).unwrap();
+	pub fn extra_ui(&mut self, ctx: &egui::Context, state: &render::State) {
+		let Modus::View(view) = &mut self.modus else {
+			return;
+		};
+		let mut close_view = false;
 
-				ui.separator();
-				ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Edit Points"));
-				ui.radio_value(&mut view.modus, ViewModus::Delete, "Delete");
-				ui.radio_value(&mut view.modus, ViewModus::Ground, "Ground");
-				ui.radio_value(&mut view.modus, ViewModus::Trunk, "Trunk");
-				ui.radio_value(&mut view.modus, ViewModus::Crown, "Crown");
-
-				ui.separator();
-				ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Display"));
-				ui.radio_value(
-					&mut view.display_modus,
-					DisplayModus::Classification,
-					"Classification",
-				);
-				ui.radio_value(&mut view.display_modus, DisplayModus::Curve, "Curve");
-				ui.radio_value(
-					&mut view.display_modus,
-					DisplayModus::Expansion,
-					"Expansion",
-				);
-				ui.radio_value(&mut view.display_modus, DisplayModus::Height, "Height");
-
-				ui.separator();
-				let mut render_hull = view.convex_hull.is_some();
-				if ui.checkbox(&mut render_hull, "Convex Hull").changed() {
-					view.convex_hull = if render_hull {
-						Some(ConvexHull::new(
-							&segment.points,
-							&segment.classifications,
-							state,
-						))
-					} else {
-						None
-					};
-				}
-				if ui
-					.add_sized(
+		egui::SidePanel::right("extra-panel")
+			.resizable(false)
+			.min_width(200.0)
+			.show(ctx, |ui| {
+				egui::ScrollArea::vertical().show(ui, |ui| {
+					ui.add_sized(
 						[ui.available_width(), 0.0],
-						egui::Button::new("Update Curvature"),
-					)
-					.clicked()
-				{
-					view.calculations_properties = segment.update_info(true);
-					view.display_data =
-						DisplayData::new(state, &segment, &view.calculations_properties);
-				}
+						egui::Label::new(egui::RichText::new("Segment").heading()),
+					);
+					close_view = ui
+						.add_sized([ui.available_width(), 0.0], egui::Button::new("Return"))
+						.clicked();
 
-				ui.separator();
-				ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Trunk"));
-				egui::Grid::new(id!()).num_columns(2).show(ui, |ui| {
-					ui.label("Height");
-					ui.label(format!("{:.2}m", segment.info.trunk_height));
-					ui.end_row();
-
-					ui.label("Diameter");
-					ui.label(format!("{:.2}m", segment.info.trunk_diameter));
-					ui.end_row();
-				});
-
-				ui.separator();
-				ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Crown"));
-				egui::Grid::new(id!()).num_columns(2).show(ui, |ui| {
-					ui.label("Height");
-					ui.label(format!("{:.2}m", segment.info.crown_height));
-					ui.end_row();
-
-					ui.label("Diameter");
-					ui.label(format!("{:.2}m", segment.info.crown_diameter));
-					ui.end_row();
-				});
-
-				if let Some((long, lat)) = segment.coords {
 					ui.separator();
-					ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Coordinates"));
-					egui::Grid::new(id!()).num_columns(2).show(ui, |ui| {
-						ui.label("Lat");
-						ui.label(format_degrees(lat));
-						ui.end_row();
 
-						ui.label("Long");
-						ui.label(format_degrees(long));
-						ui.end_row();
-					});
-				}
+					let segment = self.segments.get_mut(&view.idx).unwrap();
 
-				ui.separator();
-				ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Export"));
-				if ui
-					.add_sized([ui.available_width(), 0.0], egui::Button::new("Points"))
-					.clicked()
-				{
-					let seg = self.segments.get(&view.idx).unwrap();
-					let points = seg.points.clone();
-					let classifications = seg.classifications.clone();
-					let calculations_properties = view.calculations_properties.clone();
-					environment::Saver::new("points.ply", move |mut saver| {
-						save_points(
-							&mut saver,
-							&points,
-							&classifications,
-							&calculations_properties,
-							|_| true,
-						)
-						.unwrap();
-						saver.save();
-					})
-				}
-				if ui
-					.add_sized(
-						[ui.available_width(), 0.0],
-						egui::Button::new("Information"),
-					)
-					.clicked()
-				{
-					let seg = self.segments.get(&view.idx).unwrap();
-					let save = SegmentSave {
-						info: seg.info,
-						min: seg.min,
-						max: seg.max,
-						offset: self.world_offset,
-						longitude: seg.coords.map(|c| c.0.to_degrees()),
-						latitude: seg.coords.map(|c| c.1.to_degrees()),
-					};
-					environment::Saver::new("segment.json", move |mut saver| {
-						serde_json::to_writer_pretty(saver.inner(), &save).unwrap();
-						saver.save();
-					});
-				}
-				if let Some(hull) = &view.convex_hull {
+					ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Edit Points"));
+					ui.radio_value(&mut view.modus, ViewModus::Delete, "Delete");
+					ui.radio_value(&mut view.modus, ViewModus::Ground, "Ground");
+					ui.radio_value(&mut view.modus, ViewModus::Trunk, "Trunk");
+					ui.radio_value(&mut view.modus, ViewModus::Crown, "Crown");
+
+					ui.separator();
+					ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Display"));
+					ui.radio_value(
+						&mut view.display_modus,
+						DisplayModus::Classification,
+						"Classification",
+					);
+					ui.radio_value(&mut view.display_modus, DisplayModus::Curve, "Curve");
+					ui.radio_value(
+						&mut view.display_modus,
+						DisplayModus::Expansion,
+						"Expansion",
+					);
+					ui.radio_value(&mut view.display_modus, DisplayModus::Height, "Height");
+
+					ui.separator();
+					let mut render_hull = view.convex_hull.is_some();
+					if ui.checkbox(&mut render_hull, "Convex Hull").changed() {
+						view.convex_hull = if render_hull {
+							Some(ConvexHull::new(
+								&segment.points,
+								&segment.classifications,
+								state,
+							))
+						} else {
+							None
+						};
+					}
 					if ui
 						.add_sized(
 							[ui.available_width(), 0.0],
-							egui::Button::new("Convex Hull"),
+							egui::Button::new("Update Curvature"),
 						)
 						.clicked()
 					{
-						let points = self.segments.get(&view.idx).unwrap().points.clone();
-						let faces = hull.faces.clone();
-						environment::Saver::new("convex_hull.ply", move |mut saver| {
-							ConvexHull::save(&mut saver, &points, &faces).unwrap();
-							saver.save();
-						})
+						view.calculations_properties = segment.update_info(true);
+						view.display_data =
+							DisplayData::new(state, &segment, &view.calculations_properties);
 					}
-				}
-				for (name, file, classification) in [
-					("Crown", "crown.ply", Classification::Crown),
-					("Trunk", "trunk.ply", Classification::Trunk),
-					("Ground", "ground.ply", Classification::Ground),
-				] {
+
+					ui.separator();
+					ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Trunk"));
+					egui::Grid::new(id!()).num_columns(2).show(ui, |ui| {
+						ui.label("Height");
+						ui.label(format!("{:.2}m", segment.info.trunk_height));
+						ui.end_row();
+
+						ui.label("Diameter");
+						ui.label(format!("{:.2}m", segment.info.trunk_diameter));
+						ui.end_row();
+					});
+
+					ui.separator();
+					ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Crown"));
+					egui::Grid::new(id!()).num_columns(2).show(ui, |ui| {
+						ui.label("Height");
+						ui.label(format!("{:.2}m", segment.info.crown_height));
+						ui.end_row();
+
+						ui.label("Diameter");
+						ui.label(format!("{:.2}m", segment.info.crown_diameter));
+						ui.end_row();
+					});
+
+					if let Some((long, lat)) = segment.coords {
+						ui.separator();
+						ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Coordinates"));
+						egui::Grid::new(id!()).num_columns(2).show(ui, |ui| {
+							ui.label("Lat");
+							ui.label(format_degrees(lat));
+							ui.end_row();
+
+							ui.label("Long");
+							ui.label(format_degrees(long));
+							ui.end_row();
+						});
+					}
+
+					ui.separator();
+					ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Export"));
 					if ui
-						.add_sized([ui.available_width(), 0.0], egui::Button::new(name))
+						.add_sized([ui.available_width(), 0.0], egui::Button::new("Points"))
 						.clicked()
 					{
 						let seg = self.segments.get(&view.idx).unwrap();
 						let points = seg.points.clone();
 						let classifications = seg.classifications.clone();
 						let calculations_properties = view.calculations_properties.clone();
-						environment::Saver::new(file, move |mut saver| {
+						environment::Saver::new("points.ply", move |mut saver| {
 							save_points(
 								&mut saver,
 								&points,
 								&classifications,
 								&calculations_properties,
-								|c| c == classification,
+								|_| true,
 							)
 							.unwrap();
 							saver.save();
 						})
 					}
-				}
-			},
-		};
+					if ui
+						.add_sized(
+							[ui.available_width(), 0.0],
+							egui::Button::new("Information"),
+						)
+						.clicked()
+					{
+						let seg = self.segments.get(&view.idx).unwrap();
+						let save = SegmentSave {
+							info: seg.info,
+							min: seg.min,
+							max: seg.max,
+							offset: self.world_offset,
+							longitude: seg.coords.map(|c| c.0.to_degrees()),
+							latitude: seg.coords.map(|c| c.1.to_degrees()),
+						};
+						environment::Saver::new("segment.json", move |mut saver| {
+							serde_json::to_writer_pretty(saver.inner(), &save).unwrap();
+							saver.save();
+						});
+					}
+					if let Some(hull) = &view.convex_hull {
+						if ui
+							.add_sized(
+								[ui.available_width(), 0.0],
+								egui::Button::new("Convex Hull"),
+							)
+							.clicked()
+						{
+							let points = self.segments.get(&view.idx).unwrap().points.clone();
+							let faces = hull.faces.clone();
+							environment::Saver::new("convex_hull.ply", move |mut saver| {
+								ConvexHull::save(&mut saver, &points, &faces).unwrap();
+								saver.save();
+							})
+						}
+					}
+					for (name, file, classification) in [
+						("Crown", "crown.ply", Classification::Crown),
+						("Trunk", "trunk.ply", Classification::Trunk),
+						("Ground", "ground.ply", Classification::Ground),
+					] {
+						if ui
+							.add_sized([ui.available_width(), 0.0], egui::Button::new(name))
+							.clicked()
+						{
+							let seg = self.segments.get(&view.idx).unwrap();
+							let points = seg.points.clone();
+							let classifications = seg.classifications.clone();
+							let calculations_properties = view.calculations_properties.clone();
+							environment::Saver::new(file, move |mut saver| {
+								save_points(
+									&mut saver,
+									&points,
+									&classifications,
+									&calculations_properties,
+									|c| c == classification,
+								)
+								.unwrap();
+								saver.save();
+							})
+						}
+					}
+				});
+			});
+		if close_view {
+			self.modus = Modus::SelectView;
+		}
 	}
 
 	/// Get the first segment and distance hit by the ray.
@@ -943,7 +934,6 @@ impl DisplayData {
 			.iter()
 			.copied()
 			.map(|e| map_to_u32(e / max_expansion))
-			.map(|v| u32::MAX - v)
 			.collect::<Vec<_>>();
 
 		let curve = calc
@@ -951,7 +941,6 @@ impl DisplayData {
 			.iter()
 			.copied()
 			.map(map_to_u32)
-			.map(|v| u32::MAX - v)
 			.collect::<Vec<_>>();
 		let height = calc
 			.height

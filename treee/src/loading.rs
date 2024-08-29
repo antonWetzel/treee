@@ -31,10 +31,6 @@ pub struct Shared {
 impl Loading {
 	pub fn new(source: environment::Source) -> (Self, crossbeam::channel::Receiver<Event>) {
 		let (sender, receiver) = crossbeam::channel::bounded(8);
-		_ = sender.send(Event::Lookup {
-			bytes: include_bytes!("../assets/white.png"),
-			max: u32::MAX,
-		});
 
 		let laz = Laz::new(source, None).unwrap();
 		let (min, max) = (laz.min, laz.max);
@@ -57,7 +53,6 @@ impl Loading {
 	}
 
 	pub fn ui(&mut self, ui: &mut egui::Ui) {
-		ui.separator();
 		let progress = self.shared.progress.load(Ordering::Relaxed);
 		if progress < self.total {
 			let progress = progress as f32 / self.total as f32;

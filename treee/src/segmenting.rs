@@ -10,9 +10,8 @@ use std::{
 		Arc, Mutex,
 	},
 };
-use voronator::delaunator::Point;
 
-use crate::{loading::Loading, program::Event};
+use crate::{interactive::DELETED_INDEX, loading::Loading, program::Event};
 
 pub const DEFAULT_MAX_DISTANCE: f32 = 0.75;
 
@@ -76,7 +75,6 @@ impl Segmenting {
 	}
 
 	pub fn ui(&mut self, ui: &mut egui::Ui) {
-		ui.separator();
 		ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Settings"));
 		egui::Grid::new("settings grid").show(ui, |ui| {
 			ui.label("Distance");
@@ -117,10 +115,6 @@ fn segmentation(
 ) {
 	_ = segmenting.sender.send(Event::ClearPointClouds);
 
-	_ = segmenting.sender.send(Event::Lookup {
-		bytes: include_bytes!("../assets/grad_turbo.png"),
-		max: 128,
-	});
 	segmenting.progress.store(0, Ordering::Relaxed);
 
 	let mut source_slices = loading.shared.slices.lock().unwrap();
@@ -137,7 +131,7 @@ fn segmentation(
 	}
 	let source_slices = slices;
 
-	let slices = {
+	let (slices, last_reciever) = {
 		let (sender, mut receiver) = crossbeam::channel::bounded(1);
 		let mut slices = Vec::with_capacity(layers);
 		for slice in source_slices.into_iter().rev() {
@@ -146,17 +140,16 @@ fn segmentation(
 			receiver = next_receiver;
 		}
 
-		sender.send(Vec::new()).unwrap();
-		slices
+		sender.send(HashMap::new()).unwrap();
+		(slices, receiver)
 	};
 
-	let min = Point {
-		x: loading.min.x as f64,
-		y: loading.min.z as f64,
+	let min = Centroid {
+		center: na::point![loading.min.x, loading.min.z],
 	};
-	let max = Point {
-		x: loading.max.x as f64,
-		y: loading.max.z as f64,
+
+	let max = Centroid {
+		center: na::point![loading.max.x, loading.max.z],
 	};
 
 	let segments = HashMap::<u32, Vec<na::Point3<f32>>>::new();
@@ -172,19 +165,19 @@ fn segmentation(
 				return true;
 			}
 
+			// calculate trees for the points in the slice
 			let tree_set = TreeSet::new(slice, max_distance);
 
+			// combine trees with centers from the previous slice
 			let centroids = c_receiver.recv().unwrap();
 			let centroids = tree_set.tree_positions(centroids, max_distance);
-			let points = centroids
+			let (indices, points) = centroids
 				.iter()
-				.map(|centroid| Point {
-					x: centroid.center.x as f64,
-					y: centroid.center.y as f64,
-				})
-				.collect::<Vec<_>>();
+				.map(|(&idx, &c)| (idx, c))
+				.unzip::<_, _, Vec<_>, Vec<_>>();
 			_ = c_sender.send(centroids);
 
+			// assign points to the centers of the current slice
 			let vor = voronator::VoronoiDiagram::new(&min, &max, &points).unwrap();
 			let mut trees = vor
 				.cells()
@@ -192,29 +185,30 @@ fn segmentation(
 				.map(|cell| cell.points())
 				.map(|p| {
 					p.iter()
-						.map(|p| na::Point2::new(p.x as f32, p.y as f32))
+						.map(|p| na::Point2::new(p.center.x as f32, p.center.y as f32))
 						.collect::<Vec<_>>()
 				})
 				.map(Tree::from_points)
-				.enumerate()
+				.zip(indices)
 				.collect::<VecDeque<_>>();
 
 			let mut segment_data = Vec::with_capacity(slice.len());
 			for &p in slice.iter() {
-				let Some((idx, _)) = trees
+				let Some(idx) = trees
 					.iter_mut()
-					.enumerate()
-					.find(|(_, (_, tree))| tree.contains(na::Point2::new(p.x, p.z), 0.1))
+					.position(|(tree, _)| tree.contains(na::Point2::new(p.x, p.z), 0.1))
 				else {
 					segment_data.push(0);
 					continue;
 				};
 				let elem = trees.remove(idx).unwrap();
-				segment_data.push(elem.0 as u32);
+				segment_data.push(elem.1);
 
 				// hope next point is in the same segment
 				trees.push_front(elem);
 			}
+
+			// save results
 			let mut segments = segments.lock().unwrap();
 			for (&idx, &p) in segment_data.iter().zip(slice.iter()) {
 				segments.entry(idx).or_default().push(p);
@@ -236,6 +230,9 @@ fn segmentation(
 	if cancel {
 		return;
 	}
+
+	_ = last_reciever.recv().unwrap();
+
 	let segments = segments.into_inner().unwrap();
 	segmenting.done.store(Some(segments));
 }
@@ -401,10 +398,26 @@ impl Tree {
 	}
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct Centroid {
 	center: na::Point2<f32>,
 }
+
+impl voronator::delaunator::Coord for Centroid {
+	fn x(&self) -> f64 {
+		self.center.x as f64
+	}
+
+	fn y(&self) -> f64 {
+		self.center.y as f64
+	}
+
+	fn from_xy(x: f64, y: f64) -> Self {
+		Self { center: na::point![x as f32, y as f32] }
+	}
+}
+
+impl voronator::delaunator::Vector<Centroid> for Centroid {}
 
 impl TreeSet {
 	pub fn new_empty() -> Self {
@@ -472,15 +485,19 @@ impl TreeSet {
 		}
 	}
 
-	pub fn tree_positions(self, prev: Vec<Centroid>, max_distance: f32) -> Vec<Centroid> {
-		let mut res = Vec::with_capacity(prev.len());
+	pub fn tree_positions(
+		self,
+		prev: HashMap<u32, Centroid>,
+		max_distance: f32,
+	) -> HashMap<u32, Centroid> {
+		let mut res = HashMap::with_capacity(prev.len());
 		let mut centroids = self
 			.trees
 			.into_iter()
 			.map(|tree| centroid(&tree.points).0)
 			.collect::<Vec<_>>();
 
-		for &center in prev.iter() {
+		for (prev_idx, center) in prev.into_iter() {
 			let mut nearest = None;
 			let mut nearest_dist = max_distance * 2.0;
 			for (idx, &c) in centroids.iter().enumerate() {
@@ -492,13 +509,18 @@ impl TreeSet {
 			}
 			if let Some(idx) = nearest {
 				let c = centroids.swap_remove(idx);
-				res.push(Centroid { center: c });
+				res.insert(prev_idx, Centroid { center: c });
 			} else {
-				res.push(center)
+				res.insert(prev_idx, center);
 			}
 		}
+
 		for c in centroids {
-			res.push(Centroid { center: c });
+			let mut idx = rand::random();
+			while idx == DELETED_INDEX || res.contains_key(&idx) {
+				idx = rand::random();
+			}
+			res.insert(idx, Centroid { center: c });
 		}
 		res
 	}

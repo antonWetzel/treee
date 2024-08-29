@@ -19,7 +19,12 @@ impl Texture {
 		Self::new_xd(state, data, wgpu::TextureDimension::D1, format)
 	}
 
-	fn new_xd(state: &State, data: &[u8], dimension: TextureDimension, format: wgpu::TextureFormat) -> Self {
+	fn new_xd(
+		state: &State,
+		data: &[u8],
+		dimension: TextureDimension,
+		format: wgpu::TextureFormat,
+	) -> Self {
 		let img = image::load_from_memory(data).unwrap();
 		let dimensions = img.dimensions();
 
@@ -39,6 +44,19 @@ impl Texture {
 			view_formats: &[],
 		});
 
+		// swap for brga formats
+		let mut data = img.to_rgba8();
+		match format {
+			wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb => {
+				for p in data.pixels_mut() {
+					let t = p[0];
+					p[0] = p[2];
+					p[2] = t;
+				}
+			},
+			_ => {},
+		}
+
 		state.queue.write_texture(
 			wgpu::ImageCopyTexture {
 				texture: &texture,
@@ -46,7 +64,7 @@ impl Texture {
 				origin: wgpu::Origin3d::ZERO,
 				aspect: wgpu::TextureAspect::All,
 			},
-			&img.to_rgba8(),
+			&data,
 			wgpu::ImageDataLayout {
 				offset: 0,
 				bytes_per_row: Some(4 * dimensions.0),

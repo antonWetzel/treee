@@ -11,7 +11,7 @@ use crossbeam::channel::TrySendError;
 use nalgebra as na;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
-use crate::{interactive::DELETED_INDEX, program::Event, segmenting::Tree};
+use crate::{program::Event, segmenting::Tree};
 
 /// Slice width for calculations.
 const SLICE_WIDTH: f32 = 0.1;
@@ -91,23 +91,10 @@ impl Calculations {
 		let (sender, reciever) = crossbeam::channel::bounded(SENDER_CAPACITY);
 		_ = sender.send(Event::ClearPointClouds);
 
-		_ = sender.send(Event::Lookup {
-			bytes: include_bytes!("../assets/grad_turbo.png"),
-			max: u32::MAX,
-		});
-
 		{
 			let shared = shared.clone();
 			rayon::spawn(move || {
-				let mut segs = HashMap::<u32, _>::new();
-				for (_, points) in segments.into_iter() {
-					let mut idx = rand::random();
-					while idx == DELETED_INDEX || segs.contains_key(&idx) {
-						idx = rand::random();
-					}
-					segs.insert(idx, points);
-				}
-				segs.into_par_iter().for_each(|(idx, points)| {
+				segments.into_par_iter().for_each(|(idx, points)| {
 					let seg = SegmentData::new(points);
 
 					while sender.len() > SENDER_CAPACITY - 16 {
