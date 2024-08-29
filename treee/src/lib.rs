@@ -1,6 +1,7 @@
 mod calculations;
 mod camera;
 mod empty;
+mod hull;
 mod interactive;
 mod laz;
 mod loading;
@@ -195,7 +196,7 @@ pub mod environment {
 	}
 
 	impl Source {
-		pub fn new(sender: &crossbeam::channel::Sender<Event>) {
+		pub fn start(sender: &crossbeam::channel::Sender<Event>) {
 			let path = rfd::FileDialog::new()
 				.add_filter("Pointcloud", &["las", "laz", "ipc"])
 				.pick_file();
@@ -204,7 +205,7 @@ pub mod environment {
 			}
 		}
 
-		pub fn reader<'a>(&'a self) -> impl Read + Seek + 'a {
+		pub fn reader(&self) -> impl Read + Seek + '_ {
 			BufReader::new(std::fs::File::open(&self.path).unwrap())
 		}
 
@@ -218,9 +219,9 @@ pub mod environment {
 	}
 
 	impl Saver {
-		pub fn new(
+		pub fn start(
 			file_name: impl Into<String> + Send + 'static,
-			action: impl FnOnce(Saver) + Send + 'static,
+			action: impl FnOnce(Self) + Send + 'static,
 		) {
 			rayon::spawn(move || {
 				let path = rfd::FileDialog::new().set_file_name(file_name).save_file();
@@ -231,7 +232,7 @@ pub mod environment {
 			});
 		}
 
-		pub fn inner<'a>(&'a mut self) -> impl Write + 'a {
+		pub fn inner(&mut self) -> impl Write + '_ {
 			&mut self.file
 		}
 
@@ -249,7 +250,7 @@ pub mod environment {
 	}
 
 	impl Source {
-		pub fn new(sender: &crossbeam::channel::Sender<Event>) {
+		pub fn start(sender: &crossbeam::channel::Sender<Event>) {
 			let sender = sender.clone();
 			wasm_bindgen_futures::spawn_local(async move {
 				let handle = rfd::AsyncFileDialog::new()
@@ -283,7 +284,7 @@ pub mod environment {
 	}
 
 	impl Saver {
-		pub fn new(
+		pub fn start(
 			file_name: impl Into<String> + Send + 'static,
 			action: impl FnOnce(Saver) + Send + 'static,
 		) {

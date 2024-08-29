@@ -29,7 +29,7 @@ impl Empty {
 			.add_sized([ui.available_width(), 0.0], egui::Button::new("Load"))
 			.clicked()
 		{
-			environment::Source::new(&self.sender);
+			environment::Source::start(&self.sender);
 		}
 
 		#[cfg(target_arch = "wasm32")]

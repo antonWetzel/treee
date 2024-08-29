@@ -103,7 +103,7 @@ impl Calculations {
 					let mut event = Event::PointCloud {
 						idx: Some(idx),
 						data: seg.points.clone(),
-						segment: vec![idx as u32; seg.points.len()],
+						segment: vec![idx; seg.points.len()],
 					};
 					loop {
 						match sender.try_send(event) {
@@ -181,7 +181,7 @@ impl SegmentData {
 		_ = sender.send(Event::PointCloud {
 			idx: Some(idx),
 			data: self.points.clone(),
-			segment: vec![idx as u32; self.points.len()],
+			segment: vec![idx; self.points.len()],
 		});
 	}
 }
@@ -306,7 +306,7 @@ impl SegmentInformation {
 			}
 		}
 
-		let areas = get_size_areas(min, height, &data, |idx| {
+		let areas = get_size_areas(min, height, data, |idx| {
 			classifications[idx] == Classification::Crown
 		});
 
@@ -346,7 +346,7 @@ impl SegmentInformation {
 				.map(|(i, _)| {
 					let neighbors = neighbors_tree.get(
 						i,
-						&data,
+						data,
 						&mut neighbors_location,
 						neighbors_max_distance,
 					);

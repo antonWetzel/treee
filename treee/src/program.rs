@@ -407,13 +407,14 @@ impl Program {
 							chunk.render(point_cloud_pass);
 						}
 					}
+
 					if let interactive::Modus::View(view) = &interactive.modus {
-						if let Some(mesh) = &view.convex_hull {
-							let lines_pass = self
-								.lines_state
-								.render(&mut render_pass, self.display_settings.camera.gpu());
-							mesh.lines.render(&view.cloud, lines_pass);
-						};
+						view.hull.render(
+							&view.cloud,
+							&mut render_pass,
+							&self.lines_state,
+							&self.display_settings,
+						);
 					}
 
 					drop(render_pass);
@@ -483,7 +484,7 @@ impl Program {
 					},
 
 					"ipc" => {
-						let (interactive, receiver) = Interactive::load(source, &self.state);
+						let (interactive, receiver) = Interactive::load(source);
 						self.world = World::Interactive(interactive);
 						self.receiver = receiver;
 					},
@@ -501,7 +502,6 @@ impl Program {
 							let shared = Arc::try_unwrap(calculations.shared).unwrap();
 							let (interactive, receiver) = Interactive::new(
 								shared.segments.into_inner().unwrap(),
-								&self.state,
 								calculations.world_offset,
 							);
 							self.world = World::Interactive(interactive);

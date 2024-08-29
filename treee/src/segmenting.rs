@@ -183,11 +183,7 @@ fn segmentation(
 				.cells()
 				.iter()
 				.map(|cell| cell.points())
-				.map(|p| {
-					p.iter()
-						.map(|p| na::Point2::new(p.center.x as f32, p.center.y as f32))
-						.collect::<Vec<_>>()
-				})
+				.map(|p| p.iter().map(|p| p.center).collect::<Vec<_>>())
 				.map(Tree::from_points)
 				.zip(indices)
 				.collect::<VecDeque<_>>();
@@ -417,7 +413,7 @@ impl voronator::delaunator::Coord for Centroid {
 	}
 }
 
-impl voronator::delaunator::Vector<Centroid> for Centroid {}
+impl voronator::delaunator::Vector<Self> for Centroid {}
 
 impl TreeSet {
 	pub fn new_empty() -> Self {

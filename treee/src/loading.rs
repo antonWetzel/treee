@@ -63,7 +63,7 @@ impl Loading {
 				.add_sized([ui.available_width(), 0.0], egui::Button::new("Add"))
 				.clicked()
 			{
-				environment::Source::new(&self.shared.sender);
+				environment::Source::start(&self.shared.sender);
 			}
 
 			if ui

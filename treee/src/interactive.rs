@@ -1,14 +1,10 @@
 use nalgebra as na;
-use std::{
-	collections::{HashMap, HashSet},
-	hash::Hash,
-	ops::Not,
-	u32,
-};
+use std::{collections::HashMap, ops::Not};
 
 use crate::{
 	calculations::{map_to_u32, CalculationProperties, Classification, SegmentData, SegmentSave},
 	environment::{self, Saver},
+	hull::{ConvexHull, Hull, IncludeMode, RadialBoundingVolume},
 	program::{DisplaySettings, Event},
 };
 
@@ -16,6 +12,7 @@ use crate::{
 pub const DELETED_INDEX: u32 = 0;
 
 /// Unique ID based on the current source code location.
+#[macro_export]
 macro_rules! id {
 	() => {
 		(line!(), column!())
@@ -245,7 +242,6 @@ impl Interactive {
 	/// Create a new Interactive with the segments.
 	pub fn new(
 		segments: HashMap<u32, SegmentData>,
-		state: &render::State,
 		world_offset: na::Point3<f64>,
 	) -> (Self, crossbeam::channel::Receiver<Event>) {
 		let (sender, receiver) = crossbeam::channel::unbounded();
@@ -267,10 +263,7 @@ impl Interactive {
 	}
 
 	/// Load a Interactive from a file.
-	pub fn load(
-		source: environment::Source,
-		state: &render::State,
-	) -> (Self, crossbeam::channel::Receiver<Event>) {
+	pub fn load(source: environment::Source) -> (Self, crossbeam::channel::Receiver<Event>) {
 		let (sender, receiver) = crossbeam::channel::unbounded();
 
 		let reader = source.reader();
@@ -313,7 +306,7 @@ impl Interactive {
 				deleted: self.deleted.clone(),
 				world_offset: self.world_offset,
 			};
-			environment::Saver::new("pointcloud.ipc", move |mut saver| {
+			environment::Saver::start("pointcloud.ipc", move |mut saver| {
 				bincode::serialize_into(saver.inner(), &save).unwrap();
 				saver.save();
 			});
@@ -451,18 +444,50 @@ impl Interactive {
 					ui.radio_value(&mut view.display_modus, DisplayModus::Height, "Height");
 
 					ui.separator();
-					let mut render_hull = view.convex_hull.is_some();
-					if ui.checkbox(&mut render_hull, "Convex Hull").changed() {
-						view.convex_hull = if render_hull {
-							Some(ConvexHull::new(
-								&segment.points,
-								&segment.classifications,
-								state,
-							))
-						} else {
-							None
-						};
+					ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Hull"));
+					if ui
+						.add(egui::RadioButton::new(
+							matches!(view.hull, Hull::None),
+							"None",
+						))
+						.clicked()
+					{
+						view.hull = Hull::None;
 					}
+					if ui
+						.add(egui::RadioButton::new(
+							matches!(view.hull, Hull::Convex(_)),
+							"Convex Hull",
+						))
+						.clicked()
+					{
+						view.hull = Hull::Convex(ConvexHull::new(
+							&segment.points,
+							&segment.classifications,
+							IncludeMode::Crown,
+							state,
+						));
+					}
+					if ui
+						.add(egui::RadioButton::new(
+							matches!(view.hull, Hull::RadialBoundingVolume(_)),
+							"Radial Bounding Volume",
+						))
+						.clicked()
+					{
+						view.hull = Hull::RadialBoundingVolume(RadialBoundingVolume::new(
+							IncludeMode::All,
+							&segment.points,
+							&segment.classifications,
+							8,
+							8,
+							4,
+							state,
+						));
+					}
+					view.hull.ui(ui, segment, state);
+
+					ui.separator();
 					if ui
 						.add_sized(
 							[ui.available_width(), 0.0],
@@ -472,7 +497,7 @@ impl Interactive {
 					{
 						view.calculations_properties = segment.update_info(true);
 						view.display_data =
-							DisplayData::new(state, &segment, &view.calculations_properties);
+							DisplayData::new(state, segment, &view.calculations_properties);
 					}
 
 					ui.separator();
@@ -523,7 +548,7 @@ impl Interactive {
 						let points = seg.points.clone();
 						let classifications = seg.classifications.clone();
 						let calculations_properties = view.calculations_properties.clone();
-						environment::Saver::new("points.ply", move |mut saver| {
+						environment::Saver::start("points.ply", move |mut saver| {
 							save_points(
 								&mut saver,
 								&points,
@@ -551,27 +576,12 @@ impl Interactive {
 							longitude: seg.coords.map(|c| c.0.to_degrees()),
 							latitude: seg.coords.map(|c| c.1.to_degrees()),
 						};
-						environment::Saver::new("segment.json", move |mut saver| {
+						environment::Saver::start("segment.json", move |mut saver| {
 							serde_json::to_writer_pretty(saver.inner(), &save).unwrap();
 							saver.save();
 						});
 					}
-					if let Some(hull) = &view.convex_hull {
-						if ui
-							.add_sized(
-								[ui.available_width(), 0.0],
-								egui::Button::new("Convex Hull"),
-							)
-							.clicked()
-						{
-							let points = self.segments.get(&view.idx).unwrap().points.clone();
-							let faces = hull.faces.clone();
-							environment::Saver::new("convex_hull.ply", move |mut saver| {
-								ConvexHull::save(&mut saver, &points, &faces).unwrap();
-								saver.save();
-							})
-						}
-					}
+
 					for (name, file, classification) in [
 						("Crown", "crown.ply", Classification::Crown),
 						("Trunk", "trunk.ply", Classification::Trunk),
@@ -585,7 +595,7 @@ impl Interactive {
 							let points = seg.points.clone();
 							let classifications = seg.classifications.clone();
 							let calculations_properties = view.calculations_properties.clone();
-							environment::Saver::new(file, move |mut saver| {
+							environment::Saver::start(file, move |mut saver| {
 								save_points(
 									&mut saver,
 									&points,
@@ -713,7 +723,7 @@ impl Interactive {
 
 				self.modus = Modus::View(View {
 					idx,
-					convex_hull: None,
+					hull: Hull::None,
 					display_modus: DisplayModus::Classification,
 					modus: ViewModus::Delete,
 					display_data,
@@ -786,11 +796,9 @@ impl Interactive {
 						empty.push(other);
 					}
 				}
-				if self.show_deleted {
-					if self.deleted.remove(hit, self.draw_radius, &mut target) {
-						self.deleted.changed(DELETED_INDEX, &self.sender);
-						changed = true;
-					}
+				if self.show_deleted && self.deleted.remove(hit, self.draw_radius, &mut target) {
+					self.deleted.changed(DELETED_INDEX, &self.sender);
+					changed = true;
 				}
 
 				if changed {
@@ -823,11 +831,12 @@ impl Interactive {
 
 				let mut changed = false;
 
-				if self.show_deleted && view.modus != ViewModus::Delete {
-					if self.deleted.remove(hit, self.draw_radius, seg) {
-						self.deleted.changed(DELETED_INDEX, &self.sender);
-						changed = true;
-					}
+				if self.show_deleted
+					&& view.modus != ViewModus::Delete
+					&& self.deleted.remove(hit, self.draw_radius, seg)
+				{
+					self.deleted.changed(DELETED_INDEX, &self.sender);
+					changed = true;
 				}
 
 				changed |= match view.modus {
@@ -854,9 +863,7 @@ impl Interactive {
 					view.calculations_properties = seg.update_info(false);
 					view.display_data = DisplayData::new(state, seg, &view.calculations_properties);
 					view.cloud = render::PointCloud::new(state, &seg.points);
-					if let Some(hull) = &mut view.convex_hull {
-						*hull = ConvexHull::new(&seg.points, &seg.classifications, state);
-					}
+					view.hull.update(seg, state);
 				}
 			},
 			Modus::Combine(idx) => {
@@ -899,7 +906,7 @@ pub struct View {
 	pub cloud: render::PointCloud,
 	pub display_data: DisplayData,
 	pub calculations_properties: CalculationProperties,
-	pub convex_hull: Option<ConvexHull>,
+	pub hull: Hull,
 }
 
 /// Display data for selected segment.
@@ -953,7 +960,7 @@ impl DisplayData {
 			.classifications
 			.iter()
 			.map(|c| match c {
-				Classification::Ground => u32::MAX / 8 * 1,
+				Classification::Ground => u32::MAX / 8,
 				Classification::Trunk => u32::MAX / 8 * 3,
 				Classification::Crown => u32::MAX / 8 * 6,
 			})
@@ -977,192 +984,6 @@ pub enum ViewModus {
 	Crown,
 }
 
-/// Data for the convex hull
-#[derive(Debug)]
-pub struct ConvexHull {
-	faces: Vec<[u32; 3]>,
-	pub lines: render::Lines,
-}
-
-impl ConvexHull {
-	/// Calculate convex hull with the gift wrapping algorithm.
-	///
-	/// Source: https://tildesites.bo	wdoin.edu/~ltoma/teaching/cs3250-CompGeom/spring17/Lectures/cg-hull3d.pdf
-	fn new(
-		points: &[na::Point3<f32>],
-		classifications: &[Classification],
-		state: &render::State,
-	) -> Self {
-		#[derive(Debug, Clone, Copy)]
-		struct Point {
-			idx: usize,
-			pos: na::Point3<f32>,
-		}
-
-		impl PartialEq for Point {
-			fn eq(&self, other: &Self) -> bool {
-				self.idx == other.idx
-			}
-		}
-		impl Eq for Point {}
-		impl Hash for Point {
-			fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-				self.idx.hash(state)
-			}
-		}
-
-		let points = points
-			.iter()
-			.copied()
-			.enumerate()
-			.zip(classifications)
-			.filter_map(|((idx, pos), &c)| {
-				(c == Classification::Crown).then_some(Point { idx, pos })
-			})
-			.collect::<Vec<_>>();
-
-		if points.len() < 10 {
-			return Self {
-				faces: Vec::new(),
-				lines: render::Lines::new(state, &[0, 0]),
-			};
-		}
-
-		let mut first = points[0];
-		for &p in points.iter() {
-			if p.pos.y < first.pos.y {
-				first = p;
-			}
-		}
-
-		let mut best_value = f32::MAX;
-		let mut second = None;
-		for &p in points.iter() {
-			if first.idx == p.idx {
-				continue;
-			}
-			let v = p.pos - first.pos;
-			let x = v.dot(&na::vector![1.0, 0.0, 0.0]);
-			let y = v.dot(&na::vector![0.0, 1.0, 0.0]);
-			let angle = y.atan2(x);
-			assert!(angle >= 0.0);
-			if angle < best_value {
-				best_value = angle;
-				second = Some(p);
-			}
-		}
-		let second = second.unwrap();
-
-		let mut iter = points
-			.iter()
-			.copied()
-			.filter(|&p| p != first && p != second);
-		let mut third = iter.next().unwrap();
-		for p in iter {
-			let out = (second.pos - first.pos)
-				.normalize()
-				.cross(&(third.pos - first.pos).normalize());
-			if out.dot(&(p.pos - first.pos).normalize()) < 0.0 {
-				third = p;
-			}
-		}
-
-		let mut indices = Vec::new();
-		let mut faces = Vec::new();
-		indices.extend_from_slice(&[
-			first.idx as u32,
-			second.idx as u32,
-			second.idx as u32,
-			third.idx as u32,
-			third.idx as u32,
-			first.idx as u32,
-		]);
-		faces.push([first.idx as u32, second.idx as u32, third.idx as u32]);
-
-		let mut edges = [(second, first), (third, second), (first, third)]
-			.into_iter()
-			.collect::<HashSet<_>>();
-
-		while let Some(&(first, second)) = edges.iter().next() {
-			edges.remove(&(first, second));
-
-			let mut iter = points
-				.iter()
-				.copied()
-				.filter(|&p| p != first && p != second);
-			let mut third = iter.next().unwrap();
-			for p in iter {
-				let out = (second.pos - first.pos)
-					.normalize()
-					.cross(&(third.pos - first.pos).normalize());
-				if out.dot(&(p.pos - first.pos).normalize()) < 0.0 {
-					third = p;
-				}
-			}
-
-			faces.push([first.idx as u32, second.idx as u32, third.idx as u32]);
-
-			if edges.remove(&(third, first)).not() {
-				edges.insert((first, third));
-				indices.extend_from_slice(&[first.idx as u32, third.idx as u32]);
-			}
-			if edges.remove(&(second, third)).not() {
-				edges.insert((third, second));
-				indices.extend_from_slice(&[third.idx as u32, second.idx as u32]);
-			}
-		}
-
-		Self {
-			lines: render::Lines::new(state, &indices),
-			faces,
-		}
-	}
-
-	/// Save the convex hull as `.ply`.
-	pub fn save(
-		saver: &mut Saver,
-		points: &[na::Point3<f32>],
-		faces: &[[u32; 3]],
-	) -> Result<(), std::io::Error> {
-		use std::io::Write;
-
-		let mut mapping = HashMap::new();
-		let mut used_points = Vec::new();
-		for &face in faces {
-			for idx in face.into_iter() {
-				if mapping.contains_key(&idx) {
-					continue;
-				}
-				mapping.insert(idx, used_points.len());
-				used_points.push(idx);
-			}
-		}
-
-		let mut writer = saver.inner();
-		writeln!(writer, "ply")?;
-		writeln!(writer, "format ascii 1.0")?;
-		writeln!(writer, "element vertex {}", used_points.len())?;
-		writeln!(writer, "property float x")?;
-		writeln!(writer, "property float y")?;
-		writeln!(writer, "property float z")?;
-		writeln!(writer, "element face {}", faces.len())?;
-		writeln!(writer, "property list uchar uint vertex_indices")?;
-		writeln!(writer, "end_header")?;
-		for idx in used_points {
-			let p = points[idx as usize];
-			writeln!(writer, "{} {} {}", p.x, -p.z, p.y)?;
-		}
-		for face in faces {
-			writeln!(
-				writer,
-				"3 {} {} {}",
-				mapping[&face[0]], mapping[&face[2]], mapping[&face[1]]
-			)?;
-		}
-		Ok(())
-	}
-}
-
 /// Format radians as degrees, minutes and seconds.
 fn format_degrees(val: f64) -> String {
 	let deg = val.to_degrees();
@@ -1182,7 +1003,7 @@ pub fn save_points(
 ) -> Result<(), std::io::Error> {
 	use std::io::Write;
 
-	let count = classifications.into_iter().filter(|&&c| valid(c)).count();
+	let count = classifications.iter().filter(|&&c| valid(c)).count();
 	let mut writer = saver.inner();
 	writeln!(writer, "ply")?;
 	writeln!(writer, "format ascii 1.0")?;
