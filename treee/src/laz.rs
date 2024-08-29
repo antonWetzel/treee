@@ -13,6 +13,7 @@ use std::io::{Read, Seek, SeekFrom};
 
 use crate::{environment, Error};
 
+/// Load `.laz` files with multiple threads
 pub struct Laz {
 	vlr: Option<LazVlr>,
 	chunks: Vec<(u64, usize)>,

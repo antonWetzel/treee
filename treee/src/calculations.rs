@@ -13,20 +13,24 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use crate::{interactive::DELETED_INDEX, program::Event, segmenting::Tree};
 
+/// Slice width for calculations.
 const SLICE_WIDTH: f32 = 0.1;
 
+/// State for the Calculations phase.
 pub struct Calculations {
 	pub shared: Arc<Shared>,
 	pub total: usize,
 	pub world_offset: na::Point3<f64>,
 }
 
+/// Shared state for the workers.
 #[derive(Debug)]
 pub struct Shared {
 	pub segments: std::sync::Mutex<HashMap<u32, SegmentData>>,
 	pub progress: AtomicUsize,
 }
 
+/// Data for a segment.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SegmentData {
 	pub points: Vec<na::Point3<f32>>,
@@ -38,6 +42,7 @@ pub struct SegmentData {
 	pub coords: Option<(f64, f64)>,
 }
 
+/// Classification for a point.
 #[derive(
 	Debug,
 	Clone,
@@ -53,6 +58,7 @@ pub enum Classification {
 	Crown,
 }
 
+/// Calculated information to save for one segment.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SegmentSave {
 	#[serde(flatten)]
@@ -66,9 +72,11 @@ pub struct SegmentSave {
 	pub longitude: Option<f64>,
 }
 
+/// Limit event queue size.
 const SENDER_CAPACITY: usize = 128;
 
 impl Calculations {
+	/// Create phase from segments.
 	pub fn new(
 		segments: HashMap<u32, Vec<na::Point3<f32>>>,
 		world_offset: na::Point3<f64>,
@@ -128,6 +136,7 @@ impl Calculations {
 		(Self { shared, total, world_offset }, reciever)
 	}
 
+	/// Draw UI.
 	pub fn ui(&mut self, ui: &mut egui::Ui) {
 		let progress = self.shared.progress.load(Ordering::Relaxed) as f32 / self.total as f32;
 		ui.add(egui::ProgressBar::new(progress).rounding(egui::Rounding::ZERO));
@@ -135,6 +144,7 @@ impl Calculations {
 }
 
 impl SegmentData {
+	/// Create segment from points.
 	pub fn new(points: Vec<na::Point3<f32>>) -> Self {
 		let (min, max) = if points.is_empty() {
 			(na::point![0.0, 0.0, 0.0], na::point![0.0, 0.0, 0.0])
@@ -175,17 +185,7 @@ impl SegmentData {
 		}
 	}
 
-	pub fn property(&self) -> Vec<u32> {
-		self.classifications
-			.iter()
-			.map(|c| match c {
-				Classification::Ground => u32::MAX / 8 * 1,
-				Classification::Trunk => u32::MAX / 8 * 3,
-				Classification::Crown => u32::MAX / 8 * 6,
-			})
-			.collect()
-	}
-
+	/// Update the render data for the segment.
 	pub fn update_render(&self, idx: u32, sender: &crossbeam::channel::Sender<Event>) {
 		if self.points.is_empty() {
 			_ = sender.send(Event::RemovePointCloud(idx));
@@ -199,6 +199,7 @@ impl SegmentData {
 	}
 }
 
+/// Calculated information for a segment.
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct SegmentInformation {
 	pub trunk_height: f32,
@@ -211,13 +212,12 @@ pub struct SegmentInformation {
 }
 
 impl SegmentInformation {
+	/// Calculate from points.
 	pub fn new(data: &[na::Point3<f32>], min: f32, max: f32) -> Self {
 		let height = max - min;
 
 		let ground_max_search_height = 1.0;
 		let ground_min_area_scale = 1.5;
-		let trunk_diameter_height = 1.3;
-		let trunk_diameter_range = 0.2;
 		let crown_diameter_difference = 1.0;
 
 		let slices = ((height / SLICE_WIDTH) as usize) + 1;
@@ -230,7 +230,7 @@ impl SegmentInformation {
 			}
 		}
 
-		let areas = get_slices(min, height, data, |_| true);
+		let areas = get_size_areas(min, height, data, |_| true);
 
 		let min_area = areas
 			.iter()
@@ -260,39 +260,8 @@ impl SegmentInformation {
 			0
 		};
 
-		let (trunk_diameter, trunk_max) = {
-			let trunk_min = ground_sep as f32 * SLICE_WIDTH + trunk_diameter_height
-				- 0.5 * trunk_diameter_range;
-			let trunk_max = trunk_min + trunk_diameter_range;
-			let slice_trunk = data
-				.iter()
-				.filter(|p| (trunk_min..trunk_max).contains(&(p.y - min)))
-				.map(|p| na::Point2::new(p.x, p.y))
-				.collect::<Vec<_>>();
-
-			let mut best_score = f32::MAX;
-			let mut best_circle = (0.5, na::Point2::new(0.0, 0.0));
-			if slice_trunk.len() >= 8 {
-				for _ in 0..1000 {
-					let x = slice_trunk[rand::random::<usize>() % slice_trunk.len()];
-					let y = slice_trunk[rand::random::<usize>() % slice_trunk.len()];
-					let z = slice_trunk[rand::random::<usize>() % slice_trunk.len()];
-					let Some((center, radius)) = circle(x, y, z) else {
-						continue;
-					};
-					let score = slice_trunk
-						.iter()
-						.map(|p| ((p - center).norm() - radius).abs().min(0.2))
-						.sum::<f32>();
-					if score < best_score {
-						best_score = score;
-						best_circle = (2.0 * radius, center);
-					}
-				}
-			}
-
-			(best_circle.0, (trunk_max / SLICE_WIDTH).ceil() as usize)
-		};
+		let (trunk_diameter, trunk_max) =
+			trunk_diameter(ground_sep as f32 * SLICE_WIDTH, data, |_| true);
 
 		let min_crown_area =
 			std::f32::consts::PI * ((trunk_diameter + crown_diameter_difference) / 2.0).powi(2);
@@ -318,7 +287,8 @@ impl SegmentInformation {
 		}
 	}
 
-	pub fn redo_diameters(
+	/// Recalculate the information.
+	pub fn update(
 		&mut self,
 		data: &[na::Point3<f32>],
 		classifications: &[Classification],
@@ -326,44 +296,12 @@ impl SegmentInformation {
 		max: f32,
 		calc_curve: bool,
 	) -> CalculationProperties {
-		let trunk_diameter_range = 0.2;
 		let neighbors_count = 31;
 		let neighbors_max_distance = f32::MAX;
 
-		self.trunk_diameter = {
-			let trunk_min = self.ground_sep - 0.5 * trunk_diameter_range;
-			let trunk_max = trunk_min + trunk_diameter_range;
-			let slice_trunk = data
-				.iter()
-				.zip(classifications)
-				.filter_map(|(&p, &c)| (c == Classification::Trunk).then_some(p))
-				.filter(|p| (trunk_min..trunk_max).contains(&(p.y)))
-				.map(|p| na::Point2::new(p.x, p.y))
-				.collect::<Vec<_>>();
-
-			let mut best_score = f32::MAX;
-			let mut best_circle = (0.5, na::Point2::new(0.0, 0.0));
-			if slice_trunk.len() >= 8 {
-				for _ in 0..1000 {
-					let x = slice_trunk[rand::random::<usize>() % slice_trunk.len()];
-					let y = slice_trunk[rand::random::<usize>() % slice_trunk.len()];
-					let z = slice_trunk[rand::random::<usize>() % slice_trunk.len()];
-					let Some((center, radius)) = circle(x, y, z) else {
-						continue;
-					};
-					let score = slice_trunk
-						.iter()
-						.map(|p| ((p - center).norm() - radius).abs().min(0.2))
-						.sum::<f32>();
-					if score < best_score {
-						best_score = score;
-						best_circle = (2.0 * radius, center);
-					}
-				}
-			}
-
-			best_circle.0
-		};
+		(self.trunk_diameter, _) = trunk_diameter(self.ground_sep, data, |idx| {
+			classifications[idx] == Classification::Ground
+		});
 
 		let height = max - min;
 
@@ -381,7 +319,7 @@ impl SegmentInformation {
 			}
 		}
 
-		let areas = get_slices(min, height, &data, |idx| {
+		let areas = get_size_areas(min, height, &data, |idx| {
 			classifications[idx] == Classification::Crown
 		});
 
@@ -463,6 +401,7 @@ impl SegmentInformation {
 	}
 }
 
+/// Adapter to use generic KD-Tree.
 pub struct Adapter;
 impl k_nearest::Adapter<3, f32, na::Point3<f32>> for Adapter {
 	fn get(point: &na::Point3<f32>, dimension: usize) -> f32 {
@@ -474,6 +413,7 @@ impl k_nearest::Adapter<3, f32, na::Point3<f32>> for Adapter {
 	}
 }
 
+/// Wrapper for KD-Tree
 pub struct NeighborsTree {
 	tree: k_nearest::KDTree<3, f32, na::Point3<f32>, Adapter, k_nearest::EuclideanDistanceSquared>,
 }
@@ -503,6 +443,7 @@ impl NeighborsTree {
 	}
 }
 
+/// Calculated properties for one segment.
 #[derive(Debug, Clone)]
 pub struct CalculationProperties {
 	pub expansion: Vec<f32>,
@@ -510,7 +451,8 @@ pub struct CalculationProperties {
 	pub height: Vec<f32>,
 }
 
-pub fn get_slices(
+/// Seperate points into slices and calculate convex areas.
+pub fn get_size_areas(
 	min: f32,
 	height: f32,
 	data: &[na::Point3<f32>],
@@ -534,12 +476,15 @@ pub fn get_slices(
 		.collect::<Vec<_>>()
 }
 
+/// Convert value in range [0.0, 1.0] to [0, u32::MAX]
 pub fn map_to_u32(value: f32) -> u32 {
 	(value * u32::MAX as f32) as u32
 }
 
-/// https://stackoverflow.com/a/34326390
-/// adopted for 2D
+/// Calculate circum-sphere for the points.
+/// Returns `None` if the points are close to linear.
+///
+/// Source: https://stackoverflow.com/a/34326390
 fn circle(
 	point_a: na::Point2<f32>,
 	point_b: na::Point2<f32>,
@@ -563,12 +508,57 @@ fn circle(
 	Some((point_a + to, radius))
 }
 
+/// Approximate the diameter for the trunk with RANSAC.
+fn trunk_diameter(
+	ground_sep: f32,
+	data: &[nalgebra::OPoint<f32, nalgebra::Const<3>>],
+	valid: impl Fn(usize) -> bool,
+) -> (f32, usize) {
+	let trunk_diameter_height = 1.3;
+	let trunk_diameter_range = 0.2;
+
+	let trunk_min = ground_sep + trunk_diameter_height - 0.5 * trunk_diameter_range;
+	let trunk_max = trunk_min + trunk_diameter_range;
+	let slice_trunk = data
+		.iter()
+		.enumerate()
+		.filter_map(|(idx, &p)| valid(idx).then_some(p))
+		.filter(|p| (trunk_min..trunk_max).contains(&(p.y)))
+		.map(|p| na::Point2::new(p.x, p.y))
+		.collect::<Vec<_>>();
+
+	let mut best_score = f32::MAX;
+	let mut best_circle = (0.5, na::Point2::new(0.0, 0.0));
+	if slice_trunk.len() >= 8 {
+		for _ in 0..1000 {
+			let x = slice_trunk[rand::random::<usize>() % slice_trunk.len()];
+			let y = slice_trunk[rand::random::<usize>() % slice_trunk.len()];
+			let z = slice_trunk[rand::random::<usize>() % slice_trunk.len()];
+			let Some((center, radius)) = circle(x, y, z) else {
+				continue;
+			};
+			let score = slice_trunk
+				.iter()
+				.map(|p| ((p - center).norm() - radius).abs().min(0.2))
+				.sum::<f32>();
+			if score < best_score {
+				best_score = score;
+				best_circle = (2.0 * radius, center);
+			}
+		}
+	}
+
+	(best_circle.0, (trunk_max / SLICE_WIDTH).ceil() as usize)
+}
+
+/// Approxiamte diameter based on the area.
 fn approximate_diameter(area: f32) -> f32 {
 	2.0 * (area / std::f32::consts::PI).sqrt()
 }
 
-// https://en.wikipedia.org/wiki/Eigenvalue_algorithm#3%C3%973_matrices
-// the matrix must be real and symmetric
+/// Calculate eigenvalues for a real and symmetric 3x3 matrix.
+///
+/// Source: https://en.wikipedia.org/wiki/Eigenvalue_algorithm#3%C3%973_matrices
 pub fn fast_eigenvalues(mat: na::Matrix3<f32>) -> na::Point3<f32> {
 	fn square(x: f32) -> f32 {
 		x * x

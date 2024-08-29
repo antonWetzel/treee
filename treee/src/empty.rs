@@ -3,6 +3,7 @@ use crate::{environment, program::Event};
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
+/// Empty phase
 pub struct Empty {
 	sender: crossbeam::channel::Sender<Event>,
 	#[cfg(target_arch = "wasm32")]

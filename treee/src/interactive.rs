@@ -12,14 +12,17 @@ use crate::{
 	program::{DisplaySettings, Event},
 };
 
+/// Special index for the deleted index.
 pub const DELETED_INDEX: u32 = 0;
 
+/// Unique ID based on the current source code location.
 macro_rules! id {
 	() => {
 		(line!(), column!())
 	};
 }
 
+/// State for the Interactive phase.
 pub struct Interactive {
 	pub segments: HashMap<u32, SegmentData>,
 	pub deleted: SegmentData,
@@ -35,6 +38,7 @@ pub struct Interactive {
 	world_offset: na::Point3<f64>,
 }
 
+/// Data to save and load interactive phase.
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct InteractiveSave {
 	pub segments: HashMap<u32, SegmentData>,
@@ -42,11 +46,15 @@ pub struct InteractiveSave {
 	pub world_offset: na::Point3<f64>,
 }
 
+/// Default location (europe) to convert position to global coordinates.
 #[cfg(not(target_arch = "wasm32"))]
 const DEFAULT_LOCATION: &str = "+proj=utm\n+ellps=GRS80\n+zone=32";
 
 impl SegmentData {
-	//https://tavianator.com/2011/ray_box.html
+	/// First and second intersection with the bounding box.
+	/// Returns `None` if the ray does not hit the bounding box.
+	///
+	/// Source: <https://tavianator.com/2011/ray_box.html>
 	pub fn raycast_distance(
 		&self,
 		start: na::Point3<f32>,
@@ -68,6 +76,8 @@ impl SegmentData {
 		(t_max >= t_min && t_max >= 0.0).then_some((t_min, t_max))
 	}
 
+	/// Distance to the first point intersection the ray.
+	/// Returns `None` if the ray does not hit a point.
 	pub fn exact_distance(
 		&self,
 		start: na::Point3<f32>,
@@ -99,6 +109,8 @@ impl SegmentData {
 		found.then_some(best_dist)
 	}
 
+	/// Remove the points inside the sphere from the segment and add them to the target segment.
+	/// Returns `true` if any point changes segment.
 	pub fn remove(&mut self, center: na::Point3<f32>, radius: f32, target: &mut Self) -> bool {
 		for dim in 0..3 {
 			if ((self.min[dim] - radius)..(self.max[dim] + radius))
@@ -134,6 +146,7 @@ impl SegmentData {
 		changed
 	}
 
+	/// Change classification for every point inside the sphere.
 	pub fn change_classification(
 		&mut self,
 		center: na::Point3<f32>,
@@ -163,6 +176,7 @@ impl SegmentData {
 		changed
 	}
 
+	/// Update cashed information and data required for rendering.
 	fn changed(&mut self, idx: u32, sender: &crossbeam::channel::Sender<Event>) {
 		if self.points.is_empty() {
 			return;
@@ -204,8 +218,9 @@ impl SegmentData {
 		self.update_render(idx, sender)
 	}
 
-	fn redo_diameters(&mut self, calc_curve: bool) -> CalculationProperties {
-		self.info.redo_diameters(
+	/// Update information for the viewed segment.
+	fn update_info(&mut self, calc_curve: bool) -> CalculationProperties {
+		self.info.update(
 			&self.points,
 			&self.classifications,
 			self.min.y,
@@ -215,6 +230,7 @@ impl SegmentData {
 	}
 
 	#[cfg(not(target_arch = "wasm32"))]
+	/// Update the world coordinates.
 	fn update_location(&mut self, world_offset: na::Point3<f64>, proj: &proj4rs::Proj) {
 		let to = proj4rs::Proj::from_proj_string("+proj=latlong +ellps=GRS80").unwrap();
 		let mut point = (
@@ -227,6 +243,7 @@ impl SegmentData {
 }
 
 impl Interactive {
+	/// Create a new Interactive with the segments.
 	pub fn new(
 		segments: HashMap<u32, SegmentData>,
 		state: &render::State,
@@ -253,6 +270,7 @@ impl Interactive {
 		(interactive, receiver)
 	}
 
+	/// Load a Interactive from a file.
 	pub fn load(
 		source: environment::Source,
 		state: &render::State,
@@ -291,6 +309,7 @@ impl Interactive {
 		(interactive, receiver)
 	}
 
+	/// Draw the UI
 	pub fn ui(&mut self, ui: &mut egui::Ui, state: &render::State) {
 		ui.separator();
 		if ui
@@ -431,13 +450,17 @@ impl Interactive {
 				ui.separator();
 				ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Display"));
 				ui.radio_value(
-					&mut view.display,
-					PropertyDisplay::Classification,
+					&mut view.display_modus,
+					DisplayModus::Classification,
 					"Classification",
 				);
-				ui.radio_value(&mut view.display, PropertyDisplay::Curve, "Curve");
-				ui.radio_value(&mut view.display, PropertyDisplay::Expansion, "Expansion");
-				ui.radio_value(&mut view.display, PropertyDisplay::Height, "Height");
+				ui.radio_value(&mut view.display_modus, DisplayModus::Curve, "Curve");
+				ui.radio_value(
+					&mut view.display_modus,
+					DisplayModus::Expansion,
+					"Expansion",
+				);
+				ui.radio_value(&mut view.display_modus, DisplayModus::Height, "Height");
 
 				ui.separator();
 				let mut render_hull = view.convex_hull.is_some();
@@ -459,8 +482,9 @@ impl Interactive {
 					)
 					.clicked()
 				{
-					view.properties_data = segment.redo_diameters(true);
-					view.properties = Properties::new(state, &segment, &view.properties_data);
+					view.calculations_properties = segment.update_info(true);
+					view.display_data =
+						DisplayData::new(state, &segment, &view.calculations_properties);
 				}
 
 				ui.separator();
@@ -510,13 +534,13 @@ impl Interactive {
 					let seg = self.segments.get(&view.idx).unwrap();
 					let points = seg.points.clone();
 					let classifications = seg.classifications.clone();
-					let properties_data = view.properties_data.clone();
+					let calculations_properties = view.calculations_properties.clone();
 					environment::Saver::new("points.ply", move |mut saver| {
 						save_points(
 							&mut saver,
 							&points,
 							&classifications,
-							&properties_data,
+							&calculations_properties,
 							|_| true,
 						)
 						.unwrap();
@@ -572,13 +596,13 @@ impl Interactive {
 						let seg = self.segments.get(&view.idx).unwrap();
 						let points = seg.points.clone();
 						let classifications = seg.classifications.clone();
-						let properties_data = view.properties_data.clone();
+						let calculations_properties = view.calculations_properties.clone();
 						environment::Saver::new(file, move |mut saver| {
 							save_points(
 								&mut saver,
 								&points,
 								&classifications,
-								&properties_data,
+								&calculations_properties,
 								|c| c == classification,
 							)
 							.unwrap();
@@ -590,6 +614,7 @@ impl Interactive {
 		};
 	}
 
+	/// Get the first segment and distance hit by the ray.
 	fn select(
 		&self,
 		start: na::Point3<f32>,
@@ -622,6 +647,7 @@ impl Interactive {
 		best.map(|idx| (idx, distance))
 	}
 
+	/// Handle mouse click.
 	pub fn click(
 		&mut self,
 		start: na::Point3<f32>,
@@ -684,7 +710,7 @@ impl Interactive {
 					return;
 				};
 				let seg = self.segments.get_mut(&idx).unwrap();
-				let calc = seg.redo_diameters(true);
+				let calculations_properties = seg.update_info(true);
 
 				#[cfg(not(target_arch = "wasm32"))]
 				match proj4rs::Proj::from_proj_string(&self.source_location) {
@@ -692,15 +718,15 @@ impl Interactive {
 					Err(err) => eprintln!("{}", err),
 				}
 
-				let properties: Properties = Properties::new(state, seg, &calc);
+				let display_data = DisplayData::new(state, seg, &calculations_properties);
 
 				self.modus = Modus::View(View {
 					idx,
 					convex_hull: None,
-					display: PropertyDisplay::Classification,
+					display_modus: DisplayModus::Classification,
 					modus: ViewModus::Delete,
-					properties,
-					properties_data: calc,
+					display_data,
+					calculations_properties,
 					cloud: render::PointCloud::new(state, &seg.points),
 				})
 			},
@@ -709,6 +735,7 @@ impl Interactive {
 		}
 	}
 
+	/// Handle mouse drag.
 	pub fn drag(
 		&mut self,
 		start: na::Point3<f32>,
@@ -833,8 +860,8 @@ impl Interactive {
 				};
 				if changed {
 					seg.changed(view.idx, &self.sender);
-					view.properties_data = seg.redo_diameters(false);
-					view.properties = Properties::new(state, seg, &view.properties_data);
+					view.calculations_properties = seg.update_info(false);
+					view.display_data = DisplayData::new(state, seg, &view.calculations_properties);
 					view.cloud = render::PointCloud::new(state, &seg.points);
 					if let Some(hull) = &mut view.convex_hull {
 						*hull = ConvexHull::new(&seg.points, &seg.classifications, state);
@@ -859,6 +886,7 @@ impl Interactive {
 	}
 }
 
+/// Current Modus for the Interactive phase.
 #[derive(Debug)]
 pub enum Modus {
 	SelectView,
@@ -871,34 +899,38 @@ pub enum Modus {
 	View(View),
 }
 
+/// Selected segment to view.
 #[derive(Debug)]
 pub struct View {
 	pub idx: u32,
 	pub modus: ViewModus,
-	pub display: PropertyDisplay,
+	pub display_modus: DisplayModus,
 	pub cloud: render::PointCloud,
-	pub properties: Properties,
-	pub properties_data: CalculationProperties,
+	pub display_data: DisplayData,
+	pub calculations_properties: CalculationProperties,
 	pub convex_hull: Option<ConvexHull>,
 }
 
+/// Display data for selected segment.
 #[derive(Debug)]
-pub struct Properties {
+pub struct DisplayData {
 	pub classification: render::PointCloudProperty,
 	pub curve: render::PointCloudProperty,
 	pub expansion: render::PointCloudProperty,
 	pub height: render::PointCloudProperty,
 }
 
+/// Display modus to render.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PropertyDisplay {
+pub enum DisplayModus {
 	Classification,
 	Curve,
 	Expansion,
 	Height,
 }
 
-impl Properties {
+impl DisplayData {
+	/// Create DisplayData from values.
 	pub fn new(state: &render::State, seg: &SegmentData, calc: &CalculationProperties) -> Self {
 		let max_expansion = calc
 			.expansion
@@ -928,8 +960,18 @@ impl Properties {
 			.map(map_to_u32)
 			.collect::<Vec<_>>();
 
+		let classification = seg
+			.classifications
+			.iter()
+			.map(|c| match c {
+				Classification::Ground => u32::MAX / 8 * 1,
+				Classification::Trunk => u32::MAX / 8 * 3,
+				Classification::Crown => u32::MAX / 8 * 6,
+			})
+			.collect::<Vec<_>>();
+
 		Self {
-			classification: render::PointCloudProperty::new(state, &seg.property()),
+			classification: render::PointCloudProperty::new(state, &classification),
 			curve: render::PointCloudProperty::new(state, &curve),
 			expansion: render::PointCloudProperty::new(state, &expansion),
 			height: render::PointCloudProperty::new(state, &height),
@@ -937,6 +979,7 @@ impl Properties {
 	}
 }
 
+/// Edit modus for selected segment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ViewModus {
 	Delete,
@@ -945,6 +988,7 @@ pub enum ViewModus {
 	Crown,
 }
 
+/// Data for the convex hull
 #[derive(Debug)]
 pub struct ConvexHull {
 	faces: Vec<[u32; 3]>,
@@ -952,7 +996,9 @@ pub struct ConvexHull {
 }
 
 impl ConvexHull {
-	// https://tildesites.bowdoin.edu/~ltoma/teaching/cs3250-CompGeom/spring17/Lectures/cg-hull3d.pdf
+	/// Calculate convex hull with the gift wrapping algorithm.
+	///
+	/// Source: https://tildesites.bo	wdoin.edu/~ltoma/teaching/cs3250-CompGeom/spring17/Lectures/cg-hull3d.pdf
 	fn new(
 		points: &[na::Point3<f32>],
 		classifications: &[Classification],
@@ -1083,6 +1129,7 @@ impl ConvexHull {
 		}
 	}
 
+	/// Save the convex hull as `.ply`.
 	pub fn save(
 		saver: &mut Saver,
 		points: &[na::Point3<f32>],
@@ -1127,6 +1174,7 @@ impl ConvexHull {
 	}
 }
 
+/// Format radians as degrees, minutes and seconds.
 fn format_degrees(val: f64) -> String {
 	let deg = val.to_degrees();
 	let min = deg.fract() * if deg >= 0.0 { 60.0 } else { -60.0 };
@@ -1135,11 +1183,12 @@ fn format_degrees(val: f64) -> String {
 	format!("{:0>2}°{:0>2}'{:0>4.1}\"", deg, min, sec)
 }
 
+/// Save points as `.ply`.
 pub fn save_points(
 	saver: &mut Saver,
 	points: &[na::Point3<f32>],
 	classifications: &[Classification],
-	properties_data: &CalculationProperties,
+	calculations_properties: &CalculationProperties,
 	valid: impl Fn(Classification) -> bool,
 ) -> Result<(), std::io::Error> {
 	use std::io::Write;
@@ -1166,9 +1215,9 @@ pub fn save_points(
 			p.x,
 			-p.z,
 			p.y,
-			properties_data.expansion[idx],
-			properties_data.height[idx],
-			properties_data.curve[idx]
+			calculations_properties.expansion[idx],
+			calculations_properties.height[idx],
+			calculations_properties.curve[idx]
 		)?;
 	}
 

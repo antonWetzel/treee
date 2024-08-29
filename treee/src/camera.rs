@@ -1,8 +1,11 @@
 use nalgebra as na;
 
 const BASE_ROTATE_SPEED: f32 = 0.002;
+
+/// 45 degrees
 const FIELD_OF_VIEW: f32 = 45.0 * std::f32::consts::TAU / 360.0;
 
+/// Camera controller
 pub struct Camera {
 	gpu: render::Camera3DGPU,
 	cam: render::Camera3D,
@@ -87,7 +90,12 @@ impl Camera {
 		self.cam.inside(corner, size, self.transform)
 	}
 
-	pub fn inside_moved_frustrum(&self, corner: na::Point3<f32>, size: f32, difference: f32) -> bool {
+	pub fn inside_moved_frustrum(
+		&self,
+		corner: na::Point3<f32>,
+		size: f32,
+		difference: f32,
+	) -> bool {
 		self.cam.inside(
 			corner,
 			size,
@@ -95,11 +103,19 @@ impl Camera {
 		)
 	}
 
-	pub fn ray_origin(&self, _position: na::Point2<f32>, _window_size: na::Point2<f32>) -> na::Point3<f32> {
+	pub fn ray_origin(
+		&self,
+		_position: na::Point2<f32>,
+		_window_size: na::Point2<f32>,
+	) -> na::Point3<f32> {
 		self.transform * na::Point::origin()
 	}
 
-	pub fn ray_direction(&self, position: na::Point2<f32>, window_size: na::Point2<f32>) -> na::Vector3<f32> {
+	pub fn ray_direction(
+		&self,
+		position: na::Point2<f32>,
+		window_size: na::Point2<f32>,
+	) -> na::Vector3<f32> {
 		let dist = (window_size.y / 2.0) / (FIELD_OF_VIEW / 2.0).tan();
 		let position = position - window_size / 2.0;
 		(self.transform * na::vector![position.x, -position.y, -dist]).normalize()
@@ -125,12 +141,13 @@ impl Controller {
 	pub fn movement(&mut self, direction: na::Vector2<f32>, transform: &mut na::Affine3<f32>) {
 		match *self {
 			Self::FirstPerson { sensitivity } => {
-				*transform *= na::Translation3::new(direction.x * sensitivity, 0.0, direction.y * sensitivity)
+				*transform *=
+					na::Translation3::new(direction.x * sensitivity, 0.0, direction.y * sensitivity)
 			},
 			Self::Orbital { offset } => {
 				let vector = (*transform * na::vector![1.0, 0.0, 0.0] * direction.x
-					+ (*transform * na::vector![1.0, 0.0, 0.0]).cross(&na::vector![0.0, 1.0, 0.0]) * direction.y)
-					* offset;
+					+ (*transform * na::vector![1.0, 0.0, 0.0]).cross(&na::vector![0.0, 1.0, 0.0])
+						* direction.y) * offset;
 				*transform = na::Translation3 { vector } * *transform;
 			},
 		}

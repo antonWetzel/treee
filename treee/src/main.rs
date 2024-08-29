@@ -1,5 +1,6 @@
 use pollster::FutureExt;
 
+/// Main function for native OS.
 fn main() {
 	simple_logger::SimpleLogger::new()
 		.with_level(log::LevelFilter::Info)

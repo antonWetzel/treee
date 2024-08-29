@@ -1,4 +1,3 @@
-use crossbeam::channel::SendError;
 use nalgebra as na;
 use std::{
 	collections::HashMap,
@@ -11,6 +10,7 @@ use std::{
 
 use crate::{environment, laz::Laz, program::Event, Error};
 
+/// Phase to load points from a source.
 #[derive(Debug)]
 pub struct Loading {
 	pub min: na::Point3<f32>,
@@ -19,6 +19,7 @@ pub struct Loading {
 	pub shared: Arc<Shared>,
 }
 
+/// Shared state for the workers
 #[derive(Debug)]
 pub struct Shared {
 	progress: AtomicUsize,
@@ -79,6 +80,7 @@ impl Loading {
 		}
 	}
 
+	/// Add new source to load.
 	pub fn add(&mut self, source: environment::Source) {
 		let laz = Laz::new(source, Some(self.shared.world_offset)).unwrap();
 		for dim in 0..3 {

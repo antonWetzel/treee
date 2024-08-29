@@ -1,7 +1,7 @@
 use crate::calculations::Calculations;
 use crate::camera::Camera;
 use crate::empty::Empty;
-use crate::interactive::{self, Interactive, PropertyDisplay, DELETED_INDEX};
+use crate::interactive::{self, DisplayModus, Interactive, DELETED_INDEX};
 use crate::loading::Loading;
 use crate::segmenting::{Segmenting, DEFAULT_MAX_DISTANCE};
 use crate::{environment, Error, EventLoop};
@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::ops::Not;
 use std::sync::Arc;
 
+/// Events from the current phase to the progam.
 pub enum Event {
 	Done,
 	Lookup {
@@ -31,6 +32,7 @@ pub enum Event {
 	},
 }
 
+/// Main program state.
 pub struct Program {
 	pub world: World,
 	pub receiver: crossbeam::channel::Receiver<Event>,
@@ -57,6 +59,7 @@ pub struct Program {
 	chunks: HashMap<u32, Chunk>,
 }
 
+/// Single chunk to render.
 struct Chunk {
 	point_cloud: render::PointCloud,
 	segment: render::PointCloudProperty,
@@ -68,6 +71,7 @@ impl Chunk {
 	}
 }
 
+/// Global display settings.
 pub struct DisplaySettings {
 	pub background: na::Point3<f32>,
 	pub point_cloud_environment: render::PointCloudEnvironment,
@@ -101,6 +105,7 @@ impl DisplaySettings {
 	}
 }
 
+/// Current phase.
 pub enum World {
 	Empty(Empty),
 	Loading(Loading),
@@ -193,6 +198,7 @@ impl Program {
 		if self.paused {
 			return;
 		}
+		// handle ui
 		let raw_input = self.egui_winit.take_egui_input(&self.window);
 		let full_output = self.egui.run(raw_input, |ctx| {
 			egui::SidePanel::left("panel")
@@ -240,6 +246,7 @@ impl Program {
 			self.egui_wgpu.free_texture(&id);
 		}
 
+		// handle current phase
 		match &self.world {
 			World::Empty(_) | World::Loading(_) | World::Segmenting(_) => {
 				self.window.render(&self.state, |context| {
@@ -329,11 +336,11 @@ impl Program {
 						}
 					}
 					if let interactive::Modus::View(ref view) = interactive.modus {
-						let property = match view.display {
-							PropertyDisplay::Classification => &view.properties.classification,
-							PropertyDisplay::Curve => &view.properties.curve,
-							PropertyDisplay::Expansion => &view.properties.expansion,
-							PropertyDisplay::Height => &view.properties.height,
+						let property = match view.display_modus {
+							DisplayModus::Classification => &view.display_data.classification,
+							DisplayModus::Curve => &view.display_data.curve,
+							DisplayModus::Expansion => &view.display_data.expansion,
+							DisplayModus::Height => &view.display_data.height,
 						};
 						view.cloud.render(point_cloud_pass, property);
 					} else {
@@ -404,6 +411,7 @@ impl Program {
 				.vertical_movement(delta * 10.0, &self.state);
 		}
 
+		// handle events in the queue at this moment
 		let mut work = self.receiver.len();
 		while let Ok(event) = self.receiver.try_recv() {
 			match event {
@@ -571,6 +579,7 @@ impl Program {
 	}
 }
 
+/// Helper to get elapsed time.
 struct Time {
 	now: web_time::Instant,
 }

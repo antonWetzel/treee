@@ -16,6 +16,7 @@ use crate::{loading::Loading, program::Event};
 
 pub const DEFAULT_MAX_DISTANCE: f32 = 0.75;
 
+/// State for Segmenting phase.
 pub struct Segmenting {
 	pub shared: Arc<Shared>,
 	pub distance: f32,
@@ -24,6 +25,7 @@ pub struct Segmenting {
 	pub world_offset: na::Point3<f64>,
 }
 
+/// Shared state for workers.
 pub struct Shared {
 	pub done: AtomicCell<Option<HashMap<u32, Vec<na::Point3<f32>>>>>,
 	pub progress: AtomicUsize,
@@ -160,10 +162,12 @@ fn segmentation(
 	let segments = HashMap::<u32, Vec<na::Point3<f32>>>::new();
 	let segments = Mutex::new(segments);
 
+	// parallel loop, break if any worker returns true
 	let cancel = slices
 		.into_iter()
 		.par_bridge()
 		.any(|(c_receiver, slice, c_sender)| {
+			// recieved new distance, break
 			if reciever.is_empty().not() {
 				return true;
 			}
@@ -236,11 +240,13 @@ fn segmentation(
 	segmenting.done.store(Some(segments));
 }
 
+/// A collection of trees.
 #[derive(Debug, Clone)]
 pub struct TreeSet {
 	trees: Vec<Tree>,
 }
 
+/// A tree (convex area).
 #[derive(Debug, Clone)]
 pub struct Tree {
 	points: Vec<na::Point2<f32>>,
@@ -248,6 +254,7 @@ pub struct Tree {
 	max: na::Point2<f32>,
 }
 
+/// Calculated statistics for a tree.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct TreeStatistics {
 	pub area: f32,
@@ -497,7 +504,9 @@ impl TreeSet {
 	}
 }
 
-//https://math.stackexchange.com/questions/90463/how-can-i-calculate-the-centroid-of-polygon
+/// Calculate the weighted centroid for a convex area.
+///
+/// Source: https://math.stackexchange.com/questions/90463/how-can-i-calculate-the-centroid-of-polygon
 fn centroid(points: &[na::Point2<f32>]) -> (na::Point2<f32>, f32) {
 	let mut center = na::vector![0.0, 0.0];
 	let mut area = 0.0;

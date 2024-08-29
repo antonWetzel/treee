@@ -13,6 +13,7 @@ use program::Program;
 use std::io::{BufReader, Read, Seek, Write};
 use std::{fs::File, io::BufWriter};
 
+/// Main loop
 pub async fn try_main() -> Result<(), Error> {
 	let event_loop = winit::event_loop::EventLoop::new()?;
 
@@ -53,6 +54,7 @@ pub async fn try_main() -> Result<(), Error> {
 	Ok(())
 }
 
+/// Possible errors for treee
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
 	#[error(transparent)]
@@ -74,6 +76,7 @@ pub enum Error {
 	CorruptFile,
 }
 
+/// Current state for the event loop
 enum App {
 	Running(Program),
 	Error(Error),
@@ -181,6 +184,7 @@ impl App {
 	}
 }
 
+/// Abstraction for OS specific interactions.
 #[cfg(not(target_arch = "wasm32"))]
 pub mod environment {
 
