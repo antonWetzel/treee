@@ -50,6 +50,7 @@ impl State {
 					required_features: wgpu::Features::empty(),
 					required_limits: wgpu::Limits::default(),
 					label: None,
+					memory_hints: wgpu::MemoryHints::Performance,
 				},
 				None,
 			)

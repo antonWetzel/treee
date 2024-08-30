@@ -40,44 +40,52 @@ struct EyeDomeUniform {
 }
 
 impl EyeDome {
-	pub fn new(state: &State, config: &wgpu::SurfaceConfiguration, depth: &DepthTexture, strength: f32) -> Self {
-		let depth_layout = state
-			.device
-			.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-				label: Some("eye dome Layout"),
-				entries: &[wgpu::BindGroupLayoutEntry {
-					binding: 0,
-					count: None,
-					ty: wgpu::BindingType::Texture {
-						sample_type: wgpu::TextureSampleType::Float { filterable: false },
-						multisampled: false,
-						view_dimension: wgpu::TextureViewDimension::D2,
-					},
-					visibility: wgpu::ShaderStages::FRAGMENT,
-				}],
-			});
+	pub fn new(
+		state: &State,
+		config: &wgpu::SurfaceConfiguration,
+		depth: &DepthTexture,
+		strength: f32,
+	) -> Self {
+		let depth_layout =
+			state
+				.device
+				.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+					label: Some("eye dome Layout"),
+					entries: &[wgpu::BindGroupLayoutEntry {
+						binding: 0,
+						count: None,
+						ty: wgpu::BindingType::Texture {
+							sample_type: wgpu::TextureSampleType::Float { filterable: false },
+							multisampled: false,
+							view_dimension: wgpu::TextureViewDimension::D2,
+						},
+						visibility: wgpu::ShaderStages::FRAGMENT,
+					}],
+				});
 
 		let depth_bind_group = Self::get_depth_bindgroup(state, &depth_layout, depth);
 
-		let settings_layout = state
-			.device
-			.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-				label: Some("eye dome Layout"),
-				entries: &[wgpu::BindGroupLayoutEntry {
-					binding: 0,
-					count: None,
-					ty: wgpu::BindingType::Buffer {
-						ty: wgpu::BufferBindingType::Uniform,
-						has_dynamic_offset: false,
-						min_binding_size: None,
-					},
-					visibility: wgpu::ShaderStages::FRAGMENT,
-				}],
-			});
+		let settings_layout =
+			state
+				.device
+				.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+					label: Some("eye dome Layout"),
+					entries: &[wgpu::BindGroupLayoutEntry {
+						binding: 0,
+						count: None,
+						ty: wgpu::BindingType::Buffer {
+							ty: wgpu::BufferBindingType::Uniform,
+							has_dynamic_offset: false,
+							min_binding_size: None,
+						},
+						visibility: wgpu::ShaderStages::FRAGMENT,
+					}],
+				});
 
 		let color = [0.0, 0.0, 0.0].into();
 
-		let settings_bind_group = Self::get_settings_bindgroup(state, &settings_layout, color, strength);
+		let settings_bind_group =
+			Self::get_settings_bindgroup(state, &settings_layout, color, strength);
 
 		let vertex_buffer = state
 			.device
@@ -87,13 +95,14 @@ impl EyeDome {
 				usage: wgpu::BufferUsages::VERTEX,
 			});
 
-		let pipeline_layout = state
-			.device
-			.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-				label: Some("eye dome Pipeline Layout"),
-				bind_group_layouts: &[&depth_layout, &settings_layout],
-				push_constant_ranges: &[],
-			});
+		let pipeline_layout =
+			state
+				.device
+				.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+					label: Some("eye dome Pipeline Layout"),
+					bind_group_layouts: &[&depth_layout, &settings_layout],
+					push_constant_ranges: &[],
+				});
 
 		let shader = state
 			.device
@@ -102,42 +111,46 @@ impl EyeDome {
 				source: wgpu::ShaderSource::Wgsl(include_str!("eye_dome.wgsl").into()),
 			});
 
-		let render_pipeline = state
-			.device
-			.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-				label: Some("eye dome Render Pipeline"),
-				layout: Some(&pipeline_layout),
-				vertex: wgpu::VertexState {
-					module: &shader,
-					entry_point: "vs_main",
-					buffers: &[Vertex2D::desc()],
-				},
-				fragment: Some(wgpu::FragmentState {
-					module: &shader,
-					entry_point: "fs_main",
-					targets: &[Some(wgpu::ColorTargetState {
-						format: config.format,
-						blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-						write_mask: wgpu::ColorWrites::ALL,
-					})],
-				}),
-				primitive: wgpu::PrimitiveState {
-					topology: wgpu::PrimitiveTopology::TriangleList,
-					strip_index_format: None,
-					front_face: wgpu::FrontFace::Ccw,
-					cull_mode: Some(wgpu::Face::Back),
-					polygon_mode: wgpu::PolygonMode::Fill,
-					unclipped_depth: false,
-					conservative: false,
-				},
-				depth_stencil: None,
-				multisample: wgpu::MultisampleState {
-					count: 1,
-					mask: !0,
-					alpha_to_coverage_enabled: false,
-				},
-				multiview: None,
-			});
+		let render_pipeline =
+			state
+				.device
+				.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+					label: Some("eye dome Render Pipeline"),
+					layout: Some(&pipeline_layout),
+					vertex: wgpu::VertexState {
+						module: &shader,
+						entry_point: "vs_main",
+						buffers: &[Vertex2D::desc()],
+						compilation_options: Default::default(),
+					},
+					fragment: Some(wgpu::FragmentState {
+						module: &shader,
+						entry_point: "fs_main",
+						targets: &[Some(wgpu::ColorTargetState {
+							format: config.format,
+							blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+							write_mask: wgpu::ColorWrites::ALL,
+						})],
+						compilation_options: Default::default(),
+					}),
+					primitive: wgpu::PrimitiveState {
+						topology: wgpu::PrimitiveTopology::TriangleList,
+						strip_index_format: None,
+						front_face: wgpu::FrontFace::Ccw,
+						cull_mode: Some(wgpu::Face::Back),
+						polygon_mode: wgpu::PolygonMode::Fill,
+						unclipped_depth: false,
+						conservative: false,
+					},
+					depth_stencil: None,
+					multisample: wgpu::MultisampleState {
+						count: 1,
+						mask: !0,
+						alpha_to_coverage_enabled: false,
+					},
+					multiview: None,
+					cache: None,
+				});
 
 		Self {
 			depth_layout,
@@ -158,7 +171,11 @@ impl EyeDome {
 		self.depth_bind_group = Self::get_depth_bindgroup(state, &self.depth_layout, depth);
 	}
 
-	fn get_depth_bindgroup(state: &State, layout: &wgpu::BindGroupLayout, depth: &DepthTexture) -> wgpu::BindGroup {
+	fn get_depth_bindgroup(
+		state: &State,
+		layout: &wgpu::BindGroupLayout,
+		depth: &DepthTexture,
+	) -> wgpu::BindGroup {
 		state.device.create_bind_group(&wgpu::BindGroupDescriptor {
 			layout,
 			entries: &[wgpu::BindGroupEntry {

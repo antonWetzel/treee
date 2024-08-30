@@ -54,12 +54,10 @@ impl Laz {
 			}
 
 			if total > MAX_NUMBER_POINTS {
-				unsafe {
-					alert(&format!(
-						"Point cloud to large, only the first {} points are used!",
-						MAX_NUMBER_POINTS
-					))
-				};
+				alert(&format!(
+					"Point cloud to large, only the first {} points are used!",
+					MAX_NUMBER_POINTS
+				));
 				total = MAX_NUMBER_POINTS;
 			}
 		}

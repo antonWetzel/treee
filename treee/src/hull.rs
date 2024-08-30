@@ -503,13 +503,13 @@ impl RadialBoundingVolume {
 					na::point![center.x, y_max, center.y],
 					na::point![x, y_max, z],
 				);
+				line(na::point![x, y_min, z], na::point![x, y_max, z]);
 
 				for _ in 0..details {
 					angle += sector_angle / details as f32;
 					let next_x = center.x + angle.cos() * distance;
 					let next_z = center.y + angle.sin() * distance;
 
-					line(na::point![x, y_min, z], na::point![x, y_max, z]);
 					line(na::point![x, y_min, z], na::point![next_x, y_min, next_z]);
 					line(na::point![x, y_max, z], na::point![next_x, y_max, next_z]);
 

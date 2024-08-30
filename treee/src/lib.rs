@@ -11,47 +11,28 @@ mod segmenting;
 use nalgebra as na;
 use program::Event;
 use program::Program;
-use std::io::{BufReader, Read, Seek, Write};
-use std::{fs::File, io::BufWriter};
+use std::io::{Read, Seek, Write};
+use std::sync::Arc;
 
 /// Main loop
 pub async fn try_main() -> Result<(), Error> {
-	let event_loop = winit::event_loop::EventLoop::new()?;
-
-	let program = Program::new(&event_loop).await?;
-	let mut app = App::Running(program);
+	let event_loop = winit::event_loop::EventLoop::with_user_event().build()?;
+	let proxy = event_loop.create_proxy();
 
 	#[cfg(not(target_arch = "wasm32"))]
 	{
-		event_loop.run(|event, event_loop| match event {
-			winit::event::Event::Resumed => app.resumed(event_loop),
-			winit::event::Event::Suspended => app.suspended(event_loop),
-			winit::event::Event::WindowEvent { window_id, event } => {
-				app.window_event(event_loop, window_id, event)
-			},
-			winit::event::Event::AboutToWait => app.about_to_wait(event_loop),
-			_ => {},
-		})?;
-
+		let mut app = App::Starting(proxy);
+		event_loop.run_app(&mut app)?;
 		if let App::Error(err) = app {
 			return Err(err);
 		}
 	}
-
 	#[cfg(target_arch = "wasm32")]
 	{
 		use winit::platform::web::EventLoopExtWebSys;
-		event_loop.spawn(move |event, event_loop| match event {
-			winit::event::Event::Resumed => app.resumed(event_loop),
-			winit::event::Event::Suspended => app.suspended(event_loop),
-			winit::event::Event::WindowEvent { window_id, event } => {
-				app.window_event(event_loop, window_id, event)
-			},
-			winit::event::Event::AboutToWait => app.about_to_wait(event_loop),
-			_ => {},
-		});
+		let app = App::Starting(proxy);
+		event_loop.spawn_app(app);
 	}
-
 	Ok(())
 }
 
@@ -79,19 +60,69 @@ pub enum Error {
 
 /// Current state for the event loop
 enum App {
+	/// Start until first resume event
+	Starting(winit::event_loop::EventLoopProxy<App>),
+	/// Wait until async is initialized
+	Wait(Arc<winit::window::Window>),
+	/// Main phase
 	Running(Program),
+	/// Some Error, exit
 	Error(Error),
 }
 
-type EventLoop = winit::event_loop::EventLoopWindowTarget<()>;
-// wait for egui winit 0.30
-// impl winit::application::ApplicationHandler for App {
-impl App {
+type EventLoop = winit::event_loop::ActiveEventLoop;
+
+impl winit::application::ApplicationHandler<Self> for App {
+	fn user_event(&mut self, _event_loop: &EventLoop, event: Self) {
+		*self = event;
+	}
+
 	fn resumed(&mut self, event_loop: &EventLoop) {
-		self.try_do(event_loop, |_program| {
-			println!("resumed");
-			Ok(())
-		})
+		match self {
+			Self::Starting(_) => {
+				let window = event_loop
+					.create_window(
+						winit::window::Window::default_attributes()
+							.with_title("Treee")
+							.with_min_inner_size(winit::dpi::LogicalSize { width: 10, height: 10 }),
+					)
+					.unwrap();
+
+				let window = Arc::new(window);
+				let App::Starting(proxy) = std::mem::replace(self, App::Wait(window.clone()))
+				else {
+					unreachable!()
+				};
+
+				#[cfg(not(target_arch = "wasm32"))]
+				{
+					use pollster::FutureExt;
+					let app = match Program::new(window).block_on() {
+						Ok(program) => Self::Running(program),
+						Err(err) => Self::Error(err),
+					};
+					proxy
+						.send_event(app)
+						.map_err(|_| "Could not send with proxy")
+						.unwrap();
+				}
+
+				#[cfg(target_arch = "wasm32")]
+				{
+					wasm_bindgen_futures::spawn_local(async move {
+						let app = match Program::new(window).await {
+							Ok(program) => Self::Running(program),
+							Err(err) => Self::Error(err),
+						};
+						proxy
+							.send_event(app)
+							.map_err(|_| "Could not send with proxy")
+							.unwrap();
+					});
+				}
+			},
+			_ => {},
+		}
 	}
 
 	fn suspended(&mut self, event_loop: &EventLoop) {
@@ -173,6 +204,13 @@ impl App {
 		action: impl FnOnce(&mut Program) -> Result<(), Error>,
 	) {
 		match self {
+			Self::Starting(_) => {
+				log::error!("try in starting phase");
+			},
+			Self::Wait(window) => {
+				// request redraw until async is initialized
+				window.request_redraw();
+			},
 			Self::Running(program) => match action(program) {
 				Ok(()) => {},
 				Err(err) => {
@@ -180,7 +218,7 @@ impl App {
 					*self = Self::Error(err)
 				},
 			},
-			Self::Error(_) => {},
+			Self::Error(_) => event_loop.exit(),
 		}
 	}
 }
@@ -188,6 +226,7 @@ impl App {
 /// Abstraction for OS specific interactions.
 #[cfg(not(target_arch = "wasm32"))]
 pub mod environment {
+	use std::{fs::File, io::BufWriter};
 
 	use super::*;
 
@@ -206,7 +245,7 @@ pub mod environment {
 		}
 
 		pub fn reader(&self) -> impl Read + Seek + '_ {
-			BufReader::new(std::fs::File::open(&self.path).unwrap())
+			std::io::BufReader::new(std::fs::File::open(&self.path).unwrap())
 		}
 
 		pub fn extension(&self) -> &str {

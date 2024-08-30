@@ -52,6 +52,7 @@ impl PointCloudState {
 						point_description(wgpu::VertexStepMode::Instance),
 						point_property_description(wgpu::VertexStepMode::Instance),
 					],
+					compilation_options: Default::default(),
 				},
 				fragment: Some(wgpu::FragmentState {
 					module: &shader,
@@ -61,6 +62,7 @@ impl PointCloudState {
 						blend: Some(wgpu::BlendState::REPLACE),
 						write_mask: wgpu::ColorWrites::ALL,
 					})],
+					compilation_options: Default::default(),
 				}),
 				primitive: wgpu::PrimitiveState {
 					topology: wgpu::PrimitiveTopology::TriangleList,
@@ -84,6 +86,7 @@ impl PointCloudState {
 					alpha_to_coverage_enabled: false,
 				},
 				multiview: None,
+				cache: None,
 			});
 
 		Self {

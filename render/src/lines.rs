@@ -12,13 +12,14 @@ impl LinesState {
 		let shader = state
 			.device
 			.create_shader_module(wgpu::include_wgsl!("lines.wgsl"));
-		let render_pipeline_layout = state
-			.device
-			.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-				label: Some("Lines Pipeline Layout"),
-				bind_group_layouts: &[&Camera3DGPU::get_layout(state)],
-				push_constant_ranges: &[],
-			});
+		let render_pipeline_layout =
+			state
+				.device
+				.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+					label: Some("Lines Pipeline Layout"),
+					bind_group_layouts: &[&Camera3DGPU::get_layout(state)],
+					push_constant_ranges: &[],
+				});
 
 		let pipeline = state
 			.device
@@ -29,6 +30,7 @@ impl LinesState {
 					module: &shader,
 					entry_point: "vs_main",
 					buffers: &[description(wgpu::VertexStepMode::Vertex)],
+					compilation_options: Default::default(),
 				},
 				fragment: Some(wgpu::FragmentState {
 					module: &shader,
@@ -38,6 +40,7 @@ impl LinesState {
 						blend: Some(wgpu::BlendState::REPLACE),
 						write_mask: wgpu::ColorWrites::ALL,
 					})],
+					compilation_options: Default::default(),
 				}),
 				primitive: wgpu::PrimitiveState {
 					topology: wgpu::PrimitiveTopology::LineList,
@@ -61,6 +64,7 @@ impl LinesState {
 					alpha_to_coverage_enabled: false,
 				},
 				multiview: None,
+				cache: None,
 			});
 
 		Self { pipeline }

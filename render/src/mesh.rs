@@ -1,6 +1,8 @@
 use wgpu::util::DeviceExt;
 
-use crate::{depth_texture::DepthTexture, point_description, Camera3DGPU, PointCloud, RenderPass, State};
+use crate::{
+	depth_texture::DepthTexture, point_description, Camera3DGPU, PointCloud, RenderPass, State,
+};
 
 pub struct MeshState {
 	pipeline: wgpu::RenderPipeline,
@@ -17,14 +19,14 @@ impl MeshState {
 		let shader = state
 			.device
 			.create_shader_module(wgpu::include_wgsl!("mesh.wgsl"));
-		let render_pipeline_layout = state
-			.device
-			.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-				label: Some("Render Pipeline Layout"),
-				// bind_group_layouts: &[&Camera3DGPU::get_layout(state), &Lookup::get_layout(state)],
-				bind_group_layouts: &[&Camera3DGPU::get_layout(state)],
-				push_constant_ranges: &[],
-			});
+		let render_pipeline_layout =
+			state
+				.device
+				.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+					label: Some("Render Pipeline Layout"),
+					bind_group_layouts: &[&Camera3DGPU::get_layout(state)],
+					push_constant_ranges: &[],
+				});
 
 		state
 			.device
@@ -34,20 +36,18 @@ impl MeshState {
 				vertex: wgpu::VertexState {
 					module: &shader,
 					entry_point: "vs_main",
-					buffers: &[
-						point_description(wgpu::VertexStepMode::Vertex),
-						// point_property_description(wgpu::VertexStepMode::Vertex),
-					],
+					buffers: &[point_description(wgpu::VertexStepMode::Vertex)],
+					compilation_options: Default::default(),
 				},
 				fragment: Some(wgpu::FragmentState {
 					module: &shader,
 					entry_point: "fs_main",
 					targets: &[Some(wgpu::ColorTargetState {
 						format: state.surface_format,
-						// blend: Some(wgpu::BlendState::ALPHA_BLENDING),
 						blend: Some(wgpu::BlendState::REPLACE),
 						write_mask: wgpu::ColorWrites::ALL,
 					})],
+					compilation_options: Default::default(),
 				}),
 				primitive: wgpu::PrimitiveState {
 					topology: wgpu::PrimitiveTopology::TriangleList,
@@ -71,6 +71,7 @@ impl MeshState {
 					alpha_to_coverage_enabled: false,
 				},
 				multiview: None,
+				cache: None,
 			})
 	}
 

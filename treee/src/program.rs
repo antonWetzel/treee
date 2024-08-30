@@ -4,7 +4,7 @@ use crate::empty::Empty;
 use crate::interactive::{self, DisplayModus, Interactive, DELETED_INDEX};
 use crate::loading::Loading;
 use crate::segmenting::{Segmenting, DEFAULT_MAX_DISTANCE};
-use crate::{environment, Error, EventLoop};
+use crate::{environment, Error};
 use nalgebra as na;
 use render::PointCloudPass;
 use std::collections::HashMap;
@@ -144,12 +144,7 @@ pub enum World {
 }
 
 impl Program {
-	pub async fn new(event_loop: &EventLoop) -> Result<Self, Error> {
-		let window = winit::window::WindowBuilder::new()
-			.with_title("Treee")
-			.with_min_inner_size(winit::dpi::LogicalSize { width: 10, height: 10 })
-			.build(event_loop)?;
-
+	pub async fn new(window: Arc<winit::window::Window>) -> Result<Self, Error> {
 		#[cfg(target_arch = "wasm32")]
 		{
 			use winit::platform::web::WindowExtWebSys;
@@ -163,7 +158,6 @@ impl Program {
 				})
 				.expect("Couldn't append canvas to document body.");
 		}
-		let window = Arc::new(window);
 
 		let (state, window) = render::State::new(window).await?;
 
@@ -186,8 +180,10 @@ impl Program {
 			window.inner(),
 			Some(window.scale_factor() as f32),
 			None,
+			None,
 		);
-		let egui_wgpu = egui_wgpu::Renderer::new(state.device(), state.surface_format(), None, 1);
+		let egui_wgpu =
+			egui_wgpu::Renderer::new(state.device(), state.surface_format(), None, 1, false);
 
 		let lookup = Lookup::Turbo;
 		let lookup_render = lookup.render(&state);
@@ -634,6 +630,7 @@ impl Program {
 }
 
 /// Helper to get elapsed time.
+#[derive(Debug)]
 struct Time {
 	now: web_time::Instant,
 }
