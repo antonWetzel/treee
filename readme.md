@@ -7,7 +7,7 @@ Point cloud importer and viewer for forest scans.
 ### Webdemo
 
 - Availabe at <https://www.wetzel.xyz/treee/index.html>
-- Limited to maximal 15 million points
+- Limited to maximum 15 million points
 
 ### Download
 

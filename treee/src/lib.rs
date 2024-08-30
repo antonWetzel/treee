@@ -15,30 +15,39 @@ use std::io::{Read, Seek, Write};
 use std::sync::Arc;
 
 /// Main loop
-pub async fn try_main() -> Result<(), Error> {
-	let event_loop = winit::event_loop::EventLoop::with_user_event().build()?;
+pub async fn try_main(error_handler: fn(Error)) {
+	let event_loop = match winit::event_loop::EventLoop::with_user_event().build() {
+		Ok(v) => v,
+		Err(err) => return error_handler(err.into()),
+	};
+
 	let proxy = event_loop.create_proxy();
+
+	let app = App {
+		state: State::Starting(proxy),
+		error_handler,
+	};
 
 	#[cfg(not(target_arch = "wasm32"))]
 	{
-		let mut app = App::Starting(proxy);
-		event_loop.run_app(&mut app)?;
-		if let App::Error(err) = app {
-			return Err(err);
-		}
+		let mut app = app;
+		if let Err(err) = event_loop.run_app(&mut app) {
+			return error_handler(err.into());
+		};
 	}
 	#[cfg(target_arch = "wasm32")]
 	{
 		use winit::platform::web::EventLoopExtWebSys;
-		let app = App::Starting(proxy);
 		event_loop.spawn_app(app);
 	}
-	Ok(())
 }
 
 /// Possible errors for treee
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
+	#[error("Proxy Error")]
+	ProxyError,
+
 	#[error(transparent)]
 	EventLoop(#[from] winit::error::EventLoopError),
 
@@ -58,28 +67,31 @@ pub enum Error {
 	CorruptFile,
 }
 
+struct App {
+	state: State,
+	error_handler: fn(Error),
+}
+
 /// Current state for the event loop
-enum App {
+enum State {
 	/// Start until first resume event
-	Starting(winit::event_loop::EventLoopProxy<App>),
+	Starting(winit::event_loop::EventLoopProxy<State>),
 	/// Wait until async is initialized
 	Wait(Arc<winit::window::Window>),
 	/// Main phase
 	Running(Program),
-	/// Some Error, exit
-	Error(Error),
 }
 
 type EventLoop = winit::event_loop::ActiveEventLoop;
 
-impl winit::application::ApplicationHandler<Self> for App {
-	fn user_event(&mut self, _event_loop: &EventLoop, event: Self) {
-		*self = event;
+impl winit::application::ApplicationHandler<State> for App {
+	fn user_event(&mut self, _event_loop: &EventLoop, event: State) {
+		self.state = event;
 	}
 
 	fn resumed(&mut self, event_loop: &EventLoop) {
-		match self {
-			Self::Starting(_) => {
+		match self.state {
+			State::Starting(_) => {
 				let window = event_loop
 					.create_window(
 						winit::window::Window::default_attributes()
@@ -89,7 +101,8 @@ impl winit::application::ApplicationHandler<Self> for App {
 					.unwrap();
 
 				let window = Arc::new(window);
-				let App::Starting(proxy) = std::mem::replace(self, App::Wait(window.clone()))
+				let State::Starting(proxy) =
+					std::mem::replace(&mut self.state, State::Wait(window.clone()))
 				else {
 					unreachable!()
 				};
@@ -98,26 +111,25 @@ impl winit::application::ApplicationHandler<Self> for App {
 				{
 					use pollster::FutureExt;
 					let app = match Program::new(window).block_on() {
-						Ok(program) => Self::Running(program),
-						Err(err) => Self::Error(err),
+						Ok(program) => State::Running(program),
+						Err(err) => return (self.error_handler)(err),
 					};
-					proxy
-						.send_event(app)
-						.map_err(|_| "Could not send with proxy")
-						.unwrap();
+					if let Err(_) = proxy.send_event(app) {
+						return (self.error_handler)(Error::ProxyError);
+					}
 				}
 
 				#[cfg(target_arch = "wasm32")]
 				{
+					let error_handler = self.error_handler;
 					wasm_bindgen_futures::spawn_local(async move {
 						let app = match Program::new(window).await {
-							Ok(program) => Self::Running(program),
-							Err(err) => Self::Error(err),
+							Ok(program) => State::Running(program),
+							Err(err) => return error_handler(err),
 						};
-						proxy
-							.send_event(app)
-							.map_err(|_| "Could not send with proxy")
-							.unwrap();
+						if let Err(_) = proxy.send_event(app) {
+							return error_handler(Error::ProxyError);
+						}
 					});
 				}
 			},
@@ -203,22 +215,21 @@ impl App {
 		event_loop: &EventLoop,
 		action: impl FnOnce(&mut Program) -> Result<(), Error>,
 	) {
-		match self {
-			Self::Starting(_) => {
+		match self.state {
+			State::Starting(_) => {
 				log::error!("try in starting phase");
 			},
-			Self::Wait(window) => {
+			State::Wait(ref mut window) => {
 				// request redraw until async is initialized
 				window.request_redraw();
 			},
-			Self::Running(program) => match action(program) {
+			State::Running(ref mut program) => match action(program) {
 				Ok(()) => {},
 				Err(err) => {
 					event_loop.exit();
-					*self = Self::Error(err)
+					(self.error_handler)(err);
 				},
 			},
-			Self::Error(_) => event_loop.exit(),
 		}
 	}
 }

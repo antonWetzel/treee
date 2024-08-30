@@ -6,8 +6,5 @@ fn main() {
 		.with_level(log::LevelFilter::Warn)
 		.init()
 		.unwrap();
-	match treee::try_main().block_on() {
-		Ok(()) => {},
-		Err(err) => println!("Error: {}", err),
-	}
+	treee::try_main(|err| println!("Error: {}", err)).block_on();
 }
