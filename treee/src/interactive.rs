@@ -481,7 +481,6 @@ impl Interactive {
 							&segment.classifications,
 							8,
 							8,
-							4,
 							state,
 						));
 					}

@@ -55,7 +55,6 @@ impl Hull {
 					&segment.classifications,
 					rbv.slices,
 					rbv.sectors,
-					rbv.details,
 					state,
 				)
 			},
@@ -149,12 +148,6 @@ impl Hull {
 						.add(egui::Slider::new(&mut rbv.sectors, 3..=32))
 						.changed();
 					ui.end_row();
-
-					ui.label("Details");
-					changed |= ui
-						.add(egui::Slider::new(&mut rbv.details, 1..=16))
-						.changed();
-					ui.end_row();
 				});
 				if ui
 					.add_sized([ui.available_width(), 0.0], egui::Button::new("Save"))
@@ -182,7 +175,6 @@ impl Hull {
 						&segment.classifications,
 						rbv.slices,
 						rbv.sectors,
-						rbv.details,
 						state,
 					)
 				}
@@ -396,7 +388,6 @@ pub struct RadialBoundingVolume {
 	distances: Vec<f32>,
 	slices: usize,
 	sectors: usize,
-	details: usize,
 
 	visual_points: render::PointCloud,
 	visual_lines: render::Lines,
@@ -409,7 +400,6 @@ impl RadialBoundingVolume {
 		classifications: &[Classification],
 		slices: usize,
 		sectors: usize,
-		details: usize,
 		state: &render::State,
 	) -> Self {
 		let points_iter = points
@@ -426,13 +416,14 @@ impl RadialBoundingVolume {
 				distances: Vec::new(),
 				slices,
 				sectors,
-				details,
 				visual_points: render::PointCloud::new(state, &[na::point![0.0, 0.0, 0.0]]),
 				visual_lines: render::Lines::new(state, &[0]),
 			};
 		};
 
 		// calculate center, radius min and max
+		// this is an approximation
+		// source: <https://en.wikipedia.org/wiki/Bounding_sphere#Ritter%27s_bounding_sphere>
 		let mut radius = 0.0;
 		let mut center = na::point![first.x, first.z];
 		let mut min = first.y;
@@ -505,8 +496,9 @@ impl RadialBoundingVolume {
 				);
 				line(na::point![x, y_min, z], na::point![x, y_max, z]);
 
+				let details = (sector_angle * distance / 0.5).ceil() as usize;
 				for _ in 0..details {
-					angle += sector_angle / details as f32;
+					angle = (angle + sector_angle / details as f32) % std::f32::consts::TAU;
 					let next_x = center.x + angle.cos() * distance;
 					let next_z = center.y + angle.sin() * distance;
 
@@ -537,7 +529,6 @@ impl RadialBoundingVolume {
 
 			center,
 			slices,
-			details,
 			min,
 
 			sectors,
