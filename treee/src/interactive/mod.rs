@@ -1,12 +1,17 @@
+mod hull;
+mod trunk_axis;
+
 use nalgebra as na;
 use std::{collections::HashMap, ops::Not};
+use trunk_axis::{TrunkAxis, TrunkAxisAlgorithm};
 
 use crate::{
 	calculations::{map_to_u32, CalculationProperties, Classification, SegmentData, SegmentSave},
 	environment::{self, Saver},
-	hull::{ConvexHull, Hull, IncludeMode, RadialBoundingVolume},
 	program::{DisplaySettings, Event},
 };
+
+use hull::Hull;
 
 /// Special index for the deleted index.
 pub const DELETED_INDEX: u32 = 0;
@@ -306,7 +311,7 @@ impl Interactive {
 				deleted: self.deleted.clone(),
 				world_offset: self.world_offset,
 			};
-			environment::Saver::start("pointcloud.ipc", move |mut saver| {
+			environment::Saver::start("pointcloud", "ipc", move |mut saver| {
 				bincode::serialize_into(saver.inner(), &save).unwrap();
 				saver.save();
 			});
@@ -444,49 +449,6 @@ impl Interactive {
 					ui.radio_value(&mut view.display_modus, DisplayModus::Height, "Height");
 
 					ui.separator();
-					ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Hull"));
-					if ui
-						.add(egui::RadioButton::new(
-							matches!(view.hull, Hull::None),
-							"None",
-						))
-						.clicked()
-					{
-						view.hull = Hull::None;
-					}
-					if ui
-						.add(egui::RadioButton::new(
-							matches!(view.hull, Hull::Convex(_)),
-							"Convex Hull",
-						))
-						.clicked()
-					{
-						view.hull = Hull::Convex(ConvexHull::new(
-							&segment.points,
-							&segment.classifications,
-							IncludeMode::Crown,
-							state,
-						));
-					}
-					if ui
-						.add(egui::RadioButton::new(
-							matches!(view.hull, Hull::RadialBoundingVolume(_)),
-							"Radial Bounding Volume",
-						))
-						.clicked()
-					{
-						view.hull = Hull::RadialBoundingVolume(RadialBoundingVolume::new(
-							IncludeMode::All,
-							&segment.points,
-							&segment.classifications,
-							8,
-							8,
-							state,
-						));
-					}
-					view.hull.ui(ui, segment, state);
-
-					ui.separator();
 					if ui
 						.add_sized(
 							[ui.available_width(), 0.0],
@@ -497,6 +459,16 @@ impl Interactive {
 						view.calculations_properties = segment.update_info(true);
 						view.display_data =
 							DisplayData::new(state, segment, &view.calculations_properties);
+					}
+
+					ui.separator();
+					view.hull
+						.ui(ui, segment, view.trunk_axis.transform(), state);
+
+					ui.separator();
+					if view.trunk_axis.ui(ui, segment, state) {
+						view.hull
+							.update(segment, view.trunk_axis.transform(), state);
 					}
 
 					ui.separator();
@@ -547,7 +519,7 @@ impl Interactive {
 						let points = seg.points.clone();
 						let classifications = seg.classifications.clone();
 						let calculations_properties = view.calculations_properties.clone();
-						environment::Saver::start("points.ply", move |mut saver| {
+						environment::Saver::start("points", "ply", move |mut saver| {
 							save_points(
 								&mut saver,
 								&points,
@@ -575,16 +547,16 @@ impl Interactive {
 							longitude: seg.coords.map(|c| c.0.to_degrees()),
 							latitude: seg.coords.map(|c| c.1.to_degrees()),
 						};
-						environment::Saver::start("segment.json", move |mut saver| {
+						environment::Saver::start("segment", "json", move |mut saver| {
 							serde_json::to_writer_pretty(saver.inner(), &save).unwrap();
 							saver.save();
 						});
 					}
 
 					for (name, file, classification) in [
-						("Crown", "crown.ply", Classification::Crown),
-						("Trunk", "trunk.ply", Classification::Trunk),
-						("Ground", "ground.ply", Classification::Ground),
+						("Crown", "crown", Classification::Crown),
+						("Trunk", "trunk", Classification::Trunk),
+						("Ground", "ground", Classification::Ground),
 					] {
 						if ui
 							.add_sized([ui.available_width(), 0.0], egui::Button::new(name))
@@ -594,7 +566,7 @@ impl Interactive {
 							let points = seg.points.clone();
 							let classifications = seg.classifications.clone();
 							let calculations_properties = view.calculations_properties.clone();
-							environment::Saver::start(file, move |mut saver| {
+							environment::Saver::start(file, "ply", move |mut saver| {
 								save_points(
 									&mut saver,
 									&points,
@@ -719,6 +691,12 @@ impl Interactive {
 				}
 
 				let display_data = DisplayData::new(state, seg, &calculations_properties);
+				let trunk_axis = TrunkAxis::new(
+					&seg.points,
+					&seg.classifications,
+					TrunkAxisAlgorithm::None,
+					state,
+				);
 
 				self.modus = Modus::View(View {
 					idx,
@@ -728,6 +706,7 @@ impl Interactive {
 					display_data,
 					calculations_properties,
 					cloud: render::PointCloud::new(state, &seg.points),
+					trunk_axis,
 				})
 			},
 
@@ -862,7 +841,8 @@ impl Interactive {
 					view.calculations_properties = seg.update_info(false);
 					view.display_data = DisplayData::new(state, seg, &view.calculations_properties);
 					view.cloud = render::PointCloud::new(state, &seg.points);
-					view.hull.update(seg, state);
+					view.hull.update(seg, view.trunk_axis.transform(), state);
+					view.trunk_axis.update(seg, state);
 				}
 			},
 			Modus::Combine(idx) => {
@@ -905,7 +885,9 @@ pub struct View {
 	pub cloud: render::PointCloud,
 	pub display_data: DisplayData,
 	pub calculations_properties: CalculationProperties,
+
 	pub hull: Hull,
+	pub trunk_axis: TrunkAxis,
 }
 
 /// Display data for selected segment.

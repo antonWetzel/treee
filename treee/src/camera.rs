@@ -1,6 +1,7 @@
 use nalgebra as na;
 
 const BASE_ROTATE_SPEED: f32 = 0.002;
+const VERTICAL_SPEED: f32 = 0.02;
 
 /// 45 degrees
 const FIELD_OF_VIEW: f32 = 45.0 * std::f32::consts::TAU / 360.0;
@@ -49,7 +50,11 @@ impl Camera {
 	}
 
 	pub fn vertical_movement(&mut self, amount: f32, state: &render::State) {
-		self.transform *= na::Translation3::new(0.0, amount, 0.0);
+		self.transform *= na::Translation3::new(
+			0.0,
+			amount * self.controller.distance() * VERTICAL_SPEED,
+			0.0,
+		);
 		self.update_gpu(state);
 	}
 
@@ -138,6 +143,13 @@ pub enum Controller {
 }
 
 impl Controller {
+	pub fn distance(&self) -> f32 {
+		match *self {
+			Self::FirstPerson { sensitivity } => sensitivity,
+			Self::Orbital { offset } => offset,
+		}
+	}
+
 	pub fn movement(&mut self, direction: na::Vector2<f32>, transform: &mut na::Affine3<f32>) {
 		match *self {
 			Self::FirstPerson { sensitivity } => {

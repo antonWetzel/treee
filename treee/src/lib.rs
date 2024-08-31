@@ -1,7 +1,6 @@
 mod calculations;
 mod camera;
 mod empty;
-mod hull;
 mod interactive;
 mod laz;
 mod loading;
@@ -67,6 +66,7 @@ pub enum Error {
 	CorruptFile,
 }
 
+/// App state
 struct App {
 	state: State,
 	error_handler: fn(Error),
@@ -271,10 +271,14 @@ pub mod environment {
 	impl Saver {
 		pub fn start(
 			file_name: impl Into<String> + Send + 'static,
+			extension: impl ToString + Send + 'static,
 			action: impl FnOnce(Self) + Send + 'static,
 		) {
 			rayon::spawn(move || {
-				let path = rfd::FileDialog::new().set_file_name(file_name).save_file();
+				let path = rfd::FileDialog::new()
+					.set_file_name(file_name)
+					.add_filter("", &[extension])
+					.save_file();
 				if let Some(path) = path {
 					let file = BufWriter::new(File::create(path).unwrap());
 					action(Self { file });
@@ -336,11 +340,13 @@ pub mod environment {
 	impl Saver {
 		pub fn start(
 			file_name: impl Into<String> + Send + 'static,
+			extension: impl ToString + Send + 'static,
 			action: impl FnOnce(Saver) + Send + 'static,
 		) {
 			wasm_bindgen_futures::spawn_local(async move {
 				let handle = rfd::AsyncFileDialog::new()
 					.set_file_name(file_name)
+					.add_filter("", &[extension])
 					.save_file()
 					.await;
 				if let Some(handle) = handle {

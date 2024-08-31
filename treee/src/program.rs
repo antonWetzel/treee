@@ -405,14 +405,13 @@ impl Program {
 					}
 
 					if let interactive::Modus::View(view) = &interactive.modus {
-						view.hull.render(
-							&view.cloud,
-							&mut render_pass,
-							&self.lines_state,
-							&self.display_settings,
-						);
-					}
+						let mut lines_pass = self
+							.lines_state
+							.render(&mut render_pass, self.display_settings.camera.gpu());
 
+						view.hull.render(&view.cloud, &mut lines_pass);
+						view.trunk_axis.render(&mut lines_pass);
+					}
 					drop(render_pass);
 
 					let mut render_pass = context.post_process_pass();

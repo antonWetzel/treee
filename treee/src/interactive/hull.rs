@@ -1,5 +1,6 @@
 use std::{
 	collections::{HashMap, HashSet},
+	fmt::Write,
 	hash::Hash,
 	ops::Not,
 };
@@ -8,15 +9,18 @@ use crate::{
 	calculations::{Classification, SegmentData},
 	environment::{self, Saver},
 	id,
-	program::DisplaySettings,
 };
 use nalgebra as na;
 
 /// Filter points based on Classification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IncludeMode {
-	Crown,
 	All,
+	Crown,
+	Trunk,
+	Ground,
+	Tree,
+	NoCrown,
 }
 
 impl IncludeMode {
@@ -24,7 +28,42 @@ impl IncludeMode {
 		match self {
 			Self::All => true,
 			Self::Crown => c == Classification::Crown,
+			Self::Trunk => c == Classification::Trunk,
+			Self::Ground => c == Classification::Ground,
+			Self::Tree => matches!(c, Classification::Crown | Classification::Trunk),
+			Self::NoCrown => matches!(c, Classification::Trunk | Classification::Ground),
 		}
+	}
+
+	pub fn name(self) -> &'static str {
+		match self {
+			Self::All => "All",
+			Self::Crown => "Crown",
+			Self::Trunk => "Trunk",
+			Self::Ground => "Ground",
+			Self::Tree => "Tree",
+			Self::NoCrown => "No Crown",
+		}
+	}
+
+	pub fn ui(&mut self, ui: &mut egui::Ui) -> bool {
+		let mut changed = false;
+		egui::ComboBox::from_id_source(id!())
+			.selected_text(self.name())
+			.width(ui.available_width())
+			.show_ui(ui, |ui| {
+				for v in [
+					Self::All,
+					Self::Crown,
+					Self::Trunk,
+					Self::Ground,
+					Self::Tree,
+					Self::NoCrown,
+				] {
+					changed |= ui.selectable_value(self, v, v.name()).changed();
+				}
+			});
+		changed
 	}
 }
 
@@ -37,7 +76,12 @@ pub enum Hull {
 }
 
 impl Hull {
-	pub fn update(&mut self, segment: &SegmentData, state: &render::State) {
+	pub fn update(
+		&mut self,
+		segment: &SegmentData,
+		transform: Option<na::Affine3<f32>>,
+		state: &render::State,
+	) {
 		match self {
 			Self::None => {},
 			Self::Convex(convex) => {
@@ -51,11 +95,14 @@ impl Hull {
 			Self::RadialBoundingVolume(rbv) => {
 				*rbv = RadialBoundingVolume::new(
 					rbv.mode,
+					rbv.method,
+					rbv.symmetric,
 					&segment.points,
 					&segment.classifications,
 					rbv.slices,
 					rbv.sectors,
 					state,
+					transform,
 				)
 			},
 		}
@@ -64,24 +111,66 @@ impl Hull {
 	pub fn render<'a>(
 		&'a self,
 		cloud: &'a render::PointCloud,
-		render_pass: &mut render::RenderPass<'a>,
-		lines_state: &'a render::LinesState,
-		display_settings: &'a DisplaySettings,
+		lines_pass: &mut render::LinesPass<'a>,
 	) {
 		match self {
 			Self::None => {},
 			Self::Convex(ref convex) => {
-				let lines_pass = lines_state.render(render_pass, display_settings.camera.gpu());
 				convex.lines.render(cloud, lines_pass);
 			},
 			Self::RadialBoundingVolume(ref rbv) => {
-				let lines_pass = lines_state.render(render_pass, display_settings.camera.gpu());
 				rbv.visual_lines.render(&rbv.visual_points, lines_pass);
 			},
 		}
 	}
 
-	pub fn ui(&mut self, ui: &mut egui::Ui, segment: &SegmentData, state: &render::State) {
+	pub fn ui(
+		&mut self,
+		ui: &mut egui::Ui,
+		segment: &SegmentData,
+		transform: Option<na::Affine3<f32>>,
+		state: &render::State,
+	) {
+		ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Hull"));
+		if ui
+			.add(egui::RadioButton::new(matches!(self, Hull::None), "None"))
+			.clicked()
+		{
+			*self = Hull::None;
+		}
+		if ui
+			.add(egui::RadioButton::new(
+				matches!(self, Hull::Convex(_)),
+				"Convex Hull",
+			))
+			.clicked()
+		{
+			*self = Hull::Convex(ConvexHull::new(
+				&segment.points,
+				&segment.classifications,
+				IncludeMode::Crown,
+				state,
+			));
+		}
+		if ui
+			.add(egui::RadioButton::new(
+				matches!(self, Hull::RadialBoundingVolume(_)),
+				"Radial Bounding Volume",
+			))
+			.clicked()
+		{
+			*self = Hull::RadialBoundingVolume(RadialBoundingVolume::new(
+				IncludeMode::All,
+				RadialBoundingVolumeMethod::Max,
+				false,
+				&segment.points,
+				&segment.classifications,
+				8,
+				8,
+				state,
+				transform,
+			));
+		}
 		match self {
 			Self::None => {},
 			Self::Convex(convex) => {
@@ -90,14 +179,7 @@ impl Hull {
 				let mut changed = false;
 				egui::Grid::new(id!()).num_columns(2).show(ui, |ui| {
 					ui.label("Include");
-					ui.horizontal(|ui| {
-						changed |= ui
-							.radio_value(&mut convex.mode, IncludeMode::Crown, "Crown")
-							.changed();
-						changed |= ui
-							.radio_value(&mut convex.mode, IncludeMode::All, "All")
-							.changed();
-					});
+					changed |= convex.mode.ui(ui);
 					ui.end_row();
 				});
 				if changed {
@@ -114,7 +196,7 @@ impl Hull {
 				{
 					let points = segment.points.clone();
 					let faces = convex.faces.clone();
-					environment::Saver::start("convex_hull.ply", move |mut saver| {
+					environment::Saver::start("convex_hull", "ply", move |mut saver| {
 						ConvexHull::save(&mut saver, &points, &faces).unwrap();
 						saver.save();
 					})
@@ -129,14 +211,23 @@ impl Hull {
 				let mut changed = false;
 				egui::Grid::new(id!()).num_columns(2).show(ui, |ui| {
 					ui.label("Include");
-					ui.horizontal(|ui| {
-						changed |= ui
-							.radio_value(&mut rbv.mode, IncludeMode::Crown, "Crown")
-							.changed();
-						changed |= ui
-							.radio_value(&mut rbv.mode, IncludeMode::All, "All")
-							.changed();
-					});
+					changed |= rbv.mode.ui(ui);
+					ui.end_row();
+
+					ui.label("Method");
+					egui::ComboBox::from_id_source(id!())
+						.selected_text(format!("{:?}", rbv.method))
+						.width(ui.available_width())
+						.show_ui(ui, |ui| {
+							for v in [
+								RadialBoundingVolumeMethod::Max,
+								RadialBoundingVolumeMethod::Mean,
+							] {
+								changed |= ui
+									.selectable_value(&mut rbv.method, v, format!("{:?}", v))
+									.changed();
+							}
+						});
 					ui.end_row();
 
 					ui.label("Slices");
@@ -148,12 +239,22 @@ impl Hull {
 						.add(egui::Slider::new(&mut rbv.sectors, 3..=32))
 						.changed();
 					ui.end_row();
+
+					let enabled = rbv.sectors % 2 == 0;
+					ui.add_enabled_ui(enabled, |ui| ui.label("Extra"));
+					ui.add_enabled_ui(enabled, |ui| {
+						changed |= ui.checkbox(&mut rbv.symmetric, "Symmetric").changed()
+					});
+					ui.end_row();
 				});
 				if ui
-					.add_sized([ui.available_width(), 0.0], egui::Button::new("Save"))
+					.add_sized(
+						[ui.available_width(), 0.0],
+						egui::Button::new("Save Distances"),
+					)
 					.clicked()
 				{
-					let save = RadialBoundingVolumeSave {
+					let save = RadialBoundingVolumeDistances {
 						center_x: rbv.center.x,
 						center_y: rbv.center.y,
 						height_min: rbv.min,
@@ -162,20 +263,48 @@ impl Hull {
 						sectors: rbv.sectors,
 					};
 
-					environment::Saver::start("radial_bounding_volume.json", move |mut saver| {
+					environment::Saver::start("radial_bounding_volume", "json", move |mut saver| {
 						serde_json::to_writer_pretty(saver.inner(), &save).unwrap();
 						saver.save();
 					})
 				}
 
+				if ui
+					.add_sized(
+						[ui.available_width(), 0.0],
+						egui::Button::new("Save Landmarks"),
+					)
+					.clicked()
+				{
+					let landmarks = rbv.landmarks();
+
+					environment::Saver::start("landmarks", "txt", move |mut saver| {
+						use std::io::Write;
+
+						let mut writer = saver.inner();
+						for (idx, value) in landmarks.iter().copied().enumerate() {
+							if idx == landmarks.len() - 1 {
+								write!(writer, "{}\n", value).unwrap();
+							} else {
+								write!(writer, "{}\t", value).unwrap();
+							}
+						}
+						drop(writer);
+						saver.save();
+					});
+				}
+
 				if changed {
 					*rbv = RadialBoundingVolume::new(
 						rbv.mode,
+						rbv.method,
+						rbv.symmetric,
 						&segment.points,
 						&segment.classifications,
 						rbv.slices,
 						rbv.sectors,
 						state,
+						transform,
 					)
 				}
 			},
@@ -219,17 +348,12 @@ impl ConvexHull {
 			}
 		}
 
-		let valid = match mode {
-			IncludeMode::Crown => |c| c == Classification::Crown,
-			IncludeMode::All => |_| true,
-		};
-
 		let points = points
 			.iter()
 			.copied()
 			.enumerate()
 			.zip(classifications)
-			.filter_map(|((idx, pos), &c)| valid(c).then_some(Point { idx, pos }))
+			.filter_map(|((idx, pos), &c)| mode.valid(c).then_some(Point { idx, pos }))
 			.collect::<Vec<_>>();
 
 		if points.len() < 10 {
@@ -382,38 +506,66 @@ impl ConvexHull {
 #[derive(Debug)]
 pub struct RadialBoundingVolume {
 	mode: IncludeMode,
+	method: RadialBoundingVolumeMethod,
+	symmetric: bool,
 
 	center: na::Point2<f32>,
 	min: f32,
 	distances: Vec<f32>,
 	slices: usize,
 	sectors: usize,
+	slice_height: f32,
 
 	visual_points: render::PointCloud,
 	visual_lines: render::Lines,
 }
 
+/// Method used to calculate the distance to the center
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RadialBoundingVolumeMethod {
+	Max,
+	Mean,
+	// Percentile?,
+	// TopN?,
+}
+
 impl RadialBoundingVolume {
 	pub fn new(
 		mode: IncludeMode,
+		method: RadialBoundingVolumeMethod,
+		symmetric: bool,
 		points: &[na::Point3<f32>],
 		classifications: &[Classification],
 		slices: usize,
 		sectors: usize,
 		state: &render::State,
+
+		transform: Option<na::Affine3<f32>>,
 	) -> Self {
+		let (transform, centered) = match transform {
+			Some(transform) => (transform, true),
+			None => (na::Affine3::identity(), false),
+		};
+		let inv = transform.inverse();
+
 		let points_iter = points
 			.iter()
 			.zip(classifications)
-			.filter_map(|(&p, &c)| mode.valid(c).then_some(p));
+			.filter_map(|(&p, &c)| mode.valid(c).then_some(p))
+			.map(|p| inv * p);
 
 		let mut points = points_iter.clone();
 		let Some(first) = points.next() else {
 			return Self {
 				mode,
+				method,
+
+				symmetric,
+
 				center: na::point![0.0, 0.0],
 				min: 0.0,
 				distances: Vec::new(),
+				slice_height: 1.0,
 				slices,
 				sectors,
 				visual_points: render::PointCloud::new(state, &[na::point![0.0, 0.0, 0.0]]),
@@ -421,31 +573,39 @@ impl RadialBoundingVolume {
 			};
 		};
 
-		// calculate center, radius min and max
-		// this is an approximation
-		// source: <https://en.wikipedia.org/wiki/Bounding_sphere#Ritter%27s_bounding_sphere>
-		let mut radius = 0.0;
-		let mut center = na::point![first.x, first.z];
 		let mut min = first.y;
 		let mut max = min;
-		for p in points {
+		for p in points.clone() {
 			min = min.min(p.y);
 			max = max.max(p.y);
-
-			let p = na::point![p.x, p.z];
-			let dist = (p - center).norm();
-			if dist <= radius {
-				continue;
-			}
-			radius = (radius + dist) / 2.0;
-			center += (dist - radius) * (p - center) / dist;
 		}
+
+		let center = if centered.not() {
+			let mut center = na::point![first.x, first.z];
+			// calculate center, radius min and max
+			// this is an approximation
+			// source: <https://en.wikipedia.org/wiki/Bounding_sphere#Ritter%27s_bounding_sphere>
+			let mut radius = 0.0;
+
+			for p in points {
+				let p = na::point![p.x, p.z];
+				let dist = (p - center).norm();
+				if dist <= radius {
+					continue;
+				}
+				radius = (radius + dist) / 2.0;
+				center += (dist - radius) * (p - center) / dist;
+			}
+			center
+		} else {
+			na::point![0.0, 0.0]
+		};
 
 		// calculate distances
 		let slice_height = (max - min) / slices as f32;
 		let sector_angle = std::f32::consts::TAU / sectors as f32;
-		let mut distances = vec![0.0f32; slices * sectors];
-		for p in points_iter.clone() {
+
+		let get_idx_and_distance = |p: na::Point3<f32>| {
 			let slice = ((p.y - min) / slice_height).floor() as usize;
 			let slice = slice.min(slices - 1);
 
@@ -455,8 +615,41 @@ impl RadialBoundingVolume {
 			let angle = f32::atan2(delta.y, delta.x) + std::f32::consts::TAU;
 			let sector = ((angle / sector_angle) % sectors as f32).floor() as usize;
 
-			let idx = slice * sectors + sector;
-			distances[idx] = distances[idx].max(distance);
+			(slice * sectors + sector, distance)
+		};
+
+		let mut distances = vec![0.0f32; slices * sectors];
+		match method {
+			RadialBoundingVolumeMethod::Max => {
+				for p in points_iter.clone() {
+					let (idx, distance) = get_idx_and_distance(p);
+					distances[idx] = distances[idx].max(distance);
+				}
+			},
+			RadialBoundingVolumeMethod::Mean => {
+				let mut counts = vec![0; distances.len()];
+				for p in points_iter.clone() {
+					let (idx, distance) = get_idx_and_distance(p);
+					distances[idx] += distance;
+					counts[idx] += 1;
+				}
+				for (distance, count) in distances.iter_mut().zip(counts) {
+					*distance /= count as f32;
+				}
+			},
+		}
+
+		// maybe make symmetric
+		if symmetric && sectors % 2 == 0 {
+			for slice in 0..slices {
+				for sector in 0..(sectors / 2) {
+					let idx_0 = slice * sectors + sector;
+					let idx_1 = slice * sectors + sector + sectors / 2;
+					let val = (distances[idx_0] + distances[idx_1]) / 2.0;
+					distances[idx_0] = val;
+					distances[idx_1] = val;
+				}
+			}
 		}
 
 		// create render data
@@ -464,9 +657,9 @@ impl RadialBoundingVolume {
 		let mut indices = Vec::new();
 		let mut line = |a, b| {
 			indices.push(points.len() as u32);
-			points.push(a);
+			points.push(transform * a);
 			indices.push(points.len() as u32);
-			points.push(b);
+			points.push(transform * b);
 		};
 
 		for slice in 0..slices {
@@ -525,8 +718,11 @@ impl RadialBoundingVolume {
 
 		Self {
 			mode,
-			distances,
+			method,
+			symmetric,
 
+			distances,
+			slice_height,
 			center,
 			slices,
 			min,
@@ -536,11 +732,29 @@ impl RadialBoundingVolume {
 			visual_lines,
 		}
 	}
+
+	/// Calculate characteristic points.
+	fn landmarks(&self) -> Vec<f32> {
+		let mut values = Vec::with_capacity(self.slices * self.sectors * 3);
+
+		let sector_angle = std::f32::consts::TAU / self.sectors as f32;
+		for slice in 0..self.slices {
+			for sector in 0..self.sectors {
+				let idx = slice * self.sectors + sector;
+				let distance = self.distances[idx];
+				let angle = (sector as f32 + 0.5) * sector_angle;
+				values.push(angle.cos() * distance);
+				values.push(angle.sin() * distance);
+				values.push((slice as f32 + 0.5) * self.slice_height);
+			}
+		}
+		values
+	}
 }
 
 /// Information to save Radial Bounding Volume.
 #[derive(Debug, serde::Serialize)]
-pub struct RadialBoundingVolumeSave {
+pub struct RadialBoundingVolumeDistances {
 	center_x: f32,
 	center_y: f32,
 	height_min: f32,
