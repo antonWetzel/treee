@@ -191,8 +191,6 @@ impl SegmentData {
 pub struct SegmentInformation {
 	pub trunk_height: f32,
 	pub crown_height: f32,
-	pub trunk_diameter: f32,
-	pub crown_diameter: f32,
 
 	pub ground_sep: f32,
 	pub crown_sep: f32,
@@ -205,7 +203,7 @@ impl SegmentInformation {
 
 		let ground_max_search_height = 1.0;
 		let ground_min_area_scale = 1.5;
-		let crown_diameter_difference = 1.0;
+		let min_crown_diameter = 2.0f32;
 
 		let slices = ((height / SLICE_WIDTH) as usize) + 1;
 		let mut sets = vec![<Option<Tree>>::None; slices];
@@ -247,16 +245,12 @@ impl SegmentInformation {
 			0
 		};
 
-		let (trunk_diameter, trunk_max) =
-			trunk_diameter(ground_sep as f32 * SLICE_WIDTH, data, |_| true);
-
-		let min_crown_area =
-			std::f32::consts::PI * ((trunk_diameter + crown_diameter_difference) / 2.0).powi(2);
+		let min_crown_area = std::f32::consts::PI * (min_crown_diameter / 2.0).powi(2);
 
 		let crown_sep = areas
 			.iter()
 			.enumerate()
-			.skip(trunk_max)
+			.skip(ground_sep)
 			.find(|&(_, &v)| v > min_crown_area)
 			.map(|(index, _)| index)
 			.unwrap_or(0);
@@ -269,8 +263,6 @@ impl SegmentInformation {
 			crown_height: max - crown_sep,
 			ground_sep,
 			crown_sep,
-			trunk_diameter: 0.0,
-			crown_diameter: 0.0,
 		}
 	}
 
@@ -285,10 +277,6 @@ impl SegmentInformation {
 	) -> CalculationProperties {
 		let neighbors_count = 31;
 		let neighbors_max_distance = f32::MAX;
-
-		(self.trunk_diameter, _) = trunk_diameter(self.ground_sep, data, |idx| {
-			classifications[idx] == Classification::Ground
-		});
 
 		let height = max - min;
 
@@ -317,10 +305,10 @@ impl SegmentInformation {
 			.max_by(|a, b| a.total_cmp(b))
 			.unwrap_or(0.0);
 
-		self.crown_diameter = approximate_diameter(crown_area);
+		let crown_diameter = approximate_diameter(crown_area);
 		let slices = areas
 			.into_iter()
-			.map(|area| approximate_diameter(area) / self.crown_diameter)
+			.map(|area| approximate_diameter(area) / crown_diameter)
 			.collect::<Vec<_>>();
 
 		let expansion = data
@@ -493,49 +481,6 @@ fn circle(
 		return None;
 	}
 	Some((point_a + to, radius))
-}
-
-/// Approximate the diameter for the trunk with RANSAC.
-fn trunk_diameter(
-	ground_sep: f32,
-	data: &[nalgebra::OPoint<f32, nalgebra::Const<3>>],
-	valid: impl Fn(usize) -> bool,
-) -> (f32, usize) {
-	let trunk_diameter_height = 1.3;
-	let trunk_diameter_range = 0.2;
-
-	let trunk_min = ground_sep + trunk_diameter_height - 0.5 * trunk_diameter_range;
-	let trunk_max = trunk_min + trunk_diameter_range;
-	let slice_trunk = data
-		.iter()
-		.enumerate()
-		.filter_map(|(idx, &p)| valid(idx).then_some(p))
-		.filter(|p| (trunk_min..trunk_max).contains(&(p.y)))
-		.map(|p| na::Point2::new(p.x, p.y))
-		.collect::<Vec<_>>();
-
-	let mut best_score = f32::MAX;
-	let mut best_circle = (0.5, na::Point2::new(0.0, 0.0));
-	if slice_trunk.len() >= 8 {
-		for _ in 0..1000 {
-			let x = slice_trunk[rand::random::<usize>() % slice_trunk.len()];
-			let y = slice_trunk[rand::random::<usize>() % slice_trunk.len()];
-			let z = slice_trunk[rand::random::<usize>() % slice_trunk.len()];
-			let Some((center, radius)) = circle(x, y, z) else {
-				continue;
-			};
-			let score = slice_trunk
-				.iter()
-				.map(|p| ((p - center).norm() - radius).abs().min(0.2))
-				.sum::<f32>();
-			if score < best_score {
-				best_score = score;
-				best_circle = (2.0 * radius, center);
-			}
-		}
-	}
-
-	(best_circle.0, (trunk_max / SLICE_WIDTH).ceil() as usize)
 }
 
 /// Approxiamte diameter based on the area.

@@ -4,7 +4,7 @@ use crate::empty::Empty;
 use crate::interactive::{self, DisplayModus, Interactive, DELETED_INDEX};
 use crate::loading::Loading;
 use crate::segmenting::{Segmenting, DEFAULT_MAX_DISTANCE};
-use crate::{environment, Error};
+use crate::{environment, id, Error};
 use nalgebra as na;
 use render::PointCloudPass;
 use std::collections::HashMap;
@@ -101,7 +101,7 @@ impl DisplaySettings {
 			[ui.available_width(), 0.0],
 			egui::Label::new("Display Settings"),
 		);
-		egui::Grid::new("display grid").show(ui, |ui| {
+		egui::Grid::new(id!()).num_columns(2).show(ui, |ui| {
 			let mut changed = false;
 			ui.label("Point Size");
 			changed |= ui
@@ -230,9 +230,9 @@ impl Program {
 		// handle ui
 		let raw_input = self.egui_winit.take_egui_input(&self.window);
 		let full_output = self.egui.run(raw_input, |ctx| {
-			egui::SidePanel::left("panel")
+			egui::SidePanel::left(id!())
 				.resizable(false)
-				.min_width(200.0)
+				.exact_width(250.0)
 				.show(ctx, |ui| {
 					egui::ScrollArea::vertical().show(ui, |ui| {
 						let phase = match self.world {

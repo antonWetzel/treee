@@ -11,7 +11,7 @@ use std::{
 	},
 };
 
-use crate::{interactive::DELETED_INDEX, loading::Loading, program::Event};
+use crate::{id, interactive::DELETED_INDEX, loading::Loading, program::Event};
 
 pub const DEFAULT_MAX_DISTANCE: f32 = 0.75;
 
@@ -76,7 +76,7 @@ impl Segmenting {
 
 	pub fn ui(&mut self, ui: &mut egui::Ui) {
 		ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Settings"));
-		egui::Grid::new("settings grid").show(ui, |ui| {
+		egui::Grid::new(id!()).num_columns(2).show(ui, |ui| {
 			ui.label("Distance");
 			if ui
 				.add(egui::Slider::new(&mut self.distance, 0.1..=2.0))

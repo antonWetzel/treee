@@ -343,10 +343,10 @@ pub mod environment {
 			extension: impl ToString + Send + 'static,
 			action: impl FnOnce(Saver) + Send + 'static,
 		) {
+			let name = format!("{}.{}", file_name.into(), extension.to_string());
 			wasm_bindgen_futures::spawn_local(async move {
 				let handle = rfd::AsyncFileDialog::new()
-					.set_file_name(file_name)
-					.add_filter("", &[extension])
+					.set_file_name(name)
 					.save_file()
 					.await;
 				if let Some(handle) = handle {

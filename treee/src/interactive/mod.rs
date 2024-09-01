@@ -20,7 +20,7 @@ pub const DELETED_INDEX: u32 = 0;
 #[macro_export]
 macro_rules! id {
 	() => {
-		(line!(), column!())
+		egui::Id::new((line!(), column!()))
 	};
 }
 
@@ -379,8 +379,11 @@ impl Interactive {
 					.suffix("m"),
 			);
 			ui.end_row();
+
+			ui.label("Deleted");
+			ui.checkbox(&mut self.show_deleted, "Show");
+			ui.end_row()
 		});
-		ui.checkbox(&mut self.show_deleted, "Show Deleted");
 
 		#[cfg(not(target_arch = "wasm32"))]
 		{
@@ -412,7 +415,7 @@ impl Interactive {
 
 		egui::SidePanel::right("extra-panel")
 			.resizable(false)
-			.min_width(200.0)
+			.exact_width(250.0)
 			.show(ctx, |ui| {
 				egui::ScrollArea::vertical().show(ui, |ui| {
 					ui.add_sized(
@@ -429,9 +432,9 @@ impl Interactive {
 
 					ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Edit Points"));
 					ui.radio_value(&mut view.modus, ViewModus::Delete, "Delete");
-					ui.radio_value(&mut view.modus, ViewModus::Ground, "Ground");
-					ui.radio_value(&mut view.modus, ViewModus::Trunk, "Trunk");
 					ui.radio_value(&mut view.modus, ViewModus::Crown, "Crown");
+					ui.radio_value(&mut view.modus, ViewModus::Trunk, "Trunk");
+					ui.radio_value(&mut view.modus, ViewModus::Ground, "Ground");
 
 					ui.separator();
 					ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Display"));
@@ -472,26 +475,14 @@ impl Interactive {
 					}
 
 					ui.separator();
-					ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Trunk"));
+					ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Heights"));
 					egui::Grid::new(id!()).num_columns(2).show(ui, |ui| {
-						ui.label("Height");
-						ui.label(format!("{:.2}m", segment.info.trunk_height));
-						ui.end_row();
-
-						ui.label("Diameter");
-						ui.label(format!("{:.2}m", segment.info.trunk_diameter));
-						ui.end_row();
-					});
-
-					ui.separator();
-					ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Crown"));
-					egui::Grid::new(id!()).num_columns(2).show(ui, |ui| {
-						ui.label("Height");
+						ui.label("Crown");
 						ui.label(format!("{:.2}m", segment.info.crown_height));
 						ui.end_row();
 
-						ui.label("Diameter");
-						ui.label(format!("{:.2}m", segment.info.crown_diameter));
+						ui.label("Trunk");
+						ui.label(format!("{:.2}m", segment.info.trunk_height));
 						ui.end_row();
 					});
 
@@ -510,7 +501,7 @@ impl Interactive {
 					}
 
 					ui.separator();
-					ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Export"));
+					ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Save"));
 					if ui
 						.add_sized([ui.available_width(), 0.0], egui::Button::new("Points"))
 						.clicked()
@@ -826,14 +817,15 @@ impl Interactive {
 							false
 						}
 					},
-					ViewModus::Ground => {
-						seg.change_classification(hit, self.draw_radius, Classification::Ground)
+					ViewModus::Crown => {
+						seg.change_classification(hit, self.draw_radius, Classification::Crown)
 					},
 					ViewModus::Trunk => {
 						seg.change_classification(hit, self.draw_radius, Classification::Trunk)
 					},
-					ViewModus::Crown => {
-						seg.change_classification(hit, self.draw_radius, Classification::Crown)
+
+					ViewModus::Ground => {
+						seg.change_classification(hit, self.draw_radius, Classification::Ground)
 					},
 				};
 				if changed {
@@ -960,9 +952,9 @@ impl DisplayData {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ViewModus {
 	Delete,
-	Ground,
-	Trunk,
 	Crown,
+	Trunk,
+	Ground,
 }
 
 /// Format radians as degrees, minutes and seconds.

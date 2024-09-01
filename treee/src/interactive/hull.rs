@@ -73,6 +73,7 @@ pub enum Hull {
 	None,
 	Convex(ConvexHull),
 	RadialBoundingVolume(RadialBoundingVolume),
+	SplitRadialBoundingVolume(SplitRadialBoundingVolume),
 }
 
 impl Hull {
@@ -93,17 +94,11 @@ impl Hull {
 				)
 			},
 			Self::RadialBoundingVolume(rbv) => {
-				*rbv = RadialBoundingVolume::new(
-					rbv.mode,
-					rbv.method,
-					rbv.symmetric,
-					&segment.points,
-					&segment.classifications,
-					rbv.slices,
-					rbv.sectors,
-					state,
-					transform,
-				)
+				rbv.update(segment, transform, state);
+			},
+			Self::SplitRadialBoundingVolume(split) => {
+				split.crown.update(segment, None, state);
+				split.trunk.update(segment, transform, state);
 			},
 		}
 	}
@@ -115,11 +110,21 @@ impl Hull {
 	) {
 		match self {
 			Self::None => {},
-			Self::Convex(ref convex) => {
+			Self::Convex(convex) => {
 				convex.lines.render(cloud, lines_pass);
 			},
-			Self::RadialBoundingVolume(ref rbv) => {
+			Self::RadialBoundingVolume(rbv) => {
 				rbv.visual_lines.render(&rbv.visual_points, lines_pass);
+			},
+			Self::SplitRadialBoundingVolume(split) => {
+				split
+					.crown
+					.visual_lines
+					.render(&split.crown.visual_points, lines_pass);
+				split
+					.trunk
+					.visual_lines
+					.render(&split.trunk.visual_points, lines_pass);
 			},
 		}
 	}
@@ -170,6 +175,38 @@ impl Hull {
 				state,
 				transform,
 			));
+		}
+		if ui
+			.add(egui::RadioButton::new(
+				matches!(self, Hull::SplitRadialBoundingVolume(_)),
+				"Split Radial Bounding Volume",
+			))
+			.clicked()
+		{
+			*self = Hull::SplitRadialBoundingVolume(SplitRadialBoundingVolume {
+				crown: RadialBoundingVolume::new(
+					IncludeMode::Crown,
+					RadialBoundingVolumeMethod::Max,
+					false,
+					&segment.points,
+					&segment.classifications,
+					26,
+					32,
+					state,
+					None,
+				),
+				trunk: RadialBoundingVolume::new(
+					IncludeMode::Trunk,
+					RadialBoundingVolumeMethod::Max,
+					false,
+					&segment.points,
+					&segment.classifications,
+					5,
+					32,
+					state,
+					transform,
+				),
+			});
 		}
 		match self {
 			Self::None => {},
@@ -295,17 +332,57 @@ impl Hull {
 				}
 
 				if changed {
-					*rbv = RadialBoundingVolume::new(
-						rbv.mode,
-						rbv.method,
-						rbv.symmetric,
-						&segment.points,
-						&segment.classifications,
-						rbv.slices,
-						rbv.sectors,
-						state,
-						transform,
+					rbv.update(segment, transform, state);
+				}
+			},
+			Self::SplitRadialBoundingVolume(split) => {
+				ui.separator();
+				ui.add_sized(
+					[ui.available_width(), 0.0],
+					egui::Label::new("Split Radial Bounding Volume"),
+				);
+				let mut changed = false;
+				egui::Grid::new(id!()).num_columns(2).show(ui, |ui| {
+					ui.label("Crown Slices");
+					changed |= ui
+						.add(egui::Slider::new(&mut split.crown.slices, 1..=32))
+						.changed();
+					ui.end_row();
+
+					ui.label("Crown Sectors");
+					changed |= ui
+						.add(egui::Slider::new(&mut split.crown.sectors, 3..=32))
+						.changed();
+					ui.end_row();
+
+					ui.label("Trunk Slices");
+					changed |= ui
+						.add(egui::Slider::new(&mut split.trunk.slices, 1..=32))
+						.changed();
+					ui.end_row();
+
+					ui.label("Trunk Sectors");
+					changed |= ui
+						.add(egui::Slider::new(&mut split.trunk.sectors, 3..=32))
+						.changed();
+					ui.end_row();
+				});
+				if changed {
+					split.crown.update(segment, None, state);
+					split.trunk.update(segment, transform, state);
+				}
+				if ui
+					.add_sized(
+						[ui.available_width(), 0.0],
+						egui::Button::new("Save Traits"),
 					)
+					.clicked()
+				{
+					let save = split.traits();
+					environment::Saver::start("traits", "json", move |mut saver| {
+						serde_json::to_writer_pretty(saver.inner(), &save).unwrap();
+						saver.save();
+					})
 				}
 			},
 		}
@@ -733,6 +810,25 @@ impl RadialBoundingVolume {
 		}
 	}
 
+	pub fn update(
+		&mut self,
+		segment: &SegmentData,
+		transform: Option<na::Affine3<f32>>,
+		state: &render::State,
+	) {
+		*self = RadialBoundingVolume::new(
+			self.mode,
+			self.method,
+			self.symmetric,
+			&segment.points,
+			&segment.classifications,
+			self.slices,
+			self.sectors,
+			state,
+			transform,
+		)
+	}
+
 	/// Calculate characteristic points.
 	fn landmarks(&self) -> Vec<f32> {
 		let mut values = Vec::with_capacity(self.slices * self.sectors * 3);
@@ -745,7 +841,16 @@ impl RadialBoundingVolume {
 				let angle = (sector as f32 + 0.5) * sector_angle;
 				values.push(angle.cos() * distance);
 				values.push(angle.sin() * distance);
-				values.push((slice as f32 + 0.5) * self.slice_height);
+				let offset = match self.mode {
+					// interpolate from 0.0 at lowest to 1.0 at highest
+					IncludeMode::Ground | IncludeMode::NoCrown => {
+						slice as f32 / (self.slices - 1) as f32
+					},
+					// middle of the slice
+					_ => 0.5,
+				};
+
+				values.push((slice as f32 + offset) * self.slice_height);
 			}
 		}
 		values
@@ -761,4 +866,96 @@ pub struct RadialBoundingVolumeDistances {
 	slices: usize,
 	sectors: usize,
 	distances: Vec<f32>,
+}
+
+/// Seperate radial bounding volumes for the crown and trunk.
+#[derive(Debug)]
+pub struct SplitRadialBoundingVolume {
+	crown: RadialBoundingVolume,
+	trunk: RadialBoundingVolume,
+}
+
+impl SplitRadialBoundingVolume {
+	pub fn traits(&self) -> Traits {
+		let trunk_height = self.trunk.min + self.trunk.slice_height * self.trunk.slices as f32;
+		let height =
+			self.crown.min + self.crown.slice_height * self.crown.slices as f32 - self.trunk.min;
+
+		let diameter_breast_height = {
+			let slice = (1.3 / self.trunk.slice_height).floor() as usize;
+			let slice = slice.min(self.trunk.slices - 1);
+			let range = (slice * self.trunk.sectors)..((slice + 1) * self.trunk.sectors);
+			self.trunk.distances[range].iter().sum::<f32>() * 2.0 / self.trunk.sectors as f32
+		};
+
+		let trunk_cross_area = std::f32::consts::PI * (diameter_breast_height / 2.0).powi(2);
+
+		let mut sector_max = vec![0.0f32; self.crown.sectors];
+		for slice in 0..self.crown.slices {
+			for sector in 0..self.crown.sectors {
+				let idx = slice * self.crown.sectors + sector;
+				sector_max[sector] = sector_max[sector].max(self.crown.distances[idx]);
+			}
+		}
+
+		let mut crown_sectors_sum = 0.0;
+		for slice in 0..self.crown.slices {
+			for sector in 0..self.crown.sectors {
+				let idx = slice * self.crown.sectors + sector;
+				crown_sectors_sum += self.crown.distances[idx];
+			}
+		}
+
+		let crown_diameter =
+			sector_max.iter().copied().sum::<f32>() * 2.0 / self.crown.sectors as f32;
+
+		let crown_projected_area = sector_max.iter().copied().map(|x| x.powi(2)).sum::<f32>()
+			* std::f32::consts::PI
+			/ self.crown.sectors as f32;
+
+		let crown_volume = {
+			let mut crown_volume = 0.0;
+			for slice in 0..self.crown.slices {
+				for sector in 0..self.crown.sectors {
+					let idx = slice * self.crown.sectors + sector;
+					crown_volume += self.crown.distances[idx].powi(2);
+				}
+			}
+			crown_volume * std::f32::consts::PI * self.crown.slice_height
+				/ self.crown.sectors as f32
+		};
+
+		let crown_surface = 2.0 * crown_projected_area
+			+ std::f32::consts::TAU * self.crown.slice_height / self.crown.sectors as f32
+				* crown_sectors_sum;
+
+		let stem_volume = trunk_cross_area * (trunk_height + (height - trunk_height) / 3.0);
+		let wood_volume = stem_volume
+			+ trunk_cross_area / (self.crown.slices as f32 * self.crown.sectors as f32)
+				* crown_sectors_sum;
+
+		Traits {
+			diameter_breast_height,
+			trunk_cross_area,
+			crown_diameter,
+			crown_projected_area,
+			crown_volume,
+			crown_surface,
+			stem_volume,
+			wood_volume,
+		}
+	}
+}
+
+/// Characterisic traits for the tree.
+#[derive(Debug, serde::Serialize)]
+pub struct Traits {
+	diameter_breast_height: f32,
+	trunk_cross_area: f32,
+	crown_diameter: f32,
+	crown_projected_area: f32,
+	crown_volume: f32,
+	crown_surface: f32,
+	stem_volume: f32,
+	wood_volume: f32,
 }
