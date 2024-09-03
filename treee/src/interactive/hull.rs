@@ -313,7 +313,7 @@ impl Hull {
 					)
 					.clicked()
 				{
-					let landmarks = rbv.landmarks();
+					let landmarks = rbv.landmarks(0.0);
 
 					environment::Saver::start("landmarks", "txt", move |mut saver| {
 						use std::io::Write;
@@ -355,6 +355,15 @@ impl Hull {
 						.changed();
 					ui.end_row();
 
+					let enabled = split.crown.sectors % 2 == 0;
+					ui.add_enabled_ui(enabled, |ui| ui.label("Crown"));
+					ui.add_enabled_ui(enabled, |ui| {
+						changed |= ui
+							.checkbox(&mut split.crown.symmetric, "Symmetric")
+							.changed()
+					});
+					ui.end_row();
+
 					ui.label("Trunk Slices");
 					changed |= ui
 						.add(egui::Slider::new(&mut split.trunk.slices, 1..=32))
@@ -366,11 +375,50 @@ impl Hull {
 						.add(egui::Slider::new(&mut split.trunk.sectors, 3..=32))
 						.changed();
 					ui.end_row();
+
+					let enabled = split.trunk.sectors % 2 == 0;
+					ui.add_enabled_ui(enabled, |ui| ui.label("Trunk"));
+					ui.add_enabled_ui(enabled, |ui| {
+						changed |= ui
+							.checkbox(&mut split.trunk.symmetric, "Symmetric")
+							.changed()
+					});
+					ui.end_row();
 				});
 				if changed {
 					split.crown.update(segment, None, state);
 					split.trunk.update(segment, transform, state);
 				}
+				if ui
+					.add_sized(
+						[ui.available_width(), 0.0],
+						egui::Button::new("Save Landmarks"),
+					)
+					.clicked()
+				{
+					let mut landmarks = split.trunk.landmarks(0.0);
+					let trunk_height = split.trunk.slice_height * split.trunk.slices as f32;
+					landmarks.extend_from_slice(&split.crown.landmarks(trunk_height));
+					let top = trunk_height + split.crown.slice_height * split.crown.slices as f32;
+					landmarks.extend_from_slice(&[0.0, 0.0, top]);
+
+					environment::Saver::start("landmarks", "txt", move |mut saver| {
+						use std::io::Write;
+
+						let mut writer = saver.inner();
+						for (idx, value) in landmarks.iter().copied().enumerate() {
+							if idx == landmarks.len() - 1 {
+								write!(writer, "{}\n", value).unwrap();
+							} else {
+								write!(writer, "{}\t", value).unwrap();
+							}
+						}
+						drop(writer);
+						saver.save();
+					});
+				}
+				ui.end_row();
+
 				if ui
 					.add_sized(
 						[ui.available_width(), 0.0],
@@ -830,7 +878,7 @@ impl RadialBoundingVolume {
 	}
 
 	/// Calculate characteristic points.
-	fn landmarks(&self) -> Vec<f32> {
+	fn landmarks(&self, base: f32) -> Vec<f32> {
 		let mut values = Vec::with_capacity(self.slices * self.sectors * 3);
 
 		let sector_angle = std::f32::consts::TAU / self.sectors as f32;
@@ -850,7 +898,7 @@ impl RadialBoundingVolume {
 					_ => 0.5,
 				};
 
-				values.push((slice as f32 + offset) * self.slice_height);
+				values.push(base + (slice as f32 + offset) * self.slice_height);
 			}
 		}
 		values
