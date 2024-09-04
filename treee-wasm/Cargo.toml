@@ -10,8 +10,13 @@ crate-type = ["cdylib"]
 [lints]
 workspace = true
 
+[features]
+default = []
+webgl = ["render/webgl"]
+
 [dependencies]
 treee.workspace = true
+render.workspace = true
 
 wasm-bindgen.workspace = true
 web-sys.workspace = true
@@ -21,3 +26,4 @@ console_log.workspace = true
 getrandom = { workspace = true, features = ["js"] }
 wasm-bindgen-rayon.workspace = true
 wasm-bindgen-futures.workspace = true
+wgpu = { workspace = true, features = ["webgl"] }

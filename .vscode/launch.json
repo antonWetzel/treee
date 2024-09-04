@@ -17,7 +17,7 @@
 		{
 			"type": "lldb",
 			"request": "launch",
-			"name": "Release import",
+			"name": "Release",
 			"program": "${workspaceFolder}/target/release/treee",
 			"sourceLanguages": [
 				"rust"

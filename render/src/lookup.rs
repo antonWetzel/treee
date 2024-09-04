@@ -24,7 +24,7 @@ impl Lookup {
 			.device
 			.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 				label: Some("Camera Buffer"),
-				contents: bytemuck::cast_slice(&[mult, shift]),
+				contents: bytemuck::cast_slice(&[mult, shift, 0, 0]),
 				usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
 			});
 

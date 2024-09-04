@@ -116,6 +116,7 @@ fn segmentation(
 	_ = segmenting.sender.send(Event::ClearPointClouds);
 
 	segmenting.progress.store(0, Ordering::Relaxed);
+	segmenting.done.store(None);
 
 	let mut source_slices = loading.shared.slices.lock().unwrap();
 	let min = source_slices.iter().map(|(&idx, _)| idx).min().unwrap_or(0);

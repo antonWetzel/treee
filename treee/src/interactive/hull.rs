@@ -1,6 +1,5 @@
 use std::{
 	collections::{HashMap, HashSet},
-	fmt::Write,
 	hash::Hash,
 	ops::Not,
 };

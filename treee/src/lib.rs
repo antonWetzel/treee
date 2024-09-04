@@ -72,12 +72,14 @@ struct App {
 	error_handler: fn(Error),
 }
 
+type Proxy = winit::event_loop::EventLoopProxy<State>;
+
 /// Current state for the event loop
 enum State {
 	/// Start until first resume event
-	Starting(winit::event_loop::EventLoopProxy<State>),
+	Starting(Proxy),
 	/// Wait until async is initialized
-	Wait(Arc<winit::window::Window>),
+	Wait(Arc<winit::window::Window>, Proxy, bool),
 	/// Main phase
 	Running(Program),
 }
@@ -91,7 +93,7 @@ impl winit::application::ApplicationHandler<State> for App {
 
 	fn resumed(&mut self, event_loop: &EventLoop) {
 		match self.state {
-			State::Starting(_) => {
+			State::Starting(ref proxy) => {
 				let window = event_loop
 					.create_window(
 						winit::window::Window::default_attributes()
@@ -100,38 +102,22 @@ impl winit::application::ApplicationHandler<State> for App {
 					)
 					.unwrap();
 
-				let window = Arc::new(window);
-				let State::Starting(proxy) =
-					std::mem::replace(&mut self.state, State::Wait(window.clone()))
-				else {
-					unreachable!()
-				};
-
-				#[cfg(not(target_arch = "wasm32"))]
-				{
-					use pollster::FutureExt;
-					let app = match Program::new(window).block_on() {
-						Ok(program) => State::Running(program),
-						Err(err) => return (self.error_handler)(err),
-					};
-					if let Err(_) = proxy.send_event(app) {
-						return (self.error_handler)(Error::ProxyError);
-					}
-				}
-
 				#[cfg(target_arch = "wasm32")]
 				{
-					let error_handler = self.error_handler;
-					wasm_bindgen_futures::spawn_local(async move {
-						let app = match Program::new(window).await {
-							Ok(program) => State::Running(program),
-							Err(err) => return error_handler(err),
-						};
-						if let Err(_) = proxy.send_event(app) {
-							return error_handler(Error::ProxyError);
-						}
-					});
+					use winit::platform::web::WindowExtWebSys;
+					web_sys::window()
+						.and_then(|win| win.document())
+						.and_then(|doc| {
+							let dst = doc.get_element_by_id("wasm-example")?;
+							let canvas = web_sys::Element::from(window.canvas()?);
+							dst.append_child(&canvas).ok()?;
+							Some(())
+						})
+						.expect("Couldn't append canvas to document body.");
 				}
+
+				let window = Arc::new(window);
+				self.state = State::Wait(window.clone(), proxy.clone(), false);
 			},
 			_ => {},
 		}
@@ -219,9 +205,41 @@ impl App {
 			State::Starting(_) => {
 				log::error!("try in starting phase");
 			},
-			State::Wait(ref mut window) => {
+			State::Wait(ref mut window, ref mut proxy, ref mut setup) => {
 				// request redraw until async is initialized
 				window.request_redraw();
+				let size = window.inner_size();
+				if *setup || size.width == 0 || size.height == 0 {
+					return;
+				}
+				let window = window.clone();
+				let proxy = proxy.clone();
+				#[cfg(not(target_arch = "wasm32"))]
+				{
+					use pollster::FutureExt;
+					let app = match Program::new(window).block_on() {
+						Ok(program) => State::Running(program),
+						Err(err) => return (self.error_handler)(err),
+					};
+					if let Err(_) = proxy.send_event(app) {
+						return (self.error_handler)(Error::ProxyError);
+					}
+				}
+
+				#[cfg(target_arch = "wasm32")]
+				{
+					let error_handler = self.error_handler;
+					wasm_bindgen_futures::spawn_local(async move {
+						let app = match Program::new(window).await {
+							Ok(program) => State::Running(program),
+							Err(err) => return error_handler(err),
+						};
+						if let Err(_) = proxy.send_event(app) {
+							return error_handler(Error::ProxyError);
+						}
+					});
+				}
+				*setup = true;
 			},
 			State::Running(ref mut program) => match action(program) {
 				Ok(()) => {},

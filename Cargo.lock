@@ -2692,11 +2692,13 @@ dependencies = [
  "console_log",
  "getrandom",
  "log",
+ "render",
  "treee",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-rayon",
  "web-sys",
+ "wgpu",
 ]
 
 [[package]]

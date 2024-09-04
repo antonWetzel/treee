@@ -27,37 +27,39 @@ struct Settings {
 
 @group(0) @binding(0)
 var depths: texture_2d<f32>;
+@group(0) @binding(1)
+var depth_sampler: sampler;
+
 @group(1) @binding(0)
 var<uniform> settings: Settings;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+
+
     let size = textureDimensions(depths);
-    let coord = vec2<i32>(in.tex_coords * vec2<f32>(size));
-
-    // if true {
-    //     let x = get_depth(coord);
-    //     return vec4<f32>(x, x, x, 1.0);
-    // }
-
+    let delta = 1.0 / vec2<f32>(size);
+    let coord = in.tex_coords;
     let depth = get_depth(coord);
+
     if depth == 1.0 {
         return vec4<f32>(0.0, 0.0, 0.0, 0.0);
     }
     var m = depth;
-    m = max(m, get_depth(coord + vec2<i32>(-1, 0)));
-    m = max(m, get_depth(coord + vec2<i32>(1, 0)));
-    m = max(m, get_depth(coord + vec2<i32>(0, -1)));
-    m = max(m, get_depth(coord + vec2<i32>(0, 1)));
+    m = max(m, get_depth(coord + vec2<f32>(-delta.x, 0)));
+    m = max(m, get_depth(coord + vec2<f32>(delta.x, 0)));
+    m = max(m, get_depth(coord + vec2<f32>(0, -delta.y)));
+    m = max(m, get_depth(coord + vec2<f32>(0, delta.y)));
     m = min(m, depth + settings.strength);
     return vec4<f32>(settings.color, (m - depth) / settings.strength);
 }
 
 
-fn get_depth(uv: vec2<i32>) -> f32 {
+fn get_depth(uv: vec2<f32>) -> f32 {
     let near = 0.1;
     let far = 10000.0;
-    let depth = textureLoad(depths, uv, 0).x;
+
+    let depth = textureSample(depths, depth_sampler, uv).x;
     if depth >= 1.0{
         return 1.0;
     }

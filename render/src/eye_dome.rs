@@ -51,16 +51,24 @@ impl EyeDome {
 				.device
 				.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
 					label: Some("eye dome Layout"),
-					entries: &[wgpu::BindGroupLayoutEntry {
-						binding: 0,
-						count: None,
-						ty: wgpu::BindingType::Texture {
-							sample_type: wgpu::TextureSampleType::Float { filterable: false },
-							multisampled: false,
-							view_dimension: wgpu::TextureViewDimension::D2,
+					entries: &[
+						wgpu::BindGroupLayoutEntry {
+							binding: 0,
+							count: None,
+							ty: wgpu::BindingType::Texture {
+								sample_type: wgpu::TextureSampleType::Float { filterable: false },
+								multisampled: false,
+								view_dimension: wgpu::TextureViewDimension::D2,
+							},
+							visibility: wgpu::ShaderStages::FRAGMENT,
 						},
-						visibility: wgpu::ShaderStages::FRAGMENT,
-					}],
+						wgpu::BindGroupLayoutEntry {
+							binding: 1,
+							count: None,
+							ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
+							visibility: wgpu::ShaderStages::FRAGMENT,
+						},
+					],
 				});
 
 		let depth_bind_group = Self::get_depth_bindgroup(state, &depth_layout, depth);
@@ -176,13 +184,31 @@ impl EyeDome {
 		layout: &wgpu::BindGroupLayout,
 		depth: &DepthTexture,
 	) -> wgpu::BindGroup {
+		let sampler = state.device.create_sampler(&wgpu::SamplerDescriptor {
+			address_mode_u: wgpu::AddressMode::ClampToEdge,
+			address_mode_v: wgpu::AddressMode::ClampToEdge,
+			address_mode_w: wgpu::AddressMode::ClampToEdge,
+			mag_filter: wgpu::FilterMode::Nearest,
+			min_filter: wgpu::FilterMode::Nearest,
+			mipmap_filter: wgpu::FilterMode::Nearest,
+			compare: None,
+			lod_min_clamp: 0.0,
+			lod_max_clamp: 100.0,
+			..Default::default()
+		});
 		state.device.create_bind_group(&wgpu::BindGroupDescriptor {
 			layout,
-			entries: &[wgpu::BindGroupEntry {
-				binding: 0,
-				resource: wgpu::BindingResource::TextureView(&depth.view),
-			}],
-			label: Some("eye dome bind group"),
+			entries: &[
+				wgpu::BindGroupEntry {
+					binding: 0,
+					resource: wgpu::BindingResource::TextureView(&depth.view),
+				},
+				wgpu::BindGroupEntry {
+					binding: 1,
+					resource: wgpu::BindingResource::Sampler(&sampler),
+				},
+			],
+			label: None,
 		})
 	}
 

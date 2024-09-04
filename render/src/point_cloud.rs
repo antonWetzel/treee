@@ -218,10 +218,10 @@ impl PointCloudEnvironment {
 			scale: f32,
 			min: u32,
 			max: u32,
-			pad: [u32; 2],
+			pad: u32,
 		}
 
-		let uniform = Uniform { scale, min, max, pad: [0, 0] };
+		let uniform = Uniform { scale, min, max, pad: 0 };
 		let buffer = state
 			.device
 			.create_buffer_init(&wgpu::util::BufferInitDescriptor {

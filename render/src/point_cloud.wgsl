@@ -7,6 +7,7 @@ struct Environment {
     scale: f32,
     min: u32,
     max: u32,
+    padding: u32,
 }
 
 @group(0) @binding(0)
@@ -60,6 +61,7 @@ fn vs_main(
 struct LookupUniform {
     mult: u32,
     shift: u32,
+    _padding: vec2<u32>,
 };
 
 @group(2) @binding(0)

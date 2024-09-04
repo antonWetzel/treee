@@ -27,7 +27,10 @@ pub enum RenderError {
 impl State {
 	pub async fn new(window: Arc<winit::window::Window>) -> Result<(Self, Window), RenderError> {
 		let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+			#[cfg(not(feature = "webgl"))]
 			backends: wgpu::Backends::PRIMARY,
+			#[cfg(feature = "webgl")]
+			backends: wgpu::Backends::GL,
 			dx12_shader_compiler: wgpu::Dx12Compiler::default(),
 			flags: wgpu::InstanceFlags::default(),
 			gles_minor_version: wgpu::Gles3MinorVersion::default(),
@@ -48,7 +51,10 @@ impl State {
 			.request_device(
 				&wgpu::DeviceDescriptor {
 					required_features: wgpu::Features::empty(),
+					#[cfg(not(feature = "webgl"))]
 					required_limits: wgpu::Limits::default(),
+					#[cfg(feature = "webgl")]
+					required_limits: wgpu::Limits::downlevel_webgl2_defaults(),
 					label: None,
 					memory_hints: wgpu::MemoryHints::Performance,
 				},
@@ -59,6 +65,7 @@ impl State {
 
 		let size = window.inner_size();
 		let surface_caps = surface.get_capabilities(&adapter);
+
 		let surface_format = surface_caps
 			.formats
 			.iter()

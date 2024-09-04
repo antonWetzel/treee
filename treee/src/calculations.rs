@@ -456,33 +456,6 @@ pub fn map_to_u32(value: f32) -> u32 {
 	(value * u32::MAX as f32) as u32
 }
 
-/// Calculate circum-sphere for the points.
-/// Returns `None` if the points are close to linear.
-///
-/// Source: https://stackoverflow.com/a/34326390
-fn circle(
-	point_a: na::Point2<f32>,
-	point_b: na::Point2<f32>,
-	point_c: na::Point2<f32>,
-) -> Option<(na::Point2<f32>, f32)> {
-	let ac = point_c - point_a;
-	let ab = point_b - point_a;
-	let bc = point_c - point_b;
-	if ab.dot(&ac) < 0.0 || ac.dot(&bc) < 0.0 || ab.dot(&bc) > 0.0 {
-		return None;
-	}
-
-	let cross = ab.x * ac.y - ab.y * ac.x;
-	let to = (na::vector![-ab.y, ab.x] * ac.norm_squared()
-		+ na::vector![ac.y, -ac.x] * ab.norm_squared())
-		/ (2.0 * cross);
-	let radius = to.norm();
-	if radius.is_nan() {
-		return None;
-	}
-	Some((point_a + to, radius))
-}
-
 /// Approxiamte diameter based on the area.
 fn approximate_diameter(area: f32) -> f32 {
 	2.0 * (area / std::f32::consts::PI).sqrt()
