@@ -96,7 +96,7 @@ impl Hull {
 				rbv.update(segment, transform, state);
 			},
 			Self::SplitRadialBoundingVolume(split) => {
-				split.crown.update(segment, None, state);
+				split.crown.update(segment, transform, state);
 				split.trunk.update(segment, transform, state);
 			},
 		}
@@ -192,7 +192,7 @@ impl Hull {
 					26,
 					32,
 					state,
-					None,
+					transform,
 				),
 				trunk: RadialBoundingVolume::new(
 					IncludeMode::Trunk,
@@ -385,7 +385,7 @@ impl Hull {
 					ui.end_row();
 				});
 				if changed {
-					split.crown.update(segment, None, state);
+					split.crown.update(segment, transform, state);
 					split.trunk.update(segment, transform, state);
 				}
 				if ui
@@ -396,9 +396,9 @@ impl Hull {
 					.clicked()
 				{
 					let mut landmarks = split.trunk.landmarks(0.0);
-					let trunk_height = split.trunk.slice_height * split.trunk.slices as f32;
-					landmarks.extend_from_slice(&split.crown.landmarks(trunk_height));
-					let top = trunk_height + split.crown.slice_height * split.crown.slices as f32;
+					let base = split.crown.min - split.trunk.min;
+					landmarks.extend_from_slice(&split.crown.landmarks(base));
+					let top = base + split.crown.slice_height * split.crown.slices as f32;
 					landmarks.extend_from_slice(&[0.0, 0.0, top]);
 
 					environment::Saver::start("landmarks", "txt", move |mut saver| {
@@ -924,7 +924,7 @@ pub struct SplitRadialBoundingVolume {
 
 impl SplitRadialBoundingVolume {
 	pub fn traits(&self) -> Traits {
-		let trunk_height = self.trunk.min + self.trunk.slice_height * self.trunk.slices as f32;
+		let trunk_height = self.trunk.slice_height * self.trunk.slices as f32;
 		let height =
 			self.crown.min + self.crown.slice_height * self.crown.slices as f32 - self.trunk.min;
 
