@@ -11,8 +11,10 @@ Point cloud importer and viewer for forest scans.
 
 ### Download
 
-- Availabe at <https://github.com/antonWetzel/treee/releases> for windows
-- Download and start `treee.exe`
+- Available at <https://github.com/antonWetzel/treee/releases>
+    - x86_64-pc-windows-msvc
+    - x86_64-unknown-linux-gnu
+- Download and start `treee.exe` or `treee`
 
 ### Compile
 
