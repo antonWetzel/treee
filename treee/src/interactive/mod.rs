@@ -34,7 +34,6 @@ pub struct Interactive {
 	pub show_deleted: bool,
 	draw_radius: f32,
 
-	#[cfg(not(target_arch = "wasm32"))]
 	pub source_location: String,
 	world_offset: na::Point3<f64>,
 }
@@ -45,10 +44,10 @@ pub struct InteractiveSave {
 	pub segments: HashMap<u32, SegmentData>,
 	pub deleted: SegmentData,
 	pub world_offset: na::Point3<f64>,
+	pub source_location: String,
 }
 
 /// Default location (europe) to convert position to global coordinates.
-#[cfg(not(target_arch = "wasm32"))]
 const DEFAULT_LOCATION: &str = "+proj=utm\n+ellps=GRS80\n+zone=32";
 
 impl SegmentData {
@@ -230,7 +229,6 @@ impl SegmentData {
 		)
 	}
 
-	#[cfg(not(target_arch = "wasm32"))]
 	/// Update the world coordinates.
 	fn update_location(&mut self, world_offset: na::Point3<f64>, proj: &proj4rs::Proj) {
 		let to = proj4rs::Proj::from_proj_string("+proj=latlong +ellps=GRS80").unwrap();
@@ -259,7 +257,6 @@ impl Interactive {
 			draw_radius: 0.5,
 			sender,
 			show_deleted: false,
-			#[cfg(not(target_arch = "wasm32"))]
 			source_location: DEFAULT_LOCATION.into(),
 			world_offset,
 		};
@@ -288,8 +285,7 @@ impl Interactive {
 			deleted: save.deleted,
 			draw_radius: 0.5,
 			show_deleted: false,
-			#[cfg(not(target_arch = "wasm32"))]
-			source_location: DEFAULT_LOCATION.into(),
+			source_location: save.source_location,
 			world_offset: save.world_offset,
 		};
 
@@ -310,6 +306,7 @@ impl Interactive {
 				segments,
 				deleted: self.deleted.clone(),
 				world_offset: self.world_offset,
+				source_location: self.source_location.clone(),
 			};
 			environment::Saver::start("pointcloud", "ipc", move |mut saver| {
 				bincode::serialize_into(saver.inner(), &save).unwrap();
@@ -385,7 +382,6 @@ impl Interactive {
 			ui.end_row()
 		});
 
-		#[cfg(not(target_arch = "wasm32"))]
 		{
 			ui.separator();
 			ui.add_sized(
@@ -675,7 +671,6 @@ impl Interactive {
 				let seg = self.segments.get_mut(&idx).unwrap();
 				let calculations_properties = seg.update_info(true);
 
-				#[cfg(not(target_arch = "wasm32"))]
 				match proj4rs::Proj::from_proj_string(&self.source_location) {
 					Ok(proj) => seg.update_location(self.world_offset, &proj),
 					Err(err) => eprintln!("{}", err),
