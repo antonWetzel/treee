@@ -843,6 +843,7 @@ impl Interactive {
 				let mut other = self.segments.remove(&other).unwrap();
 				let target = self.segments.get_mut(&idx).unwrap();
 				target.points.append(&mut other.points);
+				target.classifications.append(&mut other.classifications);
 				target.changed(idx, &self.sender);
 			},
 			_ => {},
