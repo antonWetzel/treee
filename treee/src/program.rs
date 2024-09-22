@@ -464,10 +464,15 @@ impl Program {
 						},
 					},
 
-					"ipc" => {
-						let (interactive, receiver) = Interactive::load(source);
-						self.world = World::Interactive(interactive);
-						self.receiver = receiver;
+					"ipc" => match &mut self.world {
+						World::Interactive(interactive) => {
+							interactive.add(source);
+						},
+						_ => {
+							let (interactive, receiver) = Interactive::load(source);
+							self.world = World::Interactive(interactive);
+							self.receiver = receiver;
+						},
 					},
 					_ => panic!("invalid file format"),
 				},

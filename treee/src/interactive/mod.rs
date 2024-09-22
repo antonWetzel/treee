@@ -292,30 +292,76 @@ impl Interactive {
 		(interactive, receiver)
 	}
 
+	/// Add the segments from another saved Interactive
+	pub fn add(&mut self, source: environment::Source) {
+		let reader = source.reader();
+		let mut save = bincode::deserialize_from::<_, InteractiveSave>(reader).unwrap();
+
+		let diff = save.world_offset - self.world_offset;
+		let diff = (diff.norm_squared() > 0.1).then_some(diff);
+
+		if let Some(diff) = diff {
+			for segment in save.segments.values_mut() {
+				for p in segment.points.iter_mut() {
+					*p = (p.cast::<f64>() + diff).cast::<f32>();
+				}
+			}
+		}
+
+		for (mut idx, mut segment) in save.segments {
+			while self.segments.contains_key(&idx) {
+				idx = rand::random();
+			}
+			segment.changed(idx, &self.sender);
+			self.segments.insert(idx, segment);
+		}
+
+		for (mut p, c) in save
+			.deleted
+			.points
+			.into_iter()
+			.zip(save.deleted.classifications)
+		{
+			if let Some(diff) = diff {
+				p = (p.cast::<f64>() + diff).cast::<f32>();
+			}
+
+			self.deleted.points.push(p);
+			self.deleted.classifications.push(c);
+		}
+	}
+
 	/// Draw the UI
 	pub fn ui(&mut self, ui: &mut egui::Ui) {
-		if ui
-			.add_sized([ui.available_width(), 0.0], egui::Button::new("Save"))
-			.clicked()
-		{
-			let mut segments = HashMap::new();
-			for (&idx, segment) in self.segments.iter() {
-				segments.insert(idx, segment.clone());
-			}
-			let save = InteractiveSave {
-				segments,
-				deleted: self.deleted.clone(),
-				world_offset: self.world_offset,
-				source_location: self.source_location.clone(),
-			};
-			environment::Saver::start("pointcloud", "ipc", move |mut saver| {
-				bincode::serialize_into(saver.inner(), &save).unwrap();
-				saver.save();
-			});
-		}
 		let enabled = matches!(self.modus, Modus::View(_)).not();
 
 		ui.add_enabled_ui(enabled, |ui| {
+			if ui
+				.add_sized([ui.available_width(), 0.0], egui::Button::new("Save"))
+				.clicked()
+			{
+				let mut segments = HashMap::new();
+				for (&idx, segment) in self.segments.iter() {
+					segments.insert(idx, segment.clone());
+				}
+				let save = InteractiveSave {
+					segments,
+					deleted: self.deleted.clone(),
+					world_offset: self.world_offset,
+					source_location: self.source_location.clone(),
+				};
+				environment::Saver::start("pointcloud", "ipc", move |mut saver| {
+					bincode::serialize_into(saver.inner(), &save).unwrap();
+					saver.save();
+				});
+			}
+			if ui
+				.add_sized([ui.available_width(), 0.0], egui::Button::new("Add"))
+				.clicked()
+			{
+				environment::Source::start(&self.sender);
+			}
+
 			ui.separator();
 			ui.add_sized([ui.available_width(), 0.0], egui::Label::new("Modus"));
 			if ui
@@ -565,6 +611,24 @@ impl Interactive {
 								saver.save();
 							})
 						}
+					}
+					if ui
+						.add_sized([ui.available_width(), 0.0], egui::Button::new("Segment"))
+						.clicked()
+					{
+						let seg = self.segments.get(&view.idx).unwrap();
+						let mut segments = HashMap::new();
+						segments.insert(view.idx, seg.clone());
+						let save = InteractiveSave {
+							segments,
+							deleted: SegmentData::new(Vec::new()),
+							world_offset: self.world_offset,
+							source_location: self.source_location.clone(),
+						};
+						environment::Saver::start("segment", "ipc", move |mut saver| {
+							bincode::serialize_into(saver.inner(), &save).unwrap();
+							saver.save();
+						})
 					}
 				});
 			});

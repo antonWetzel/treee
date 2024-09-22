@@ -47,7 +47,7 @@ impl IncludeMode {
 
 	pub fn ui(&mut self, ui: &mut egui::Ui) -> bool {
 		let mut changed = false;
-		egui::ComboBox::from_id_source(id!())
+		egui::ComboBox::from_id_salt(id!())
 			.selected_text(self.name())
 			.width(ui.available_width())
 			.show_ui(ui, |ui| {
@@ -251,7 +251,7 @@ impl Hull {
 					ui.end_row();
 
 					ui.label("Method");
-					egui::ComboBox::from_id_source(id!())
+					egui::ComboBox::from_id_salt(id!())
 						.selected_text(format!("{:?}", rbv.method))
 						.width(ui.available_width())
 						.show_ui(ui, |ui| {
