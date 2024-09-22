@@ -8,7 +8,9 @@ use trunk_axis::{TrunkAxis, TrunkAxisAlgorithm};
 use crate::{
 	calculations::{map_to_u32, CalculationProperties, Classification, SegmentData, SegmentSave},
 	environment::{self, Saver},
+	laz,
 	program::{DisplaySettings, Event},
+	Error,
 };
 
 use hull::Hull;
@@ -265,11 +267,13 @@ impl Interactive {
 	}
 
 	/// Load a Interactive from a file.
-	pub fn load(source: environment::Source) -> (Self, crossbeam::channel::Receiver<Event>) {
+	pub fn load(
+		source: environment::Source,
+	) -> Result<(Self, crossbeam::channel::Receiver<Event>), Error> {
 		let (sender, receiver) = crossbeam::channel::unbounded();
 
 		let reader = source.reader();
-		let save = bincode::deserialize_from::<_, InteractiveSave>(reader).unwrap();
+		let save = bincode::deserialize_from::<_, InteractiveSave>(reader)?;
 
 		let mut segments = HashMap::new();
 		for (idx, data) in save.segments {
@@ -289,13 +293,13 @@ impl Interactive {
 			world_offset: save.world_offset,
 		};
 
-		(interactive, receiver)
+		Ok((interactive, receiver))
 	}
 
 	/// Add the segments from another saved Interactive
-	pub fn add(&mut self, source: environment::Source) {
+	pub fn add(&mut self, source: environment::Source) -> Result<(), Error> {
 		let reader = source.reader();
-		let mut save = bincode::deserialize_from::<_, InteractiveSave>(reader).unwrap();
+		let mut save = bincode::deserialize_from::<_, InteractiveSave>(reader)?;
 
 		let diff = save.world_offset - self.world_offset;
 		let diff = (diff.norm_squared() > 0.1).then_some(diff);
@@ -329,6 +333,41 @@ impl Interactive {
 			self.deleted.points.push(p);
 			self.deleted.classifications.push(c);
 		}
+
+		Ok(())
+	}
+
+	pub fn add_points(&mut self, source: environment::Source) -> Result<(), Error> {
+		let laz = laz::Laz::new(source, Some(self.world_offset))?;
+		let size = laz.total();
+		let (sender, reciever) = crossbeam::channel::unbounded();
+		let (points, laz) = rayon::join(
+			move || {
+				let mut points = Vec::with_capacity(size);
+				for p in reciever {
+					points.push(p);
+				}
+				points
+			},
+			move || {
+				laz.read(|chunk| {
+					for p in chunk {
+						sender.send(p).unwrap();
+					}
+					Ok(())
+				})
+			},
+		);
+		let () = laz?;
+
+		let mut segment = SegmentData::new(points);
+		let mut idx = rand::random();
+		while self.segments.contains_key(&idx) {
+			idx = rand::random();
+		}
+		segment.changed(idx, &self.sender);
+		self.segments.insert(idx, segment);
+		Ok(())
 	}
 
 	/// Draw the UI

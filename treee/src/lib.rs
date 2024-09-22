@@ -64,6 +64,9 @@ pub enum Error {
 
 	#[error("Corrupt file")]
 	CorruptFile,
+
+	#[error(transparent)]
+	Bincode(#[from] bincode::Error),
 }
 
 /// App state

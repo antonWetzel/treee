@@ -457,6 +457,9 @@ impl Program {
 				Event::Load(source) => match source.extension() {
 					"laz" | "las" => match &mut self.world {
 						World::Loading(loading) => loading.add(source),
+						World::Interactive(interactive) => {
+							interactive.add_points(source)?;
+						},
 						_ => {
 							let (loading, receiver) = Loading::new(source);
 							self.world = World::Loading(loading);
@@ -466,10 +469,10 @@ impl Program {
 
 					"ipc" => match &mut self.world {
 						World::Interactive(interactive) => {
-							interactive.add(source);
+							interactive.add(source)?;
 						},
 						_ => {
-							let (interactive, receiver) = Interactive::load(source);
+							let (interactive, receiver) = Interactive::load(source)?;
 							self.world = World::Interactive(interactive);
 							self.receiver = receiver;
 						},
